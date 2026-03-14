@@ -3,6 +3,10 @@ name = "api-scanner"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "api_scanner"
+path = "src/lib.rs"
+
 [[bin]]
 name = "api-scanner"
 path = "src/main.rs"
@@ -40,6 +44,7 @@ rand = "0.8"
 # Async utilities
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["full"] }
+async-trait = "0.1"
 
 # Error handling
 thiserror = "1"
@@ -56,6 +61,7 @@ tempfile = "3"
 assert_cmd    = "2"
 predicates    = "3"
 wiremock      = "0.6"
+assert_matches = "1"
 
 
 [profile.release]
