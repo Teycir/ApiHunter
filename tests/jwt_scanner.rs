@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -46,9 +47,8 @@ fn test_config() -> Config {
 
 type HmacSha256 = Hmac<Sha256>;
 
-fn make_hs256_jwt(secret: &str) -> String {
+fn make_hs256_jwt_with_payload(secret: &str, payload: serde_json::Value) -> String {
     let header = serde_json::json!({"alg": "HS256", "typ": "JWT"});
-    let payload = serde_json::json!({"sub": "123", "exp": 1893456000});
 
     let header_b64 = URL_SAFE_NO_PAD.encode(header.to_string());
     let payload_b64 = URL_SAFE_NO_PAD.encode(payload.to_string());
@@ -60,6 +60,11 @@ fn make_hs256_jwt(secret: &str) -> String {
     let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
 
     format!("{signing_input}.{sig_b64}")
+}
+
+fn make_hs256_jwt(secret: &str) -> String {
+    let payload = serde_json::json!({"sub": "123", "exp": 1893456000});
+    make_hs256_jwt_with_payload(secret, payload)
 }
 
 #[tokio::test]
@@ -83,4 +88,34 @@ async fn jwt_weak_secret_detected() {
 
     assert!(errors.is_empty());
     assert!(findings.iter().any(|f| f.check == "jwt/weak-secret"));
+}
+
+#[tokio::test]
+async fn jwt_clean_token_no_findings() {
+    let server = MockServer::start().await;
+    let now = Utc::now().timestamp();
+    let payload = serde_json::json!({
+        "iss": "https://issuer.example",
+        "aud": "api",
+        "iat": now,
+        "exp": now + 3600
+    });
+    let token = make_hs256_jwt_with_payload("very-strong-secret-123", payload);
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            "token={token}"
+        )))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config());
+    let client = HttpClient::new(cfg.as_ref()).unwrap();
+    let scanner = JwtScanner::new(cfg.as_ref());
+
+    let (findings, errors) = scanner.scan(&server.uri(), &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty());
+    assert!(findings.is_empty());
 }

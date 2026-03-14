@@ -8,12 +8,12 @@ use crate::{
     error::{CapturedError, ScannerError, ScannerResult},
     waf::WafEvasion,
 };
-use dashmap::DashMap;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Client, Method, Response,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 use tracing::debug;
 use url::Url;
 
@@ -52,7 +52,7 @@ pub struct HttpClient {
     waf_enabled: bool,
     delay_ms: u64,
     retries: u32,
-    host_last_request: Arc<DashMap<String, tokio::time::Instant>>,
+    host_last_request: Arc<Mutex<HashMap<String, tokio::time::Instant>>>,
 }
 
 impl HttpClient {
@@ -117,7 +117,7 @@ impl HttpClient {
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
-            host_last_request: Arc::new(DashMap::new()),
+            host_last_request: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -248,16 +248,30 @@ impl HttpClient {
             key.push_str(&format!(":{port}"));
         }
 
+        let min_gap = Duration::from_millis(self.delay_ms);
         let now = tokio::time::Instant::now();
-        if let Some(last) = self.host_last_request.get(&key) {
-            let elapsed = now.duration_since(*last);
-            let min_gap = Duration::from_millis(self.delay_ms);
-            if elapsed < min_gap {
-                tokio::time::sleep(min_gap - elapsed).await;
-            }
-        }
 
-        self.host_last_request.insert(key, tokio::time::Instant::now());
+        // Reserve the next allowed time per host to prevent concurrent TOCTOU races.
+        let sleep_for = {
+            let mut map = self.host_last_request.lock().await;
+            let next_allowed = match map.get(&key) {
+                Some(last) => {
+                    let candidate = *last + min_gap;
+                    if candidate > now { candidate } else { now }
+                }
+                None => now,
+            };
+            map.insert(key, next_allowed);
+            if next_allowed > now {
+                next_allowed - now
+            } else {
+                Duration::from_millis(0)
+            }
+        };
+
+        if !sleep_for.is_zero() {
+            tokio::time::sleep(sleep_for).await;
+        }
     }
 
     // ------------------------------------------------------------------ //

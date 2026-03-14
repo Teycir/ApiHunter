@@ -38,7 +38,6 @@ static SENSITIVE_CLAIMS: &[&str] = &[
     "admin",
     "permissions",
     "scope",
-    "sub",
 ];
 
 const LONG_LIVED_SECS: i64 = 60 * 60 * 24 * 30; // 30 days
@@ -259,8 +258,11 @@ fn weak_secret_match(url: &str, header_b64: &str, payload_b64: &str, sig: &[u8])
 }
 
 fn redact_token(token: &str) -> String {
-    if token.len() <= 16 {
+    let chars: Vec<char> = token.chars().collect();
+    if chars.len() <= 16 {
         return token.to_string();
     }
-    format!("{}…{}", &token[..8], &token[token.len() - 8..])
+    let head: String = chars[..8].iter().collect();
+    let tail: String = chars[chars.len() - 8..].iter().collect();
+    format!("{head}…{tail}")
 }
