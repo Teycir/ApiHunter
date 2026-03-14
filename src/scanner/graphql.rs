@@ -111,7 +111,7 @@ async fn probe_endpoint(
 
     // Non-GraphQL or hard error — skip remaining checks for this candidate.
     // Keep 400 (often GraphQL validation error), skip auth failures and 5xx.
-    if resp.status >= 500 || resp.status == 401 || resp.status == 403 {
+    if resp.status >= 500 || resp.status == 401 || resp.status == 403 || resp.status == 429 {
         return;
     }
     if resp.status == 404 {

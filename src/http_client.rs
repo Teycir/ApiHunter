@@ -295,6 +295,7 @@ fn should_retry_status(status: u16) -> bool {
 }
 
 fn retry_backoff(attempt: u32) -> Duration {
-    let exp = 1u64.saturating_shl(attempt.min(6));
+    let shift = attempt.min(6);
+    let exp = 1u64 << shift;
     Duration::from_millis(200 * exp)
 }

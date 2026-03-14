@@ -37,18 +37,18 @@ static UNSAFE_SOURCES: &[(&str, &str)] = &[
 // CDN / JSONP-enabled hosts well-known for bypass gadgets
 static BYPASS_HOSTS: Lazy<Vec<Regex>> = Lazy::new(|| {
     [
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?cdn\\.cloudflare\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?ajax\\.googleapis\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?cdnjs\\.cloudflare\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?cdn\\.jsdelivr\\.net(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?unpkg\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?rawgit\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?raw\\.githubusercontent\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?stackpath\\.bootstrapcdn\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?code\\.jquery\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?yandex\\.st(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?api\\.twitter\\.com(?:[\\s'\"/;]|$)",
-        r"(?i)(?:^|[\\s'\";])(?:https?:\\/\\/)?platform\\.twitter\\.com(?:[\\s'\"/;]|$)",
+        r"(?i)^(?:https?://)?cdn\.cloudflare\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?ajax\.googleapis\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?cdnjs\.cloudflare\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?cdn\.jsdelivr\.net(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?unpkg\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?rawgit\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?raw\.githubusercontent\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?stackpath\.bootstrapcdn\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?code\.jquery\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?yandex\.st(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?api\.twitter\.com(?:/[^\s]*)?$",
+        r"(?i)^(?:https?://)?platform\.twitter\.com(?:/[^\s]*)?$",
     ]
     .iter()
     .map(|p| Regex::new(p).unwrap())

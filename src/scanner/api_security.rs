@@ -264,12 +264,15 @@ impl Scanner for ApiSecurityScanner {
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors   = Vec::new();
+        let base = url.trim_end_matches('/');
+        let spa_fingerprint = detect_spa_catchall(base, client).await;
+        let spa_catchall = spa_fingerprint.is_some();
 
         // Run all checks; failures are captured rather than propagated.
         check_secrets_in_response(url, client, &mut findings, &mut errors).await;
         check_error_disclosure(url, client, &mut findings, &mut errors).await;
-        check_http_methods(url, client, &mut findings, &mut errors).await;
-        check_debug_endpoints(url, client, &mut findings, &mut errors).await;
+        check_http_methods(url, client, &mut findings, &mut errors, spa_catchall).await;
+        check_debug_endpoints(url, client, &mut findings, &mut errors, spa_fingerprint).await;
         check_directory_listing(url, client, &mut findings, &mut errors).await;
         check_security_txt(url, client, &mut findings).await;
         check_response_headers(url, client, &mut findings, &mut errors).await;
@@ -413,10 +416,8 @@ async fn check_http_methods(
     client:   &HttpClient,
     findings: &mut Vec<Finding>,
     errors:   &mut Vec<CapturedError>,
+    spa_catchall: bool,
 ) {
-    let base = url.trim_end_matches('/');
-    let spa_catchall = detect_spa_catchall(base, client).await.is_some();
-
     if spa_catchall {
         debug!(url = %url, "SPA catch-all detected; skipping method probing");
     }
@@ -515,12 +516,9 @@ async fn check_debug_endpoints(
     client:   &HttpClient,
     findings: &mut Vec<Finding>,
     errors:   &mut Vec<CapturedError>,
+    spa_fingerprint: Option<(usize, u64)>,
 ) {
     let base = url.trim_end_matches('/');
-
-    // ── SPA catch-all pre-check ──────────────────────────────────────────────
-    // Hit a canary path to detect sites that serve 200 + HTML for every route.
-    let spa_fingerprint = detect_spa_catchall(base, client).await;
 
     let critical_keywords = ["env", "config", "secret", "password", "credential", "key"];
     let high_keywords     = ["actuator", "pprof", "phpinfo", "profiler", "clockwork"];
