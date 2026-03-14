@@ -101,7 +101,10 @@ fn output_and_format_flags() {
         "ndjson",
     ])
     .unwrap();
-    assert_eq!(cli.output, Some(std::path::PathBuf::from("/tmp/out.ndjson")));
+    assert_eq!(
+        cli.output,
+        Some(std::path::PathBuf::from("/tmp/out.ndjson"))
+    );
     assert!(matches!(cli.format, CliFormat::Ndjson));
 }
 
@@ -131,10 +134,7 @@ fn headers_and_cookies_flags() {
     ])
     .unwrap();
 
-    assert_eq!(
-        cli.headers,
-        vec!["Authorization: Bearer abc", "X-Test: 1"]
-    );
+    assert_eq!(cli.headers, vec!["Authorization: Bearer abc", "X-Test: 1"]);
     assert_eq!(cli.cookies, vec!["session=abc", "theme=dark"]);
 }
 
@@ -178,8 +178,7 @@ fn load_urls_from_file_filters_blanks_and_comments() {
 
 #[test]
 fn load_urls_missing_file_returns_error() {
-    let cli = Cli::try_parse_from(["scanner", "--urls", "/nonexistent/path/to/urls.txt"])
-        .unwrap();
+    let cli = Cli::try_parse_from(["scanner", "--urls", "/nonexistent/path/to/urls.txt"]).unwrap();
     assert!(load_urls(&cli).is_err());
 }
 
@@ -208,18 +207,33 @@ fn load_urls_only_comments_and_blanks_returns_empty() {
 
 #[test]
 fn cli_severity_into_severity() {
-    assert!(matches!(Severity::from(CliSeverity::Critical), Severity::Critical));
+    assert!(matches!(
+        Severity::from(CliSeverity::Critical),
+        Severity::Critical
+    ));
     assert!(matches!(Severity::from(CliSeverity::High), Severity::High));
-    assert!(matches!(Severity::from(CliSeverity::Medium), Severity::Medium));
+    assert!(matches!(
+        Severity::from(CliSeverity::Medium),
+        Severity::Medium
+    ));
     assert!(matches!(Severity::from(CliSeverity::Low), Severity::Low));
     assert!(matches!(Severity::from(CliSeverity::Info), Severity::Info));
 }
 
 #[test]
 fn cli_format_into_report_format() {
-    assert!(matches!(ReportFormat::from(CliFormat::Pretty), ReportFormat::Pretty));
-    assert!(matches!(ReportFormat::from(CliFormat::Ndjson), ReportFormat::Ndjson));
-    assert!(matches!(ReportFormat::from(CliFormat::Sarif), ReportFormat::Sarif));
+    assert!(matches!(
+        ReportFormat::from(CliFormat::Pretty),
+        ReportFormat::Pretty
+    ));
+    assert!(matches!(
+        ReportFormat::from(CliFormat::Ndjson),
+        ReportFormat::Ndjson
+    ));
+    assert!(matches!(
+        ReportFormat::from(CliFormat::Sarif),
+        ReportFormat::Sarif
+    ));
 }
 
 // ── Default user-agents ──────────────────────────────────────────────────────
@@ -249,14 +263,22 @@ fn default_user_agents_are_distinct() {
 fn max_endpoints_zero_maps_to_usize_max() {
     // Mirrors the logic in run() without needing a full async context.
     let max_endpoints = 0usize;
-    let resolved = if max_endpoints == 0 { usize::MAX } else { max_endpoints };
+    let resolved = if max_endpoints == 0 {
+        usize::MAX
+    } else {
+        max_endpoints
+    };
     assert_eq!(resolved, usize::MAX);
 }
 
 #[test]
 fn max_endpoints_nonzero_preserved() {
     let max_endpoints = 500usize;
-    let resolved = if max_endpoints == 0 { usize::MAX } else { max_endpoints };
+    let resolved = if max_endpoints == 0 {
+        usize::MAX
+    } else {
+        max_endpoints
+    };
     assert_eq!(resolved, 500);
 }
 
@@ -281,7 +303,7 @@ fn waf_disabled_when_neither_flag_nor_agents() {
 fn print_summary_true_when_not_quiet() {
     // print_summary = cli.summary || !cli.quiet
     assert!(false || !false); // summary=false, quiet=false  → true
-    assert!(true  || !true);  // summary=true,  quiet=true   → true
+    assert!(true || !true); // summary=true,  quiet=true   → true
     assert!(!(false || !true)); // summary=false, quiet=true → false
 }
 

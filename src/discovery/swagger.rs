@@ -62,13 +62,17 @@ static SPEC_PATHS: &[&str] = &[
     "/api/v2/swagger.json",
     "/v1/swagger.json",
     "/v2/swagger.json",
-    "/v3/api-docs",           // Spring Boot default
+    "/v3/api-docs", // Spring Boot default
     "/v3/api-docs.yaml",
 ];
 
 impl<'a> SwaggerDiscovery<'a> {
     pub fn new(client: &'a HttpClient, base_url: &'a str, host: &'a str) -> Self {
-        Self { client, base_url, host }
+        Self {
+            client,
+            base_url,
+            host,
+        }
     }
 
     pub async fn run(&self) -> (HashSet<String>, Vec<CapturedError>) {
@@ -100,12 +104,7 @@ impl<'a> SwaggerDiscovery<'a> {
 
     // ── Parse dispatch ────────────────────────────────────────────────────────
 
-    fn parse_spec(
-        &self,
-        body: &str,
-        paths: &mut HashSet<String>,
-        errors: &mut Vec<CapturedError>,
-    ) {
+    fn parse_spec(&self, body: &str, paths: &mut HashSet<String>, errors: &mut Vec<CapturedError>) {
         // Try JSON first (most common), then YAML
         if body.trim_start().starts_with('{') || body.trim_start().starts_with('[') {
             self.parse_json(body, paths, errors);
@@ -116,12 +115,7 @@ impl<'a> SwaggerDiscovery<'a> {
 
     // ── JSON parsing ──────────────────────────────────────────────────────────
 
-    fn parse_json(
-        &self,
-        body: &str,
-        paths: &mut HashSet<String>,
-        errors: &mut Vec<CapturedError>,
-    ) {
+    fn parse_json(&self, body: &str, paths: &mut HashSet<String>, errors: &mut Vec<CapturedError>) {
         // Detect spec version from raw JSON before full deserialisation
         let version_hint = body.contains("\"openapi\"");
 
@@ -148,12 +142,7 @@ impl<'a> SwaggerDiscovery<'a> {
 
     // ── YAML parsing ──────────────────────────────────────────────────────────
 
-    fn parse_yaml(
-        &self,
-        body: &str,
-        paths: &mut HashSet<String>,
-        errors: &mut Vec<CapturedError>,
-    ) {
+    fn parse_yaml(&self, body: &str, paths: &mut HashSet<String>, errors: &mut Vec<CapturedError>) {
         // Try OpenAPI v3 YAML
         if body.contains("openapi:") {
             match serde_yaml::from_str::<OpenApiV3>(body) {
@@ -193,11 +182,7 @@ impl<'a> SwaggerDiscovery<'a> {
                 let url = s.url;
                 // Relative server URL (e.g. "/api/v1") — prefix with base
                 if url.starts_with('/') {
-                    return Some(format!(
-                        "{}{}",
-                        self.base_url.trim_end_matches('/'),
-                        url
-                    ));
+                    return Some(format!("{}{}", self.base_url.trim_end_matches('/'), url));
                 }
                 // Absolute URL — only keep same-host
                 Url::parse(&url)
@@ -216,7 +201,11 @@ impl<'a> SwaggerDiscovery<'a> {
                 }
             } else {
                 for base in &server_bases {
-                    let full = format!("{}/{}", base.trim_end_matches('/'), raw_path.trim_start_matches('/'));
+                    let full = format!(
+                        "{}/{}",
+                        base.trim_end_matches('/'),
+                        raw_path.trim_start_matches('/')
+                    );
                     if let Some(p) = normalize_path(&full, self.host) {
                         paths.insert(p);
                     }
@@ -255,7 +244,11 @@ impl<'a> SwaggerDiscovery<'a> {
 
         for raw_path in spec.paths.unwrap_or_default().into_keys() {
             let candidate = if let Some(ref base) = server_base {
-                format!("{}/{}", base.trim_end_matches('/'), raw_path.trim_start_matches('/'))
+                format!(
+                    "{}/{}",
+                    base.trim_end_matches('/'),
+                    raw_path.trim_start_matches('/')
+                )
             } else {
                 // Prepend basePath only if it's a relative path
                 let bp = spec

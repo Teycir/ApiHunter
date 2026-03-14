@@ -52,7 +52,11 @@ mod idor_tests {
         let result = find_numeric_segment(url);
         // Path segments: ["api", "v1", "orders", "99", "items", "5"]
         // Index 5 is the rightmost numeric segment ("5")
-        assert_eq!(result, Some((5, 5)), "Should find rightmost numeric segment at index 5");
+        assert_eq!(
+            result,
+            Some((5, 5)),
+            "Should find rightmost numeric segment at index 5"
+        );
     }
 
     #[test]
@@ -75,7 +79,10 @@ mod idor_tests {
         let url = "https://api.example.com/events/17040672000000";
         let result = find_numeric_segment(url);
         // > 10 billion should be ignored (likely microsecond timestamp)
-        assert_eq!(result, None, "Should ignore very large numbers (timestamps)");
+        assert_eq!(
+            result, None,
+            "Should ignore very large numbers (timestamps)"
+        );
     }
 
     #[test]
@@ -138,7 +145,10 @@ mod idor_tests {
         let fp1 = body_fingerprint(body1);
         let fp2 = body_fingerprint(body2);
 
-        assert_ne!(fp1, fp2, "Different content should produce different fingerprint");
+        assert_ne!(
+            fp1, fp2,
+            "Different content should produce different fingerprint"
+        );
     }
 
     #[test]
@@ -166,7 +176,10 @@ mod idor_tests {
         let fp2 = body_fingerprint(&body2);
 
         // Different sizes means different fingerprint(size is part of tuple)
-        assert_ne!(fp1, fp2, "Different body lengths should differ in fingerprint");
+        assert_ne!(
+            fp1, fp2,
+            "Different body lengths should differ in fingerprint"
+        );
     }
 
     #[test]
@@ -174,7 +187,7 @@ mod idor_tests {
         // Simulate tier 2 logic: multiple adjacent IDs all return same content
         let base_id = 42u64;
         let _range_ids: Vec<u64> = (base_id.saturating_sub(2)..=base_id + 2).collect();
-        
+
         // All IDs return same fingerprint => enumerable
         let fp = (100, 12345u64);
         let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
@@ -192,7 +205,10 @@ mod idor_tests {
             })
             .collect();
 
-        assert!(other_successes.len() >= 2, "Should detect 2+ adjacent IDs with 200");
+        assert!(
+            other_successes.len() >= 2,
+            "Should detect 2+ adjacent IDs with 200"
+        );
     }
 
     // Tier 2 fires on adjacent IDs returning 200, regardless of body similarity.
@@ -200,7 +216,7 @@ mod idor_tests {
     fn test_id_range_adjacent_ids_counted_regardless_of_content() {
         let base_id = 42u64;
         let base_fp = (100, 12345u64);
-        
+
         // Different content for each ID => not enumerable
         let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
             (40, 200, Some((100, 11111u64))),
@@ -212,9 +228,7 @@ mod idor_tests {
 
         let other_successes: Vec<_> = results
             .iter()
-            .filter(|(id, status, fp)| {
-                *id != base_id && *status < 400 && fp.is_some()
-            })
+            .filter(|(id, status, fp)| *id != base_id && *status < 400 && fp.is_some())
             .collect();
 
         // Even though multiple IDs return 200, they're all different
@@ -225,7 +239,7 @@ mod idor_tests {
     fn test_tier2_403_responses_not_counted() {
         let base_id = 42u64;
         let success_fp = Some((100, 12345u64));
-        
+
         // Only base ID returns 200; others return 403 (correct auth enforcement)
         let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
             (40, 403, None),
@@ -237,9 +251,7 @@ mod idor_tests {
 
         let other_successes: Vec<_> = results
             .iter()
-            .filter(|(id, status, fp)| {
-                *id != base_id && *status < 400 && fp.is_some()
-            })
+            .filter(|(id, status, fp)| *id != base_id && *status < 400 && fp.is_some())
             .collect();
 
         assert_eq!(other_successes.len(), 0, "Should not count 403 responses");

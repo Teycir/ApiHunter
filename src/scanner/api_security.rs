@@ -13,15 +13,17 @@
 //     patterns (e.g. actuator returns JSON, .env contains KEY=VAL).
 
 use async_trait::async_trait;
-use once_cell::sync::Lazy;
 use dashmap::DashSet;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{collections::HashMap, sync::Arc};
 use tracing::debug;
 use url::Url;
 
 use crate::{
-    config::Config, error::CapturedError, http_client::HttpClient,
+    config::Config,
+    error::CapturedError,
+    http_client::HttpClient,
     reports::{Finding, Severity},
 };
 
@@ -43,69 +45,156 @@ impl ApiSecurityScanner {
 
 // ── Secret / credential patterns ──────────────────────────────────────────────
 
-static RE_AWS_ACCESS:  Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
-static RE_AWS_SECRET:  Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap());
-static RE_API_KEY:     Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,64}['"]?"#).unwrap());
+static RE_AWS_ACCESS: Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
+static RE_AWS_SECRET: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap());
+static RE_API_KEY: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,64}['"]?"#).unwrap()
+});
 
-static RE_BEARER:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").unwrap());
-static RE_GENERIC_SEC: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"][^'"]{8,}['"]"#).unwrap());
-static RE_PRIVATE_KEY: Lazy<Regex> = Lazy::new(|| Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap());
-static RE_GITHUB:      Lazy<Regex> = Lazy::new(|| Regex::new(r"ghp_[0-9a-zA-Z]{36}").unwrap());
-static RE_SLACK:       Lazy<Regex> = Lazy::new(|| Regex::new(r"xox[baprs]-[0-9a-zA-Z\-]{10,}").unwrap());
-static RE_STRIPE:      Lazy<Regex> = Lazy::new(|| Regex::new(r"sk_live_[0-9a-zA-Z]{24,}").unwrap());
-static RE_SENDGRID:    Lazy<Regex> = Lazy::new(|| Regex::new(r"SG\.[A-Za-z0-9\-_\.]{20,}").unwrap());
-static RE_GOOGLE:      Lazy<Regex> = Lazy::new(|| Regex::new(r"AIza[0-9A-Za-z\-_]{35}").unwrap());
-static RE_DB_URL:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(mysql|postgres|mongodb|redis|amqp)://[^@\s]+:[^@\s]+@[^\s]+").unwrap());
+static RE_BEARER: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").unwrap());
+static RE_GENERIC_SEC: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"][^'"]{8,}['"]"#).unwrap());
+static RE_PRIVATE_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap());
+static RE_GITHUB: Lazy<Regex> = Lazy::new(|| Regex::new(r"ghp_[0-9a-zA-Z]{36}").unwrap());
+static RE_SLACK: Lazy<Regex> = Lazy::new(|| Regex::new(r"xox[baprs]-[0-9a-zA-Z\-]{10,}").unwrap());
+static RE_STRIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"sk_live_[0-9a-zA-Z]{24,}").unwrap());
+static RE_SENDGRID: Lazy<Regex> = Lazy::new(|| Regex::new(r"SG\.[A-Za-z0-9\-_\.]{20,}").unwrap());
+static RE_GOOGLE: Lazy<Regex> = Lazy::new(|| Regex::new(r"AIza[0-9A-Za-z\-_]{35}").unwrap());
+static RE_DB_URL: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(mysql|postgres|mongodb|redis|amqp)://[^@\s]+:[^@\s]+@[^\s]+").unwrap()
+});
 
 struct SecretCheck {
     name: &'static str,
-    re:   &'static Lazy<Regex>,
+    re: &'static Lazy<Regex>,
 }
 
 static SECRET_CHECKS: &[SecretCheck] = &[
-    SecretCheck { name: "AWS Access Key",     re: &RE_AWS_ACCESS },
-    SecretCheck { name: "AWS Secret Key",     re: &RE_AWS_SECRET },
-    SecretCheck { name: "Generic API Key",    re: &RE_API_KEY },
-    SecretCheck { name: "Bearer Token",       re: &RE_BEARER },
-    SecretCheck { name: "Generic Secret",     re: &RE_GENERIC_SEC },
-    SecretCheck { name: "Private Key Header", re: &RE_PRIVATE_KEY },
-    SecretCheck { name: "GitHub Token",       re: &RE_GITHUB },
-    SecretCheck { name: "Slack Token",        re: &RE_SLACK },
-    SecretCheck { name: "Stripe Secret Key",  re: &RE_STRIPE },
-    SecretCheck { name: "Sendgrid API Key",   re: &RE_SENDGRID },
-    SecretCheck { name: "Google API Key",     re: &RE_GOOGLE },
-    SecretCheck { name: "Database URL",       re: &RE_DB_URL },
+    SecretCheck {
+        name: "AWS Access Key",
+        re: &RE_AWS_ACCESS,
+    },
+    SecretCheck {
+        name: "AWS Secret Key",
+        re: &RE_AWS_SECRET,
+    },
+    SecretCheck {
+        name: "Generic API Key",
+        re: &RE_API_KEY,
+    },
+    SecretCheck {
+        name: "Bearer Token",
+        re: &RE_BEARER,
+    },
+    SecretCheck {
+        name: "Generic Secret",
+        re: &RE_GENERIC_SEC,
+    },
+    SecretCheck {
+        name: "Private Key Header",
+        re: &RE_PRIVATE_KEY,
+    },
+    SecretCheck {
+        name: "GitHub Token",
+        re: &RE_GITHUB,
+    },
+    SecretCheck {
+        name: "Slack Token",
+        re: &RE_SLACK,
+    },
+    SecretCheck {
+        name: "Stripe Secret Key",
+        re: &RE_STRIPE,
+    },
+    SecretCheck {
+        name: "Sendgrid API Key",
+        re: &RE_SENDGRID,
+    },
+    SecretCheck {
+        name: "Google API Key",
+        re: &RE_GOOGLE,
+    },
+    SecretCheck {
+        name: "Database URL",
+        re: &RE_DB_URL,
+    },
 ];
 
 // ── Error-disclosure patterns ─────────────────────────────────────────────────
 
-static RE_ERR_JAVA:     Lazy<Regex> = Lazy::new(|| Regex::new(r"at [A-Za-z0-9\.$_]+\(.*\.java:\d+\)").unwrap());
-static RE_ERR_PYTHON:   Lazy<Regex> = Lazy::new(|| Regex::new(r"Traceback \(most recent call last\)").unwrap());
-static RE_ERR_RUBY:     Lazy<Regex> = Lazy::new(|| Regex::new(r"\.rb:\d+:in `").unwrap());
-static RE_ERR_SQL:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(SQL syntax.*MySQL|mysql_fetch_|ORA-\d{4,5}|pg_query\(\)|SQLite3::Exception|Unclosed quotation mark)").unwrap());
-static RE_ERR_PHP:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(Parse error|Fatal error|Warning:|Notice:)\s+.+in\s+/.+\.php on line").unwrap());
-static RE_ERR_ASP:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)Server Error in '.*' Application\.").unwrap());
-static RE_ERR_DJANGO:   Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)django\.core\.exceptions|<title>Django.*Error</title>").unwrap());
-static RE_ERR_WERKZEUG: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)Werkzeug Debugger|The Werkzeug interactive debugger").unwrap());
-static RE_ERR_LARAVEL:  Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)laravel\.log|Whoops[,!].*Laravel").unwrap());
-static RE_ERR_PATH:     Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(/home/[a-z_][a-z0-9_]*/|/var/www/|/usr/local/|C:\\Users\\|C:\\inetpub\\)").unwrap());
+static RE_ERR_JAVA: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"at [A-Za-z0-9\.$_]+\(.*\.java:\d+\)").unwrap());
+static RE_ERR_PYTHON: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"Traceback \(most recent call last\)").unwrap());
+static RE_ERR_RUBY: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.rb:\d+:in `").unwrap());
+static RE_ERR_SQL: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(SQL syntax.*MySQL|mysql_fetch_|ORA-\d{4,5}|pg_query\(\)|SQLite3::Exception|Unclosed quotation mark)").unwrap()
+});
+static RE_ERR_PHP: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(Parse error|Fatal error|Warning:|Notice:)\s+.+in\s+/.+\.php on line").unwrap()
+});
+static RE_ERR_ASP: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)Server Error in '.*' Application\.").unwrap());
+static RE_ERR_DJANGO: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)django\.core\.exceptions|<title>Django.*Error</title>").unwrap());
+static RE_ERR_WERKZEUG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)Werkzeug Debugger|The Werkzeug interactive debugger").unwrap());
+static RE_ERR_LARAVEL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)laravel\.log|Whoops[,!].*Laravel").unwrap());
+static RE_ERR_PATH: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(/home/[a-z_][a-z0-9_]*/|/var/www/|/usr/local/|C:\\Users\\|C:\\inetpub\\)")
+        .unwrap()
+});
 
 struct ErrorCheck {
     name: &'static str,
-    re:   &'static Lazy<Regex>,
+    re: &'static Lazy<Regex>,
 }
 
 static ERROR_CHECKS: &[ErrorCheck] = &[
-    ErrorCheck { name: "Stack trace (Java)",       re: &RE_ERR_JAVA },
-    ErrorCheck { name: "Stack trace (Python)",     re: &RE_ERR_PYTHON },
-    ErrorCheck { name: "Stack trace (Ruby)",       re: &RE_ERR_RUBY },
-    ErrorCheck { name: "SQL error",                re: &RE_ERR_SQL },
-    ErrorCheck { name: "PHP error",                re: &RE_ERR_PHP },
-    ErrorCheck { name: "ASP.NET error page",       re: &RE_ERR_ASP },
-    ErrorCheck { name: "Django debug page",        re: &RE_ERR_DJANGO },
-    ErrorCheck { name: "Werkzeug debugger",        re: &RE_ERR_WERKZEUG },
-    ErrorCheck { name: "Laravel debug",            re: &RE_ERR_LARAVEL },
-    ErrorCheck { name: "Internal path disclosure", re: &RE_ERR_PATH },
+    ErrorCheck {
+        name: "Stack trace (Java)",
+        re: &RE_ERR_JAVA,
+    },
+    ErrorCheck {
+        name: "Stack trace (Python)",
+        re: &RE_ERR_PYTHON,
+    },
+    ErrorCheck {
+        name: "Stack trace (Ruby)",
+        re: &RE_ERR_RUBY,
+    },
+    ErrorCheck {
+        name: "SQL error",
+        re: &RE_ERR_SQL,
+    },
+    ErrorCheck {
+        name: "PHP error",
+        re: &RE_ERR_PHP,
+    },
+    ErrorCheck {
+        name: "ASP.NET error page",
+        re: &RE_ERR_ASP,
+    },
+    ErrorCheck {
+        name: "Django debug page",
+        re: &RE_ERR_DJANGO,
+    },
+    ErrorCheck {
+        name: "Werkzeug debugger",
+        re: &RE_ERR_WERKZEUG,
+    },
+    ErrorCheck {
+        name: "Laravel debug",
+        re: &RE_ERR_LARAVEL,
+    },
+    ErrorCheck {
+        name: "Internal path disclosure",
+        re: &RE_ERR_PATH,
+    },
 ];
 
 // ── Dangerous HTTP methods ────────────────────────────────────────────────────
@@ -146,7 +235,8 @@ fn is_json_body(body: &str) -> bool {
 
 /// Returns `true` when the body looks like YAML config (has key: value lines).
 fn is_yaml_body(body: &str) -> bool {
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^[a-zA-Z][a-zA-Z0-9_.-]*:\s*.+").unwrap());
+    static RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?m)^[a-zA-Z][a-zA-Z0-9_.-]*:\s*.+").unwrap());
     let matches = RE.find_iter(body).count();
     matches >= 2
 }
@@ -159,13 +249,13 @@ fn is_properties_body(body: &str) -> bool {
 
 /// Returns `true` for phpinfo() output.
 fn is_phpinfo(body: &str) -> bool {
-    body.contains("phpinfo()") || body.contains("PHP Version")
-        && body.contains("Configure Command")
+    body.contains("phpinfo()") || body.contains("PHP Version") && body.contains("Configure Command")
 }
 
 /// Returns `true` when the body contains server-status style output.
 fn is_server_status(body: &str) -> bool {
-    body.contains("Apache Server Status") || body.contains("Server Version:")
+    body.contains("Apache Server Status")
+        || body.contains("Server Version:")
         || body.contains("Current Time:")
 }
 
@@ -188,16 +278,17 @@ fn is_actuator(body: &str) -> bool {
 
 /// Returns `true` for prometheus-style metrics output.
 fn is_metrics(body: &str) -> bool {
-    static RE: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"(?m)^(# (HELP|TYPE) |[a-z_]+\{|[a-z_]+ [0-9])").unwrap()
-    });
+    static RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?m)^(# (HELP|TYPE) |[a-z_]+\{|[a-z_]+ [0-9])").unwrap());
     RE.find_iter(body).count() >= 3
 }
 
 /// Returns `true` for debug/pprof style output.
 fn is_debug_output(body: &str) -> bool {
-    body.contains("goroutine") || body.contains("heap profile")
-        || body.contains("contention") || is_json_body(body)
+    body.contains("goroutine")
+        || body.contains("heap profile")
+        || body.contains("contention")
+        || is_json_body(body)
 }
 
 /// Returns `true` for XML config (web.config etc.).
@@ -218,46 +309,190 @@ fn any_non_html(body: &str) -> bool {
 }
 
 static DEBUG_ENDPOINTS: &[DebugEndpoint] = &[
-    DebugEndpoint { path: "/debug",               expected_ct: &[],                  body_validators: &[is_debug_output] },
-    DebugEndpoint { path: "/debug/vars",           expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/debug/pprof",          expected_ct: &[],                  body_validators: &[is_debug_output] },
-    DebugEndpoint { path: "/.env",                 expected_ct: &["text/plain", "application/octet-stream"], body_validators: &[is_dotenv] },
-    DebugEndpoint { path: "/.env.local",           expected_ct: &["text/plain", "application/octet-stream"], body_validators: &[is_dotenv] },
-    DebugEndpoint { path: "/.env.production",      expected_ct: &["text/plain", "application/octet-stream"], body_validators: &[is_dotenv] },
-    DebugEndpoint { path: "/config.json",          expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/config.yaml",          expected_ct: &["text/yaml", "application/yaml", "text/plain", "application/x-yaml"], body_validators: &[is_yaml_body] },
-    DebugEndpoint { path: "/config.yml",           expected_ct: &["text/yaml", "application/yaml", "text/plain", "application/x-yaml"], body_validators: &[is_yaml_body] },
-    DebugEndpoint { path: "/settings.json",        expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/application.properties",expected_ct: &["text/plain"],     body_validators: &[is_properties_body] },
-    DebugEndpoint { path: "/application.yml",      expected_ct: &["text/yaml", "application/yaml", "text/plain", "application/x-yaml"], body_validators: &[is_yaml_body] },
-    DebugEndpoint { path: "/web.config",           expected_ct: &["text/xml", "application/xml"], body_validators: &[is_xml_config] },
-    DebugEndpoint { path: "/phpinfo.php",          expected_ct: &[],                  body_validators: &[is_phpinfo] },
-    DebugEndpoint { path: "/info.php",             expected_ct: &[],                  body_validators: &[is_phpinfo] },
-    DebugEndpoint { path: "/server-status",        expected_ct: &[],                  body_validators: &[is_server_status] },
-    DebugEndpoint { path: "/server-info",          expected_ct: &[],                  body_validators: &[is_server_status] },
-    DebugEndpoint { path: "/_profiler",            expected_ct: &[],                  body_validators: &[any_non_html] },
-    DebugEndpoint { path: "/__clockwork",          expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/actuator",             expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator] },
-    DebugEndpoint { path: "/actuator/env",         expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator] },
-    DebugEndpoint { path: "/actuator/health",      expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator, is_json_body] },
-    DebugEndpoint { path: "/actuator/mappings",    expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator] },
-    DebugEndpoint { path: "/actuator/beans",       expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator] },
-    DebugEndpoint { path: "/actuator/httptrace",   expected_ct: &["application/json", "application/vnd.spring-boot.actuator"], body_validators: &[is_actuator] },
-    DebugEndpoint { path: "/metrics",              expected_ct: &["text/plain", "application/json", "application/openmetrics-text"], body_validators: &[is_metrics, is_json_body] },
-    DebugEndpoint { path: "/health",               expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/healthz",              expected_ct: &["application/json", "text/plain"], body_validators: &[is_json_body, any_non_html] },
-    DebugEndpoint { path: "/readyz",               expected_ct: &["application/json", "text/plain"], body_validators: &[is_json_body, any_non_html] },
-    DebugEndpoint { path: "/status",               expected_ct: &["application/json"],body_validators: &[is_json_body] },
-    DebugEndpoint { path: "/admin",                expected_ct: &[],                  body_validators: &[any_non_html] },
-    DebugEndpoint { path: "/admin/config",         expected_ct: &["application/json"],body_validators: &[is_json_body] },
+    DebugEndpoint {
+        path: "/debug",
+        expected_ct: &[],
+        body_validators: &[is_debug_output],
+    },
+    DebugEndpoint {
+        path: "/debug/vars",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/debug/pprof",
+        expected_ct: &[],
+        body_validators: &[is_debug_output],
+    },
+    DebugEndpoint {
+        path: "/.env",
+        expected_ct: &["text/plain", "application/octet-stream"],
+        body_validators: &[is_dotenv],
+    },
+    DebugEndpoint {
+        path: "/.env.local",
+        expected_ct: &["text/plain", "application/octet-stream"],
+        body_validators: &[is_dotenv],
+    },
+    DebugEndpoint {
+        path: "/.env.production",
+        expected_ct: &["text/plain", "application/octet-stream"],
+        body_validators: &[is_dotenv],
+    },
+    DebugEndpoint {
+        path: "/config.json",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/config.yaml",
+        expected_ct: &[
+            "text/yaml",
+            "application/yaml",
+            "text/plain",
+            "application/x-yaml",
+        ],
+        body_validators: &[is_yaml_body],
+    },
+    DebugEndpoint {
+        path: "/config.yml",
+        expected_ct: &[
+            "text/yaml",
+            "application/yaml",
+            "text/plain",
+            "application/x-yaml",
+        ],
+        body_validators: &[is_yaml_body],
+    },
+    DebugEndpoint {
+        path: "/settings.json",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/application.properties",
+        expected_ct: &["text/plain"],
+        body_validators: &[is_properties_body],
+    },
+    DebugEndpoint {
+        path: "/application.yml",
+        expected_ct: &[
+            "text/yaml",
+            "application/yaml",
+            "text/plain",
+            "application/x-yaml",
+        ],
+        body_validators: &[is_yaml_body],
+    },
+    DebugEndpoint {
+        path: "/web.config",
+        expected_ct: &["text/xml", "application/xml"],
+        body_validators: &[is_xml_config],
+    },
+    DebugEndpoint {
+        path: "/phpinfo.php",
+        expected_ct: &[],
+        body_validators: &[is_phpinfo],
+    },
+    DebugEndpoint {
+        path: "/info.php",
+        expected_ct: &[],
+        body_validators: &[is_phpinfo],
+    },
+    DebugEndpoint {
+        path: "/server-status",
+        expected_ct: &[],
+        body_validators: &[is_server_status],
+    },
+    DebugEndpoint {
+        path: "/server-info",
+        expected_ct: &[],
+        body_validators: &[is_server_status],
+    },
+    DebugEndpoint {
+        path: "/_profiler",
+        expected_ct: &[],
+        body_validators: &[any_non_html],
+    },
+    DebugEndpoint {
+        path: "/__clockwork",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/actuator",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator],
+    },
+    DebugEndpoint {
+        path: "/actuator/env",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator],
+    },
+    DebugEndpoint {
+        path: "/actuator/health",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator, is_json_body],
+    },
+    DebugEndpoint {
+        path: "/actuator/mappings",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator],
+    },
+    DebugEndpoint {
+        path: "/actuator/beans",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator],
+    },
+    DebugEndpoint {
+        path: "/actuator/httptrace",
+        expected_ct: &["application/json", "application/vnd.spring-boot.actuator"],
+        body_validators: &[is_actuator],
+    },
+    DebugEndpoint {
+        path: "/metrics",
+        expected_ct: &[
+            "text/plain",
+            "application/json",
+            "application/openmetrics-text",
+        ],
+        body_validators: &[is_metrics, is_json_body],
+    },
+    DebugEndpoint {
+        path: "/health",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/healthz",
+        expected_ct: &["application/json", "text/plain"],
+        body_validators: &[is_json_body, any_non_html],
+    },
+    DebugEndpoint {
+        path: "/readyz",
+        expected_ct: &["application/json", "text/plain"],
+        body_validators: &[is_json_body, any_non_html],
+    },
+    DebugEndpoint {
+        path: "/status",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
+    DebugEndpoint {
+        path: "/admin",
+        expected_ct: &[],
+        body_validators: &[any_non_html],
+    },
+    DebugEndpoint {
+        path: "/admin/config",
+        expected_ct: &["application/json"],
+        body_validators: &[is_json_body],
+    },
 ];
 
 // ── SECURITY.TXT paths ────────────────────────────────────────────────────────
 
-static SECURITY_TXT_PATHS: &[&str] = &[
-    "/.well-known/security.txt",
-    "/security.txt",
-];
+static SECURITY_TXT_PATHS: &[&str] = &["/.well-known/security.txt", "/security.txt"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -270,7 +505,7 @@ impl Scanner for ApiSecurityScanner {
         config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
-        let mut errors   = Vec::new();
+        let mut errors = Vec::new();
         let base = url.trim_end_matches('/');
         let spa_fingerprint = detect_spa_catchall(base, client).await;
         let spa_catchall = spa_fingerprint.is_some();
@@ -294,14 +529,7 @@ impl Scanner for ApiSecurityScanner {
             )
             .await;
             check_mass_assignment(url, client, &mut findings, &mut errors).await;
-            check_rate_limit(
-                url,
-                client,
-                &self.checked_hosts,
-                &mut findings,
-                &mut errors,
-            )
-            .await;
+            check_rate_limit(url, client, &self.checked_hosts, &mut findings, &mut errors).await;
         }
 
         (findings, errors)
@@ -339,18 +567,22 @@ fn body_fingerprint(body: &str) -> (usize, u64) {
 /// Detect SPA catch-all: send a request to a random path that should not exist.
 /// If the server returns 200 with HTML (by Content-Type or body inspection),
 /// it's very likely a SPA with catch-all routing.
-async fn detect_spa_catchall(
-    base: &str,
-    client: &HttpClient,
-) -> Option<(usize, u64)> {
+async fn detect_spa_catchall(base: &str, client: &HttpClient) -> Option<(usize, u64)> {
     let canary = format!("{base}/__canary_404_check_xz9q7");
     match client.get(&canary).await {
         Ok(resp) if resp.status == 200 => {
-            let ct = resp.headers.get("content-type").map(|s| s.as_str()).unwrap_or("");
+            let ct = resp
+                .headers
+                .get("content-type")
+                .map(|s| s.as_str())
+                .unwrap_or("");
             // Detect SPA: either HTML Content-Type OR body actually contains HTML
             let body_is_html = !any_non_html(&resp.body);
             if is_html_content_type(ct) || body_is_html {
-                debug!(url = base, "SPA catch-all detected (canary returned 200+HTML)");
+                debug!(
+                    url = base,
+                    "SPA catch-all detected (canary returned 200+HTML)"
+                );
                 Some(body_fingerprint(&resp.body))
             } else {
                 None
@@ -363,14 +595,17 @@ async fn detect_spa_catchall(
 // ── 1. Secrets in response body ───────────────────────────────────────────────
 
 async fn check_secrets_in_response(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
 ) {
     let resp = match client.get(url).await {
-        Ok(r)  => r,
-        Err(e) => { errors.push(e); return; }
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
     };
 
     for chk in SECRET_CHECKS {
@@ -378,21 +613,23 @@ async fn check_secrets_in_response(
             let matched = m.as_str();
             let redacted = redact(matched);
 
-            findings.push(Finding::new(
-                url,
-                format!("api_security/secret-in-response/{}", slug(chk.name)),
-                format!("Possible {} in response", chk.name),
-                Severity::Critical,
-                format!("Possible {} found in HTTP response body.", chk.name),
-                "api_security",
-            )
-            .with_evidence(format!(
-                "Pattern: {}\nMatch (redacted): {redacted}\nURL: {url}",
-                chk.name
-            ))
-            .with_remediation(
-                "Remove secrets from responses and rotate exposed credentials immediately.",
-            ));
+            findings.push(
+                Finding::new(
+                    url,
+                    format!("api_security/secret-in-response/{}", slug(chk.name)),
+                    format!("Possible {} in response", chk.name),
+                    Severity::Critical,
+                    format!("Possible {} found in HTTP response body.", chk.name),
+                    "api_security",
+                )
+                .with_evidence(format!(
+                    "Pattern: {}\nMatch (redacted): {redacted}\nURL: {url}",
+                    chk.name
+                ))
+                .with_remediation(
+                    "Remove secrets from responses and rotate exposed credentials immediately.",
+                ),
+            );
         }
     }
 }
@@ -400,44 +637,46 @@ async fn check_secrets_in_response(
 // ── 2. Verbose error / debug information ─────────────────────────────────────
 
 async fn check_error_disclosure(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
 ) {
-    let probe_urls = [
-        format!("{url}/FUZZ_ERROR_XYZ"),
-        format!("{url}?id=_FUZZ_"),
-    ];
+    let probe_urls = [format!("{url}/FUZZ_ERROR_XYZ"), format!("{url}?id=_FUZZ_")];
 
     for probe in &probe_urls {
         let resp = match client.get(probe).await {
-            Ok(r)  => r,
-            Err(e) => { errors.push(e); continue; }
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
         };
 
         for chk in ERROR_CHECKS {
             if chk.re.is_match(&resp.body) {
-                findings.push(Finding::new(
-                    url,
-                    format!("api_security/error-disclosure/{}", slug(chk.name)),
-                    format!("Error disclosure: {}", chk.name),
-                    Severity::Medium,
-                    format!(
-                        "Verbose error information leaked: {} detected in response \
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("api_security/error-disclosure/{}", slug(chk.name)),
+                        format!("Error disclosure: {}", chk.name),
+                        Severity::Medium,
+                        format!(
+                            "Verbose error information leaked: {} detected in response \
                          to malformed request.",
-                        chk.name
+                            chk.name
+                        ),
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Probe URL: {probe}\nStatus: {}\nSnippet: {}",
+                        resp.status,
+                        snippet(&resp.body, 400)
+                    ))
+                    .with_remediation(
+                        "Disable verbose error pages in production and return generic errors.",
                     ),
-                    "api_security",
-                )
-                .with_evidence(format!(
-                    "Probe URL: {probe}\nStatus: {}\nSnippet: {}",
-                    resp.status,
-                    snippet(&resp.body, 400)
-                ))
-                .with_remediation(
-                    "Disable verbose error pages in production and return generic errors.",
-                ));
+                );
                 break;
             }
         }
@@ -447,10 +686,10 @@ async fn check_error_disclosure(
 // ── 3. HTTP method enumeration ────────────────────────────────────────────────
 
 async fn check_http_methods(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
     spa_catchall: bool,
 ) {
     if spa_catchall {
@@ -460,11 +699,7 @@ async fn check_http_methods(
     // First try OPTIONS — it may advertise allowed methods directly.
     let allowed_from_options = match client.options(url, None).await {
         Ok(resp) => {
-            let from_allow = resp
-                .headers
-                .get("allow")
-                .cloned()
-                .unwrap_or_default();
+            let from_allow = resp.headers.get("allow").cloned().unwrap_or_default();
 
             let from_acam = resp
                 .headers
@@ -487,9 +722,7 @@ async fn check_http_methods(
     let mut dangerous_allowed: Vec<String> = Vec::new();
 
     for method in DANGEROUS_METHODS {
-        let advertised = allowed_from_options
-            .iter()
-            .any(|m| m == method);
+        let advertised = allowed_from_options.iter().any(|m| m == method);
 
         let actually_allowed = if advertised {
             true
@@ -497,8 +730,11 @@ async fn check_http_methods(
             false
         } else {
             match client.method_probe(method, url).await {
-                Ok(r)  => r.status < 405,
-                Err(e) => { errors.push(e); false }
+                Ok(r) => r.status < 405,
+                Err(e) => {
+                    errors.push(e);
+                    false
+                }
             }
         };
 
@@ -508,19 +744,19 @@ async fn check_http_methods(
     }
 
     if dangerous_allowed.contains(&"TRACE".to_string()) {
-        findings.push(Finding::new(
-            url,
-            "api_security/http-method/trace-enabled",
-            "HTTP TRACE enabled",
-            Severity::Low,
-            "HTTP TRACE method is enabled. Combined with client-side bugs it can \
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/http-method/trace-enabled",
+                "HTTP TRACE enabled",
+                Severity::Low,
+                "HTTP TRACE method is enabled. Combined with client-side bugs it can \
              enable Cross-Site Tracing (XST) attacks.",
-            "api_security",
-        )
-        .with_evidence(format!("TRACE responded with status < 405 on {url}"))
-        .with_remediation(
-            "Disable TRACE at the web server or reverse proxy configuration.",
-        ));
+                "api_security",
+            )
+            .with_evidence(format!("TRACE responded with status < 405 on {url}"))
+            .with_remediation("Disable TRACE at the web server or reverse proxy configuration."),
+        );
     }
 
     let write_methods: Vec<&str> = dangerous_allowed
@@ -555,22 +791,25 @@ async fn check_http_methods(
 // ── 4. Debug / admin endpoint exposure ───────────────────────────────────────
 
 async fn check_debug_endpoints(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
     spa_fingerprint: Option<(usize, u64)>,
 ) {
     let base = url.trim_end_matches('/');
 
     let critical_keywords = ["env", "config", "secret", "password", "credential", "key"];
-    let high_keywords     = ["actuator", "pprof", "phpinfo", "profiler", "clockwork"];
+    let high_keywords = ["actuator", "pprof", "phpinfo", "profiler", "clockwork"];
 
     for ep in DEBUG_ENDPOINTS {
         let probe = format!("{base}{}", ep.path);
         let resp = match client.get(&probe).await {
-            Ok(r)  => r,
-            Err(e) => { errors.push(e); continue; }
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
         };
 
         // ── Guard 1: must be 200 ─────────────────────────────────────────────
@@ -578,7 +817,9 @@ async fn check_debug_endpoints(
             continue;
         }
 
-        let ct = resp.headers.get("content-type")
+        let ct = resp
+            .headers
+            .get("content-type")
             .map(|s| s.as_str())
             .unwrap_or("");
 
@@ -637,35 +878,37 @@ async fn check_debug_endpoints(
             Severity::Medium
         };
 
-        findings.push(Finding::new(
-            url,
-            format!("api_security/debug-endpoint{}", ep.path.replace('/', "-")),
-            format!("Debug endpoint exposed: {}", ep.path),
-            severity,
-            format!(
-                "Debug/admin endpoint publicly accessible: {}. \
+        findings.push(
+            Finding::new(
+                url,
+                format!("api_security/debug-endpoint{}", ep.path.replace('/', "-")),
+                format!("Debug endpoint exposed: {}", ep.path),
+                severity,
+                format!(
+                    "Debug/admin endpoint publicly accessible: {}. \
                  This may expose internal configuration, metrics, or runtime data.",
-                ep.path
+                    ep.path
+                ),
+                "api_security",
+            )
+            .with_evidence(format!(
+                "URL: {probe}\nStatus: 200\nContent-Type: {ct}\nBody snippet:\n{}",
+                snippet(&resp.body, 500)
+            ))
+            .with_remediation(
+                "Restrict debug/admin endpoints to internal networks or require authentication.",
             ),
-            "api_security",
-        )
-        .with_evidence(format!(
-            "URL: {probe}\nStatus: 200\nContent-Type: {ct}\nBody snippet:\n{}",
-            snippet(&resp.body, 500)
-        ))
-        .with_remediation(
-            "Restrict debug/admin endpoints to internal networks or require authentication.",
-        ));
+        );
     }
 }
 
 // ── 5. Directory listing ───────────────────────────────────────────────────────
 
 async fn check_directory_listing(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
 ) {
     let probe_paths = ["/", "/static/", "/assets/", "/uploads/", "/files/"];
     let base = url.trim_end_matches('/');
@@ -673,8 +916,11 @@ async fn check_directory_listing(
     for path in &probe_paths {
         let probe = format!("{base}{path}");
         let resp = match client.get(&probe).await {
-            Ok(r)  => r,
-            Err(e) => { errors.push(e); continue; }
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
         };
 
         if resp.status != 200 {
@@ -682,7 +928,9 @@ async fn check_directory_listing(
         }
 
         // Guard: Content-Type should be HTML for a directory listing page
-        let ct = resp.headers.get("content-type")
+        let ct = resp
+            .headers
+            .get("content-type")
             .map(|s| s.as_str())
             .unwrap_or("");
         if !ct.is_empty() && !is_html_content_type(ct) && !ct.contains("text/plain") {
@@ -695,38 +943,36 @@ async fn check_directory_listing(
             .find(|&&m| body_lower.contains(&m.to_ascii_lowercase()));
 
         if let Some(marker) = matched_marker {
-            findings.push(Finding::new(
-                url,
-                format!(
-                    "api_security/directory-listing{}",
-                    path.trim_end_matches('/').replace('/', "-")
-                ),
-                format!("Directory listing at {path}"),
-                Severity::Medium,
-                format!(
-                    "Directory listing enabled at `{path}`. \
+            findings.push(
+                Finding::new(
+                    url,
+                    format!(
+                        "api_security/directory-listing{}",
+                        path.trim_end_matches('/').replace('/', "-")
+                    ),
+                    format!("Directory listing at {path}"),
+                    Severity::Medium,
+                    format!(
+                        "Directory listing enabled at `{path}`. \
                      Attackers can enumerate files and discover sensitive assets."
+                    ),
+                    "api_security",
+                )
+                .with_evidence(format!(
+                    "URL: {probe}\nMatched marker: \"{marker}\"\nSnippet:\n{}",
+                    snippet(&resp.body, 400)
+                ))
+                .with_remediation(
+                    "Disable directory listing in the web server and restrict public file access.",
                 ),
-                "api_security",
-            )
-            .with_evidence(format!(
-                "URL: {probe}\nMatched marker: \"{marker}\"\nSnippet:\n{}",
-                snippet(&resp.body, 400)
-            ))
-            .with_remediation(
-                "Disable directory listing in the web server and restrict public file access.",
-            ));
+            );
         }
     }
 }
 
 // ── 6. security.txt presence ──────────────────────────────────────────────────
 
-async fn check_security_txt(
-    url:      &str,
-    client:   &HttpClient,
-    findings: &mut Vec<Finding>,
-) {
+async fn check_security_txt(url: &str, client: &HttpClient, findings: &mut Vec<Finding>) {
     let base = url.trim_end_matches('/');
     let mut found = false;
 
@@ -734,12 +980,13 @@ async fn check_security_txt(
         let probe = format!("{base}{path}");
         if let Ok(resp) = client.get(&probe).await {
             if resp.status == 200 {
-                let ct = resp.headers.get("content-type")
+                let ct = resp
+                    .headers
+                    .get("content-type")
                     .map(|s| s.as_str())
                     .unwrap_or("");
                 // Genuine security.txt should be text/plain and contain "Contact:"
-                if !is_html_content_type(ct)
-                    && resp.body.to_ascii_lowercase().contains("contact:")
+                if !is_html_content_type(ct) && resp.body.to_ascii_lowercase().contains("contact:")
                 {
                     found = true;
                     break;
@@ -766,10 +1013,10 @@ async fn check_security_txt(
 // ── 7. Response-header security checks ───────────────────────────────────────
 
 struct HeaderCheck {
-    name:         &'static str,
-    slug:         &'static str,
-    detail:       &'static str,
-    severity:     Severity,
+    name: &'static str,
+    slug: &'static str,
+    detail: &'static str,
+    severity: Severity,
     must_contain: Option<&'static str>,
 }
 
@@ -839,18 +1086,20 @@ static HEADER_CHECKS: &[HeaderCheck] = &[
     },
 ];
 
-static VERSION_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d+\.\d+").unwrap());
+static VERSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+\.\d+").unwrap());
 
 async fn check_response_headers(
-    url:      &str,
-    client:   &HttpClient,
+    url: &str,
+    client: &HttpClient,
     findings: &mut Vec<Finding>,
-    errors:   &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
 ) {
     let resp = match client.get(url).await {
-        Ok(r)  => r,
-        Err(e) => { errors.push(e); return; }
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
     };
 
     let headers: HashMap<String, String> = resp
@@ -860,7 +1109,7 @@ async fn check_response_headers(
         .collect();
 
     for check in HEADER_CHECKS {
-        let key   = check.name;
+        let key = check.name;
         let value = headers.get(key);
 
         match key {
@@ -876,15 +1125,15 @@ async fn check_response_headers(
                     }
                 }
             }
-            _ => {
-                match value {
-                    None => {
-                        findings.push(header_finding(url, check, None));
-                    }
-                    Some(v) => {
-                        if let Some(required) = check.must_contain {
-                            if !v.to_ascii_lowercase().contains(required) {
-                                findings.push(Finding::new(
+            _ => match value {
+                None => {
+                    findings.push(header_finding(url, check, None));
+                }
+                Some(v) => {
+                    if let Some(required) = check.must_contain {
+                        if !v.to_ascii_lowercase().contains(required) {
+                            findings.push(
+                                Finding::new(
                                     url,
                                     format!("api_security/headers/{}-weak", check.slug),
                                     format!("{} present but weak", check.name),
@@ -896,12 +1145,12 @@ async fn check_response_headers(
                                     "api_security",
                                 )
                                 .with_evidence(format!("{}: {v}", check.name))
-                                .with_remediation(header_remediation(check)));
-                            }
+                                .with_remediation(header_remediation(check)),
+                            );
                         }
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -918,7 +1167,9 @@ fn header_finding(url: &str, check: &HeaderCheck, value: Option<&String>) -> Fin
         "api_security",
     )
     .with_evidence(
-        value.map(|v| format!("{}: {v}", check.name)).unwrap_or_default()
+        value
+            .map(|v| format!("{}: {v}", check.name))
+            .unwrap_or_default(),
     )
     .with_remediation(header_remediation(check))
 }
@@ -970,7 +1221,8 @@ fn snippet(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        let boundary = s.char_indices()
+        let boundary = s
+            .char_indices()
             .take_while(|&(i, _)| i < max_len)
             .last()
             .map(|(i, c)| i + c.len_utf8())
@@ -1166,7 +1418,9 @@ async fn check_idor_bola(
 
     // ── Tier 3: Cross-user comparison ─────────────────────────────────────────
 
-    let Some(client_b) = client_b else { return; };
+    let Some(client_b) = client_b else {
+        return;
+    };
 
     let resp_b = match client_b.get(url).await {
         Ok(r) => r,
@@ -1289,7 +1543,11 @@ async fn check_mass_assignment(
         return;
     }
 
-    let ct = resp.headers.get("content-type").map(|s| s.as_str()).unwrap_or("");
+    let ct = resp
+        .headers
+        .get("content-type")
+        .map(|s| s.as_str())
+        .unwrap_or("");
     if !ct.to_ascii_lowercase().contains("json") {
         return;
     }
@@ -1319,8 +1577,12 @@ async fn check_rate_limit(
     findings: &mut Vec<Finding>,
     errors: &mut Vec<CapturedError>,
 ) {
-    let host = Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_string()));
-    let Some(host) = host else { return; };
+    let host = Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()));
+    let Some(host) = host else {
+        return;
+    };
 
     if checked_hosts.contains(&host) {
         return;

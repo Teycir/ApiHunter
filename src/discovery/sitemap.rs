@@ -31,7 +31,12 @@ impl<'a> SitemapDiscovery<'a> {
         host: &'a str,
         max_sitemaps: usize,
     ) -> Self {
-        Self { client, base_url, host, max_sitemaps }
+        Self {
+            client,
+            base_url,
+            host,
+            max_sitemaps,
+        }
     }
 
     pub async fn run(&self) -> (HashSet<String>, Vec<CapturedError>) {
@@ -75,7 +80,10 @@ impl<'a> SitemapDiscovery<'a> {
 
         if !sub_sitemaps.is_empty() {
             // Recurse into sub-sitemaps (depth-limited, sequential to stay polite)
-            for sub in sub_sitemaps.iter().take(self.max_sitemaps.saturating_sub(depth)) {
+            for sub in sub_sitemaps
+                .iter()
+                .take(self.max_sitemaps.saturating_sub(depth))
+            {
                 // Only follow same-host sitemaps
                 if url::Url::parse(sub)
                     .ok()

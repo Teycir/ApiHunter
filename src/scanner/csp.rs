@@ -4,7 +4,12 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
+use crate::{
+    config::Config,
+    error::CapturedError,
+    http_client::HttpClient,
+    reports::{Finding, Severity},
+};
 
 use super::Scanner;
 
@@ -17,21 +22,28 @@ impl CspScanner {
 }
 
 // Directives that must exist for a meaningful CSP
-static REQUIRED_DIRECTIVES: &[&str] = &[
-    "default-src",
-    "script-src",
-    "object-src",
-    "base-uri",
-];
+static REQUIRED_DIRECTIVES: &[&str] = &["default-src", "script-src", "object-src", "base-uri"];
 
 // Source expressions that trivially bypass script restrictions
 static UNSAFE_SOURCES: &[(&str, &str)] = &[
-    ("'unsafe-inline'",   "Allows inline scripts/styles — XSS mitigation lost."),
-    ("'unsafe-eval'",     "Allows eval() — bypasses script-src restrictions."),
-    ("'unsafe-hashes'",   "Allows execution of hashed inline handlers."),
-    ("data:",             "'data:' URI in script context allows arbitrary script execution."),
-    ("http:",             "Plain HTTP source allows MITM script injection."),
-    ("*",                 "Wildcard source allows loading from any host."),
+    (
+        "'unsafe-inline'",
+        "Allows inline scripts/styles — XSS mitigation lost.",
+    ),
+    (
+        "'unsafe-eval'",
+        "Allows eval() — bypasses script-src restrictions.",
+    ),
+    (
+        "'unsafe-hashes'",
+        "Allows execution of hashed inline handlers.",
+    ),
+    (
+        "data:",
+        "'data:' URI in script context allows arbitrary script execution.",
+    ),
+    ("http:", "Plain HTTP source allows MITM script injection."),
+    ("*", "Wildcard source allows loading from any host."),
 ];
 
 // CDN / JSONP-enabled hosts well-known for bypass gadgets
@@ -95,16 +107,19 @@ impl Scanner for CspScanner {
                         "Deploy an enforcing Content-Security-Policy header after validating reports.",
                     ));
                 } else {
-                    findings.push(Finding::new(
-                        url,
-                        "csp/missing",
-                        "No CSP header",
-                        Severity::Medium,
-                        "No Content-Security-Policy header detected.",
-                        "csp",
-                    ).with_remediation(
-                        "Add a Content-Security-Policy header with least-privilege sources.",
-                    ));
+                    findings.push(
+                        Finding::new(
+                            url,
+                            "csp/missing",
+                            "No CSP header",
+                            Severity::Medium,
+                            "No Content-Security-Policy header detected.",
+                            "csp",
+                        )
+                        .with_remediation(
+                            "Add a Content-Security-Policy header with least-privilege sources.",
+                        ),
+                    );
                 }
                 return (findings, errors);
             }
@@ -118,23 +133,25 @@ impl Scanner for CspScanner {
             if !directives.contains_key(*req) {
                 let severity = match *req {
                     "default-src" => Severity::Medium,
-                    "script-src"  => Severity::Medium,
-                    "object-src"  => Severity::Low,
-                    "base-uri"    => Severity::Low,
-                    _             => Severity::Info,
+                    "script-src" => Severity::Medium,
+                    "object-src" => Severity::Low,
+                    "base-uri" => Severity::Low,
+                    _ => Severity::Info,
                 };
-                findings.push(Finding::new(
-                    url,
-                    format!("csp/missing-directive/{req}"),
-                    format!("CSP missing '{req}'"),
-                    severity,
-                    format!("CSP is missing the '{req}' directive."),
-                    "csp",
-                )
-                .with_evidence(format!("Content-Security-Policy: {csp_value}"))
-                .with_remediation(format!(
-                    "Add the '{req}' directive with a restrictive allowlist."
-                )));
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("csp/missing-directive/{req}"),
+                        format!("CSP missing '{req}'"),
+                        severity,
+                        format!("CSP is missing the '{req}' directive."),
+                        "csp",
+                    )
+                    .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                    .with_remediation(format!(
+                        "Add the '{req}' directive with a restrictive allowlist."
+                    )),
+                );
             }
         }
 
@@ -146,22 +163,21 @@ impl Scanner for CspScanner {
             .unwrap_or_default();
 
         for (token, desc) in UNSAFE_SOURCES {
-            if script_sources
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case(token))
-            {
-                findings.push(Finding::new(
-                    url,
-                    format!("csp/unsafe-source/{}", token.trim_matches('\'')),
-                    format!("CSP unsafe source: {token}"),
-                    Severity::High,
-                    format!("script-src contains '{token}': {desc}"),
-                    "csp",
-                )
-                .with_evidence(format!("Content-Security-Policy: {csp_value}"))
-                .with_remediation(
-                    "Remove unsafe script sources and use nonces or hashes for inline scripts.",
-                ));
+            if script_sources.iter().any(|s| s.eq_ignore_ascii_case(token)) {
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("csp/unsafe-source/{}", token.trim_matches('\'')),
+                        format!("CSP unsafe source: {token}"),
+                        Severity::High,
+                        format!("script-src contains '{token}': {desc}"),
+                        "csp",
+                    )
+                    .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                    .with_remediation(
+                        "Remove unsafe script sources and use nonces or hashes for inline scripts.",
+                    ),
+                );
             }
         }
 
@@ -169,21 +185,23 @@ impl Scanner for CspScanner {
         for source in &script_sources {
             for re in BYPASS_HOSTS.iter() {
                 if re.is_match(source) {
-                    findings.push(Finding::new(
-                        url,
-                        "csp/bypassable-cdn",
-                        "CSP bypassable CDN",
-                        Severity::Medium,
-                        format!(
-                            "script-src allows '{source}', which hosts JSONP endpoints or \
+                    findings.push(
+                        Finding::new(
+                            url,
+                            "csp/bypassable-cdn",
+                            "CSP bypassable CDN",
+                            Severity::Medium,
+                            format!(
+                                "script-src allows '{source}', which hosts JSONP endpoints or \
                              third-party scripts that can bypass CSP."
+                            ),
+                            "csp",
+                        )
+                        .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                        .with_remediation(
+                            "Pin scripts with subresource integrity or self-host critical assets.",
                         ),
-                        "csp",
-                    )
-                    .with_evidence(format!("Content-Security-Policy: {csp_value}"))
-                    .with_remediation(
-                        "Pin scripts with subresource integrity or self-host critical assets.",
-                    ));
+                    );
                     break;
                 }
             }
@@ -221,11 +239,7 @@ fn parse_csp(header: &str) -> std::collections::HashMap<String, Vec<String>> {
             continue;
         }
         let mut parts = directive.splitn(2, char::is_whitespace);
-        let name = parts
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase();
+        let name = parts.next().unwrap_or("").trim().to_ascii_lowercase();
         let sources: Vec<String> = parts
             .next()
             .unwrap_or("")

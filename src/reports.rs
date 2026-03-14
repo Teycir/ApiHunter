@@ -16,15 +16,12 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
-use anyhow::{Context, Result};
 
-use crate::{
-    error::CapturedError,
-    runner::RunResult,
-};
+use crate::{error::CapturedError, runner::RunResult};
 
 // ── SARIF output ──────────────────────────────────────────────────────────────
 
@@ -117,10 +114,10 @@ impl Severity {
     pub fn rank(&self) -> u8 {
         match self {
             Severity::Critical => 4,
-            Severity::High     => 3,
-            Severity::Medium   => 2,
-            Severity::Low      => 1,
-            Severity::Info     => 0,
+            Severity::High => 3,
+            Severity::Medium => 2,
+            Severity::Low => 1,
+            Severity::Info => 0,
         }
     }
 
@@ -128,10 +125,10 @@ impl Severity {
     pub fn label(&self) -> &'static str {
         match self {
             Severity::Critical => "CRITICAL",
-            Severity::High     => "HIGH    ",
-            Severity::Medium   => "MEDIUM  ",
-            Severity::Low      => "LOW     ",
-            Severity::Info     => "INFO    ",
+            Severity::High => "HIGH    ",
+            Severity::Medium => "MEDIUM  ",
+            Severity::Low => "LOW     ",
+            Severity::Info => "INFO    ",
         }
     }
 }
@@ -185,20 +182,20 @@ pub struct Finding {
 impl Finding {
     /// Convenience constructor — `timestamp` is set to `Utc::now()`.
     pub fn new(
-        url:      impl Into<String>,
-        check:    impl Into<String>,
-        title:    impl Into<String>,
+        url: impl Into<String>,
+        check: impl Into<String>,
+        title: impl Into<String>,
         severity: Severity,
-        detail:   impl Into<String>,
-        scanner:  impl Into<String>,
+        detail: impl Into<String>,
+        scanner: impl Into<String>,
     ) -> Self {
         Self {
-            url:       url.into(),
-            check:     check.into(),
-            title:     title.into(),
+            url: url.into(),
+            check: check.into(),
+            title: title.into(),
             severity,
-            detail:    detail.into(),
-            scanner:   scanner.into(),
+            detail: detail.into(),
+            scanner: scanner.into(),
             timestamp: Utc::now(),
             ..Default::default()
         }
@@ -252,11 +249,11 @@ pub struct ReportConfig {
 impl Default for ReportConfig {
     fn default() -> Self {
         Self {
-            format:        ReportFormat::Pretty,
-            output_path:   None,
+            format: ReportFormat::Pretty,
+            output_path: None,
             print_summary: true,
-            quiet:         false,
-            stream:        false,
+            quiet: false,
+            stream: false,
         }
     }
 }
@@ -277,47 +274,47 @@ pub enum ReportFormat {
 /// The complete, serialisable report document written to disk / stdout.
 #[derive(Debug, Serialize)]
 pub struct ReportDocument {
-    pub meta:     ReportMeta,
-    pub summary:  ReportSummary,
+    pub meta: ReportMeta,
+    pub summary: ReportSummary,
     pub findings: Vec<Finding>,
-    pub errors:   Vec<CapturedErrorRecord>,
+    pub errors: Vec<CapturedErrorRecord>,
 }
 
 /// Top-level metadata about the run.
 #[derive(Debug, Serialize)]
 pub struct ReportMeta {
     pub generated_at: DateTime<Utc>,
-    pub elapsed_ms:   u128,
-    pub scanned:      usize,
-    pub skipped:      usize,
-    pub scanner_ver:  &'static str,
+    pub elapsed_ms: u128,
+    pub scanned: usize,
+    pub skipped: usize,
+    pub scanner_ver: &'static str,
 }
 
 /// Counts by severity — useful at a glance without reading all findings.
 #[derive(Debug, Serialize, Default)]
 pub struct ReportSummary {
-    pub total:    usize,
+    pub total: usize,
     pub critical: usize,
-    pub high:     usize,
-    pub medium:   usize,
-    pub low:      usize,
-    pub info:     usize,
-    pub errors:   usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub info: usize,
+    pub errors: usize,
 }
 
 /// A serialisable wrapper around [`CapturedError`].
 #[derive(Debug, Serialize)]
 pub struct CapturedErrorRecord {
-    pub url:     Option<String>,
-    pub kind:    String,
+    pub url: Option<String>,
+    pub kind: String,
     pub message: String,
 }
 
 impl From<&CapturedError> for CapturedErrorRecord {
     fn from(e: &CapturedError) -> Self {
         Self {
-            url:     e.url.clone(),
-            kind:    e.error_type.clone(),
+            url: e.url.clone(),
+            kind: e.error_type.clone(),
             message: e.message.clone(),
         }
     }
@@ -327,9 +324,9 @@ impl From<&CapturedError> for CapturedErrorRecord {
 
 /// Stateful reporter that can also act as a streaming sink for partial flushes.
 pub struct Reporter {
-    cfg:          ReportConfig,
+    cfg: ReportConfig,
     /// Buffered writer for the output file (if configured).
-    file_writer:  Option<Arc<Mutex<BufWriter<File>>>>,
+    file_writer: Option<Arc<Mutex<BufWriter<File>>>>,
 }
 
 impl Reporter {
@@ -417,7 +414,9 @@ impl Reporter {
 
         if let Ok(line) = serde_json::to_string(&header) {
             self.write_line_to_file(&line);
-            if !self.cfg.quiet { println!("{line}"); }
+            if !self.cfg.quiet {
+                println!("{line}");
+            }
         }
     }
 
@@ -443,15 +442,22 @@ impl Reporter {
         let mut results = Vec::new();
 
         for f in &doc.findings {
-            rules_map.entry(f.check.clone()).or_insert_with(|| {
-                SarifRule {
+            rules_map
+                .entry(f.check.clone())
+                .or_insert_with(|| SarifRule {
                     id: f.check.clone(),
                     name: f.title.clone(),
-                    short_description: SarifText { text: f.title.clone() },
-                    full_description: SarifText { text: f.detail.clone() },
-                    help: f.remediation.as_ref().map(|r| SarifText { text: r.clone() }),
-                }
-            });
+                    short_description: SarifText {
+                        text: f.title.clone(),
+                    },
+                    full_description: SarifText {
+                        text: f.detail.clone(),
+                    },
+                    help: f
+                        .remediation
+                        .as_ref()
+                        .map(|r| SarifText { text: r.clone() }),
+                });
 
             let level = match f.severity {
                 Severity::Critical | Severity::High => "error",
@@ -513,14 +519,18 @@ impl Reporter {
 
         if let Ok(line) = serde_json::to_string(&header) {
             self.write_line_to_file(&line);
-            if !self.cfg.quiet { println!("{line}"); }
+            if !self.cfg.quiet {
+                println!("{line}");
+            }
         }
 
         for finding in &doc.findings {
             match serde_json::to_string(finding) {
                 Ok(line) => {
                     self.write_line_to_file(&line);
-                    if !self.cfg.quiet { println!("{line}"); }
+                    if !self.cfg.quiet {
+                        println!("{line}");
+                    }
                 }
                 Err(e) => error!("Failed to serialise finding: {e}"),
             }
@@ -530,7 +540,9 @@ impl Reporter {
             match serde_json::to_string(err) {
                 Ok(line) => {
                     self.write_line_to_file(&line);
-                    if !self.cfg.quiet { println!("{line}"); }
+                    if !self.cfg.quiet {
+                        println!("{line}");
+                    }
                 }
                 Err(e) => error!("Failed to serialise error record: {e}"),
             }
@@ -546,14 +558,18 @@ impl Reporter {
 
         if let Ok(line) = serde_json::to_string(&summary) {
             self.write_line_to_file(&line);
-            if !self.cfg.quiet { println!("{line}"); }
+            if !self.cfg.quiet {
+                println!("{line}");
+            }
         }
 
         for err in &doc.errors {
             match serde_json::to_string(err) {
                 Ok(line) => {
                     self.write_line_to_file(&line);
-                    if !self.cfg.quiet { println!("{line}"); }
+                    if !self.cfg.quiet {
+                        println!("{line}");
+                    }
                 }
                 Err(e) => error!("Failed to serialise error record: {e}"),
             }
@@ -561,7 +577,9 @@ impl Reporter {
     }
 
     fn write_line_to_file(&self, content: &str) {
-        let Some(ref writer) = self.file_writer else { return };
+        let Some(ref writer) = self.file_writer else {
+            return;
+        };
 
         match writer.lock() {
             Ok(mut w) => {
@@ -575,7 +593,9 @@ impl Reporter {
 
     /// Flush and sync the file writer.  Call once after the run completes.
     pub fn finalize(&self) {
-        let Some(ref writer) = self.file_writer else { return };
+        let Some(ref writer) = self.file_writer else {
+            return;
+        };
 
         match writer.lock() {
             Ok(mut w) => {
@@ -593,17 +613,20 @@ impl Reporter {
 // ── Document builders ─────────────────────────────────────────────────────────
 
 fn build_document(result: &RunResult) -> ReportDocument {
-    let summary  = build_summary(result);
-    let errors: Vec<CapturedErrorRecord> =
-        result.errors.iter().map(CapturedErrorRecord::from).collect();
+    let summary = build_summary(result);
+    let errors: Vec<CapturedErrorRecord> = result
+        .errors
+        .iter()
+        .map(CapturedErrorRecord::from)
+        .collect();
 
     ReportDocument {
         meta: ReportMeta {
             generated_at: Utc::now(),
-            elapsed_ms:   result.elapsed.as_millis(),
-            scanned:      result.scanned,
-            skipped:      result.skipped,
-            scanner_ver:  env!("CARGO_PKG_VERSION"),
+            elapsed_ms: result.elapsed.as_millis(),
+            scanned: result.scanned,
+            skipped: result.skipped,
+            scanner_ver: env!("CARGO_PKG_VERSION"),
         },
         summary,
         findings: result.findings.clone(),
@@ -613,7 +636,7 @@ fn build_document(result: &RunResult) -> ReportDocument {
 
 pub fn build_summary(result: &RunResult) -> ReportSummary {
     let mut s = ReportSummary {
-        total:  result.findings.len(),
+        total: result.findings.len(),
         errors: result.errors.len(),
         ..Default::default()
     };
@@ -621,10 +644,10 @@ pub fn build_summary(result: &RunResult) -> ReportSummary {
     for f in &result.findings {
         match f.severity {
             Severity::Critical => s.critical += 1,
-            Severity::High     => s.high     += 1,
-            Severity::Medium   => s.medium   += 1,
-            Severity::Low      => s.low      += 1,
-            Severity::Info     => s.info     += 1,
+            Severity::High => s.high += 1,
+            Severity::Medium => s.medium += 1,
+            Severity::Low => s.low += 1,
+            Severity::Info => s.info += 1,
         }
     }
 
@@ -670,16 +693,18 @@ pub fn exit_code(summary: &ReportSummary, threshold: &Severity) -> i32 {
 
     let has_findings = match *threshold {
         Severity::Critical => summary.critical > 0,
-        Severity::High     => summary.critical + summary.high > 0,
-        Severity::Medium   => summary.critical + summary.high + summary.medium > 0,
-        Severity::Low      => {
-            summary.critical + summary.high + summary.medium + summary.low > 0
-        }
-        Severity::Info     => summary.total > 0,
+        Severity::High => summary.critical + summary.high > 0,
+        Severity::Medium => summary.critical + summary.high + summary.medium > 0,
+        Severity::Low => summary.critical + summary.high + summary.medium + summary.low > 0,
+        Severity::Info => summary.total > 0,
     };
 
-    if has_findings  { code |= 1; }
-    if summary.errors > 0 { code |= 2; }
+    if has_findings {
+        code |= 1;
+    }
+    if summary.errors > 0 {
+        code |= 2;
+    }
 
     code
 }
@@ -695,7 +720,9 @@ pub fn filter_findings<'a>(findings: &'a [Finding], min_severity: &Severity) -> 
 }
 
 /// Load a baseline NDJSON file and return a set of `(url, check)` keys.
-pub fn load_baseline_keys(path: &std::path::Path) -> Result<std::collections::HashSet<(String, String)>> {
+pub fn load_baseline_keys(
+    path: &std::path::Path,
+) -> Result<std::collections::HashSet<(String, String)>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read baseline file: {}", path.display()))?;
 

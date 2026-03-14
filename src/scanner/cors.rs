@@ -3,7 +3,12 @@
 use async_trait::async_trait;
 use reqwest::header::HeaderValue;
 
-use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
+use crate::{
+    config::Config,
+    error::CapturedError,
+    http_client::HttpClient,
+    reports::{Finding, Severity},
+};
 
 use super::Scanner;
 
@@ -15,11 +20,7 @@ impl CorsScanner {
     }
 }
 
-static PROBE_ORIGINS: &[&str] = &[
-    "https://evil.com",
-    "null",
-    "https://attacker.example.com",
-];
+static PROBE_ORIGINS: &[&str] = &["https://evil.com", "null", "https://attacker.example.com"];
 
 #[async_trait]
 impl Scanner for CorsScanner {
@@ -165,7 +166,10 @@ impl Scanner for CorsScanner {
             match client.options(url, Some(extra)).await {
                 Ok(resp) => {
                     let acao = resp.header("access-control-allow-origin");
-                    let acam = resp.header("access-control-allow-methods").unwrap_or("").to_ascii_uppercase();
+                    let acam = resp
+                        .header("access-control-allow-methods")
+                        .unwrap_or("")
+                        .to_ascii_uppercase();
                     let allowed = acam.contains("DELETE") || acam.contains("*");
 
                     if allowed && (acao == Some("*") || acao == Some(origin)) {

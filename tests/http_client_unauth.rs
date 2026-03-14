@@ -8,10 +8,7 @@ use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
 };
-use wiremock::{
-    matchers::method,
-    Mock, MockServer, ResponseTemplate,
-};
+use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
 
 fn test_config() -> Config {
     Config {

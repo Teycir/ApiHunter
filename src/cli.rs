@@ -34,7 +34,6 @@ use crate::reports::{ReportFormat, Severity};
 )]
 pub struct Cli {
     // ── Input ────────────────────────────────────────────────────────────────
-
     /// Path to a newline-delimited file of URLs to scan.
     #[arg(short = 'u', long, value_name = "FILE", group = "input")]
     pub urls: Option<PathBuf>,
@@ -44,7 +43,6 @@ pub struct Cli {
     pub stdin: bool,
 
     // ── Output ───────────────────────────────────────────────────────────────
-
     /// Write findings to this file path (default: stdout).
     #[arg(short = 'o', long, value_name = "FILE")]
     pub output: Option<PathBuf>,
@@ -70,7 +68,6 @@ pub struct Cli {
     pub summary: bool,
 
     // ── Concurrency & limits ─────────────────────────────────────────────────
-
     /// Maximum number of concurrent in-flight requests.
     #[arg(short = 'c', long, default_value_t = 20, value_name = "N")]
     pub concurrency: usize,
@@ -80,7 +77,6 @@ pub struct Cli {
     pub max_endpoints: usize,
 
     // ── Politeness ───────────────────────────────────────────────────────────
-
     /// Per-domain minimum delay between requests (milliseconds).
     #[arg(long, default_value_t = 100, value_name = "MS")]
     pub delay_ms: u64,
@@ -94,7 +90,6 @@ pub struct Cli {
     pub timeout_secs: u64,
 
     // ── WAF evasion ──────────────────────────────────────────────────────────
-
     /// Enable WAF-evasion heuristics (randomised UA, header shuffling, jitter).
     #[arg(long)]
     pub waf_evasion: bool,
@@ -105,7 +100,6 @@ pub struct Cli {
     pub user_agents: Vec<String>,
 
     // ── Proxy / TLS ──────────────────────────────────────────────────────────
-
     /// Extra request headers applied to every request (e.g. "Authorization: Bearer xxx").
     #[arg(long, value_name = "NAME:VALUE", value_delimiter = ',')]
     pub headers: Vec<String>,
@@ -160,7 +154,6 @@ pub struct Cli {
     pub session_file: Option<PathBuf>,
 
     // ── Scanner toggles ──────────────────────────────────────────────────────
-
     /// Disable the CORS scanner.
     #[arg(long)]
     pub no_cors: bool,
@@ -186,7 +179,6 @@ pub struct Cli {
     pub no_openapi: bool,
 
     // ── Reporting threshold ───────────────────────────────────────────────────
-
     /// Minimum severity to include in findings output.
     #[arg(long, default_value = "info", value_name = "LEVEL")]
     pub min_severity: CliSeverity,
@@ -218,10 +210,10 @@ impl From<CliSeverity> for Severity {
     fn from(c: CliSeverity) -> Self {
         match c {
             CliSeverity::Critical => Severity::Critical,
-            CliSeverity::High     => Severity::High,
-            CliSeverity::Medium   => Severity::Medium,
-            CliSeverity::Low      => Severity::Low,
-            CliSeverity::Info     => Severity::Info,
+            CliSeverity::High => Severity::High,
+            CliSeverity::Medium => Severity::Medium,
+            CliSeverity::Low => Severity::Low,
+            CliSeverity::Info => Severity::Info,
         }
     }
 }

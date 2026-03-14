@@ -8,21 +8,16 @@ use crate::{
     error::{CapturedError, ScannerError, ScannerResult},
     waf::WafEvasion,
 };
+use dashmap::DashMap;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Client, Method, Response,
 };
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::sync::{Mutex, Semaphore, OwnedSemaphorePermit};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tracing::debug;
 use url::Url;
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 
 // Optional auth credential support
 pub use crate::auth::LiveCredential;
@@ -120,15 +115,20 @@ impl AdaptiveLimiter {
     }
 
     async fn on_success(&self) {
-        let streak = self.success_streak.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let streak = self
+            .success_streak
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         if streak >= 10 {
-            self.success_streak.store(0, std::sync::atomic::Ordering::Relaxed);
+            self.success_streak
+                .store(0, std::sync::atomic::Ordering::Relaxed);
             self.increase().await;
         }
     }
 
     async fn on_backoff(&self) {
-        self.success_streak.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.success_streak
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         self.decrease().await;
     }
 
@@ -374,9 +374,9 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
-        let client = self.client_for_url(url).map_err(|e| {
-            CapturedError::from_str("http::client", Some(url.to_string()), e)
-        })?;
+        let client = self
+            .client_for_url(url)
+            .map_err(|e| CapturedError::from_str("http::client", Some(url.to_string()), e))?;
         let mut req = client.request(method.clone(), url);
 
         // Rotate UA + evasion headers on every request.
@@ -459,7 +459,11 @@ impl HttpClient {
             let next_allowed = match map.get(&key) {
                 Some(last) => {
                     let candidate = *last + min_gap;
-                    if candidate > now { candidate } else { now }
+                    if candidate > now {
+                        candidate
+                    } else {
+                        now
+                    }
                 }
                 None => now,
             };
@@ -520,7 +524,8 @@ impl HttpClient {
         url: &str,
         body: &serde_json::Value,
     ) -> Result<HttpResponse, CapturedError> {
-        self.request(Method::POST, url, None, Some(body.clone())).await
+        self.request(Method::POST, url, None, Some(body.clone()))
+            .await
     }
 
     /// GET request without the live credential (used for unauthenticated comparison in IDOR checks).
@@ -535,9 +540,9 @@ impl HttpClient {
             req = req.headers(WafEvasion::evasion_headers());
         }
 
-        let mut req = req.build().map_err(|e| {
-            CapturedError::new("http::get_without_auth", Some(url.to_string()), &e)
-        })?;
+        let mut req = req
+            .build()
+            .map_err(|e| CapturedError::new("http::get_without_auth", Some(url.to_string()), &e))?;
 
         // Strip any default auth-like headers that could be set on the client.
         let headers = req.headers_mut();
@@ -596,15 +601,19 @@ impl HttpClient {
             .collect();
 
         if let Some(store) = &self.session_store {
-            if let Err(e) = self.update_session_from_set_cookie(&set_cookies, &final_url, store).await {
+            if let Err(e) = self
+                .update_session_from_set_cookie(&set_cookies, &final_url, store)
+                .await
+            {
                 debug!("[session] update error for {final_url}: {e}");
             }
         }
 
         // Read body with size cap.
-        let raw_bytes = response.bytes().await.map_err(|e| {
-            CapturedError::new("http::read_body", Some(url.to_string()), &e)
-        })?;
+        let raw_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| CapturedError::new("http::read_body", Some(url.to_string()), &e))?;
 
         let capped: &[u8] = if raw_bytes.len() > MAX_RESPONSE_BYTES {
             &raw_bytes[..MAX_RESPONSE_BYTES]
@@ -665,7 +674,9 @@ impl HttpClient {
 
     async fn cookie_header_for(&self, url: &str) -> Option<String> {
         let store = self.session_store.as_ref()?;
-        let host = Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_string()))?;
+        let host = Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))?;
         let map = store.lock().await;
         let cookies = map.get(&host)?;
         if cookies.is_empty() {
@@ -710,8 +721,12 @@ impl HttpClient {
     }
 
     pub async fn save_session(&self) -> ScannerResult<()> {
-        let Some(path) = &self.session_path else { return Ok(()); };
-        let Some(store) = &self.session_store else { return Ok(()); };
+        let Some(path) = &self.session_path else {
+            return Ok(());
+        };
+        let Some(store) = &self.session_store else {
+            return Ok(());
+        };
 
         let map = store.lock().await;
         let doc = SessionFile { hosts: map.clone() };

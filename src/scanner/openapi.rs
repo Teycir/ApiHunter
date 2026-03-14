@@ -171,7 +171,12 @@ fn analyze_spec(spec_url: &str, spec: &Value, findings: &mut Vec<Finding>) {
     }
 
     if !unsecured_ops.is_empty() {
-        let sample = unsecured_ops.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+        let sample = unsecured_ops
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         findings.push(
             Finding::new(
                 spec_url,
@@ -185,14 +190,17 @@ fn analyze_spec(spec_url: &str, spec: &Value, findings: &mut Vec<Finding>) {
                 "openapi",
             )
             .with_evidence(format!("Sample: {sample}"))
-            .with_remediation(
-                "Apply security requirements globally or per-operation in the spec.",
-            ),
+            .with_remediation("Apply security requirements globally or per-operation in the spec."),
         );
     }
 
     if !upload_ops.is_empty() {
-        let sample = upload_ops.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+        let sample = upload_ops
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         findings.push(
             Finding::new(
                 spec_url,
@@ -210,20 +218,26 @@ fn analyze_spec(spec_url: &str, spec: &Value, findings: &mut Vec<Finding>) {
     }
 
     if !deprecated_ops.is_empty() {
-        let sample = deprecated_ops.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+        let sample = deprecated_ops
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         findings.push(
             Finding::new(
                 spec_url,
                 "openapi/deprecated-operations",
                 "Deprecated OpenAPI operations still present",
                 Severity::Info,
-                format!("{} deprecated operation(s) listed in the spec.", deprecated_ops.len()),
+                format!(
+                    "{} deprecated operation(s) listed in the spec.",
+                    deprecated_ops.len()
+                ),
                 "openapi",
             )
             .with_evidence(format!("Sample: {sample}"))
-            .with_remediation(
-                "Remove deprecated endpoints or add explicit sunset timelines.",
-            ),
+            .with_remediation("Remove deprecated endpoints or add explicit sunset timelines."),
         );
     }
 }

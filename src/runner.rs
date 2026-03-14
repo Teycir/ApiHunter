@@ -24,24 +24,15 @@ use url::Url;
 use crate::{
     config::Config,
     discovery::{
-        common_paths::CommonPathDiscovery,
-        headers::HeaderDiscovery,
-        js::JsDiscovery,
-        robots::RobotsDiscovery,
-        sitemap::SitemapDiscovery,
-        swagger::SwaggerDiscovery,
+        common_paths::CommonPathDiscovery, headers::HeaderDiscovery, js::JsDiscovery,
+        robots::RobotsDiscovery, sitemap::SitemapDiscovery, swagger::SwaggerDiscovery,
     },
     error::CapturedError,
     http_client::HttpClient,
     reports::{Finding, Reporter},
     scanner::{
-        api_security::ApiSecurityScanner,
-        cors::CorsScanner,
-        csp::CspScanner,
-        graphql::GraphqlScanner,
-        jwt::JwtScanner,
-        openapi::OpenApiScanner,
-        Scanner,
+        api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
+        graphql::GraphqlScanner, jwt::JwtScanner, openapi::OpenApiScanner, Scanner,
     },
 };
 
@@ -53,30 +44,30 @@ pub struct RunResult {
     /// Deduplicated, sorted list of findings across all scanners + URLs.
     pub findings: Vec<Finding>,
     /// Every non-fatal error encountered during the run.
-    pub errors:   Vec<CapturedError>,
+    pub errors: Vec<CapturedError>,
     /// Wall-clock time for the full run.
-    pub elapsed:  Duration,
+    pub elapsed: Duration,
     /// How many URLs were actually scanned (may be < input list due to cap).
-    pub scanned:  usize,
+    pub scanned: usize,
     /// How many URLs were skipped (cap or dedup).
-    pub skipped:  usize,
+    pub skipped: usize,
 }
 
 /// Entry point called from `main`.
 pub async fn run(
-    urls:         Vec<String>,
-    config:       Arc<Config>,
-    http_client:  Arc<HttpClient>,
+    urls: Vec<String>,
+    config: Arc<Config>,
+    http_client: Arc<HttpClient>,
     http_client_b: Option<Arc<HttpClient>>,
-    reporter:     Arc<Reporter>,
+    reporter: Arc<Reporter>,
 ) -> RunResult {
     let start = Instant::now();
 
     // ── 1. Normalise + deduplicate ────────────────────────────────────────────
     let (unique_seeds, skipped_dedup) = dedup(urls);
     info!(
-        total   = unique_seeds.len() + skipped_dedup,
-        unique  = unique_seeds.len(),
+        total = unique_seeds.len() + skipped_dedup,
+        unique = unique_seeds.len(),
         skipped = skipped_dedup,
         "URL list normalised"
     );
@@ -94,7 +85,7 @@ pub async fn run(
     let (work_list, skipped_cap) = apply_cap(unique_all, config.max_endpoints);
     if skipped_cap > 0 {
         warn!(
-            cap     = config.max_endpoints,
+            cap = config.max_endpoints,
             skipped = skipped_cap,
             "URL list truncated to max_endpoints"
         );
@@ -105,34 +96,36 @@ pub async fn run(
 
     if scanned == 0 {
         warn!("No URLs to scan — returning empty result");
-        return RunResult { elapsed: start.elapsed(), skipped, ..Default::default() };
+        return RunResult {
+            elapsed: start.elapsed(),
+            skipped,
+            ..Default::default()
+        };
     }
 
     // ── 5. Shared state ───────────────────────────────────────────────────────
-    let semaphore  = Arc::new(Semaphore::new(config.concurrency));
-    let scanners   = build_scanners(&config, http_client_b.clone());
+    let semaphore = Arc::new(Semaphore::new(config.concurrency));
+    let scanners = build_scanners(&config, http_client_b.clone());
 
     // mpsc channels — workers send back results; main task collects
-    let (finding_tx, mut finding_rx) =
-        mpsc::unbounded_channel::<Vec<Finding>>();
-    let (error_tx, mut error_rx) =
-        mpsc::unbounded_channel::<Vec<CapturedError>>();
+    let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
+    let (error_tx, mut error_rx) = mpsc::unbounded_channel::<Vec<CapturedError>>();
 
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
 
     for url in work_list {
-        let sem      = Arc::clone(&semaphore);
-        let client   = Arc::clone(&http_client);
+        let sem = Arc::clone(&semaphore);
+        let client = Arc::clone(&http_client);
         let scanners = scanners.clone();
-        let ftx      = finding_tx.clone();
-        let etx      = error_tx.clone();
-        let cfg      = Arc::clone(&config);
-        let rpt      = Arc::clone(&reporter);
+        let ftx = finding_tx.clone();
+        let etx = error_tx.clone();
+        let cfg = Arc::clone(&config);
+        let rpt = Arc::clone(&reporter);
 
         join_set.spawn(async move {
             let _permit = match sem.acquire().await {
-                Ok(p)  => p,
+                Ok(p) => p,
                 Err(e) => {
                     error!(url = %url, "Semaphore closed: {e}");
                     return;
@@ -148,8 +141,8 @@ pub async fn run(
     drop(error_tx);
 
     // ── 7. Collect results while workers run ──────────────────────────────────
-    let mut findings: Vec<Finding>       = Vec::new();
-    let mut errors:   Vec<CapturedError> = Vec::new();
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut errors: Vec<CapturedError> = Vec::new();
     errors.append(&mut discovery_errors);
 
     while let Some(result) = join_set.join_next().await {
@@ -160,8 +153,12 @@ pub async fn run(
     }
 
     // Drain any remaining channel messages after workers exit.
-    while let Some(batch) = finding_rx.recv().await { findings.extend(batch); }
-    while let Some(batch) = error_rx.recv().await   { errors.extend(batch);   }
+    while let Some(batch) = finding_rx.recv().await {
+        findings.extend(batch);
+    }
+    while let Some(batch) = error_rx.recv().await {
+        errors.extend(batch);
+    }
 
     // ── 8. Post-process ───────────────────────────────────────────────────────
     dedup_findings(&mut findings);
@@ -170,41 +167,44 @@ pub async fn run(
     let elapsed = start.elapsed();
     info!(
         findings = findings.len(),
-        errors   = errors.len(),
+        errors = errors.len(),
         scanned,
         skipped,
         elapsed_ms = elapsed.as_millis(),
         "Run complete"
     );
 
-    RunResult { findings, errors, elapsed, scanned, skipped }
+    RunResult {
+        findings,
+        errors,
+        elapsed,
+        scanned,
+        skipped,
+    }
 }
 
 // ── Per-URL scan ───────────────────────────────────────────────────────────────
 
 async fn scan_url(
-    url:      String,
-    client:   &HttpClient,
+    url: String,
+    client: &HttpClient,
     scanners: &[Arc<dyn Scanner>],
-    config:   &Config,
+    config: &Config,
     reporter: &Reporter,
-    ftx:      mpsc::UnboundedSender<Vec<Finding>>,
-    etx:      mpsc::UnboundedSender<Vec<CapturedError>>,
+    ftx: mpsc::UnboundedSender<Vec<Finding>>,
+    etx: mpsc::UnboundedSender<Vec<CapturedError>>,
 ) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 
-    let mut scanner_set: JoinSet<(Vec<Finding>, Vec<CapturedError>)> =
-        JoinSet::new();
+    let mut scanner_set: JoinSet<(Vec<Finding>, Vec<CapturedError>)> = JoinSet::new();
 
     for scanner in scanners {
-        let s      = Arc::clone(scanner);
-        let u      = url.clone();
+        let s = Arc::clone(scanner);
+        let u = url.clone();
         let client = client.clone();
-        let cfg    = config.clone();
+        let cfg = config.clone();
 
-        scanner_set.spawn(async move {
-            s.scan(&u, &client, &cfg).await
-        });
+        scanner_set.spawn(async move { s.scan(&u, &client, &cfg).await });
     }
 
     while let Some(result) = scanner_set.join_next().await {
@@ -220,13 +220,15 @@ async fn scan_url(
                         reporter.flush_finding(finding);
                     }
                 }
-                if !f.is_empty() { let _ = ftx.send(f); }
-                if !e.is_empty() { let _ = etx.send(e); }
+                if !f.is_empty() {
+                    let _ = ftx.send(f);
+                }
+                if !e.is_empty() {
+                    let _ = etx.send(e);
+                }
             }
             Err(join_err) => {
-                let ce = CapturedError::internal(
-                    format!("Scanner panic on {url}: {join_err}")
-                );
+                let ce = CapturedError::internal(format!("Scanner panic on {url}: {join_err}"));
                 let _ = etx.send(vec![ce]);
             }
         }
@@ -235,7 +237,10 @@ async fn scan_url(
 
 // ── Scanner registry ───────────────────────────────────────────────────────────
 
-fn build_scanners(config: &Config, http_client_b: Option<Arc<HttpClient>>) -> Vec<Arc<dyn Scanner>> {
+fn build_scanners(
+    config: &Config,
+    http_client_b: Option<Arc<HttpClient>>,
+) -> Vec<Arc<dyn Scanner>> {
     let mut scanners: Vec<Arc<dyn Scanner>> = Vec::new();
 
     if config.toggles.cors {
@@ -248,7 +253,10 @@ fn build_scanners(config: &Config, http_client_b: Option<Arc<HttpClient>>) -> Ve
         scanners.push(Arc::new(GraphqlScanner::new(config)));
     }
     if config.toggles.api_security {
-        scanners.push(Arc::new(ApiSecurityScanner::new(config, http_client_b.clone())));
+        scanners.push(Arc::new(ApiSecurityScanner::new(
+            config,
+            http_client_b.clone(),
+        )));
     }
     if config.toggles.jwt {
         scanners.push(Arc::new(JwtScanner::new(config)));
@@ -260,10 +268,7 @@ fn build_scanners(config: &Config, http_client_b: Option<Arc<HttpClient>>) -> Ve
     if scanners.is_empty() {
         warn!("All scanners are disabled — no findings will be produced");
     } else {
-        info!(
-            enabled = scanners.len(),
-            "Scanners loaded"
-        );
+        info!(enabled = scanners.len(), "Scanners loaded");
     }
 
     scanners
@@ -272,8 +277,8 @@ fn build_scanners(config: &Config, http_client_b: Option<Arc<HttpClient>>) -> Ve
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 fn dedup(raw: Vec<String>) -> (Vec<String>, usize) {
-    let mut seen    = HashSet::with_capacity(raw.len());
-    let mut unique  = Vec::with_capacity(raw.len());
+    let mut seen = HashSet::with_capacity(raw.len());
+    let mut unique = Vec::with_capacity(raw.len());
     let mut dropped = 0usize;
 
     for raw_url in raw {
@@ -298,8 +303,8 @@ fn canonicalise(raw: &str) -> Option<String> {
 
     let default_port = match u.scheme() {
         "https" => Some(443),
-        "http"  => Some(80),
-        _       => None,
+        "http" => Some(80),
+        _ => None,
     };
     if u.port() == default_port {
         u.set_port(None).ok()?;
@@ -351,7 +356,9 @@ async fn run_discovery(
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
 
-        let (paths, errs) = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS).run().await;
+        let (paths, errs) = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS)
+            .run()
+            .await;
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
 
@@ -359,7 +366,9 @@ async fn run_discovery(
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
 
-        let (paths, errs) = JsDiscovery::new(client, seed, &host, MAX_SCRIPTS).run().await;
+        let (paths, errs) = JsDiscovery::new(client, seed, &host, MAX_SCRIPTS)
+            .run()
+            .await;
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
 
@@ -367,8 +376,9 @@ async fn run_discovery(
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
 
-        let (paths, errs) =
-            CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new()).run().await;
+        let (paths, errs) = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new())
+            .run()
+            .await;
         errors.extend(errs);
         insert_paths(&base, paths, &mut discovered);
     }

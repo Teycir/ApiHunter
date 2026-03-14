@@ -52,15 +52,27 @@ pub struct CapturedError {
 impl std::fmt::Display for CapturedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref url) = self.url {
-            write!(f, "[{}] {} (url: {}): {}", self.context, self.error_type, url, self.message)
+            write!(
+                f,
+                "[{}] {} (url: {}): {}",
+                self.context, self.error_type, url, self.message
+            )
         } else {
-            write!(f, "[{}] {}: {}", self.context, self.error_type, self.message)
+            write!(
+                f,
+                "[{}] {}: {}",
+                self.context, self.error_type, self.message
+            )
         }
     }
 }
 
 impl CapturedError {
-    pub fn new(context: impl Into<String>, url: Option<String>, err: &dyn std::error::Error) -> Self {
+    pub fn new(
+        context: impl Into<String>,
+        url: Option<String>,
+        err: &dyn std::error::Error,
+    ) -> Self {
         Self {
             timestamp: chrono::Utc::now().to_rfc3339(),
             context: context.into(),
@@ -70,7 +82,11 @@ impl CapturedError {
         }
     }
 
-    pub fn from_str(context: impl Into<String>, url: Option<String>, msg: impl Into<String>) -> Self {
+    pub fn from_str(
+        context: impl Into<String>,
+        url: Option<String>,
+        msg: impl Into<String>,
+    ) -> Self {
         Self {
             timestamp: chrono::Utc::now().to_rfc3339(),
             context: context.into(),

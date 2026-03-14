@@ -27,8 +27,7 @@ use super::Scanner;
 type HmacSha256 = Hmac<Sha256>;
 
 static JWT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+")
-        .unwrap());
+    Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap());
 
 static SENSITIVE_CLAIMS: &[&str] = &[
     "email",
@@ -85,16 +84,21 @@ impl Scanner for JwtScanner {
         for (header_name, header_value) in &resp.headers {
             if matches!(
                 header_name.as_str(),
-                "set-cookie"
-                    | "authorization"
-                    | "x-auth-token"
-                    | "x-access-token"
-                    | "x-id-token"
+                "set-cookie" | "authorization" | "x-auth-token" | "x-access-token" | "x-id-token"
             ) {
                 for m in JWT_RE.find_iter(header_value) {
                     let token = m.as_str().to_string();
                     if seen.insert(token.clone()) {
-                        analyze_jwt(url, &token, client, config, baseline_status, &mut findings, &mut errors).await;
+                        analyze_jwt(
+                            url,
+                            &token,
+                            client,
+                            config,
+                            baseline_status,
+                            &mut findings,
+                            &mut errors,
+                        )
+                        .await;
                     }
                 }
             }
@@ -120,7 +124,16 @@ impl Scanner for JwtScanner {
                 continue;
             }
 
-            analyze_jwt(url, &token, client, config, baseline_status, &mut findings, &mut errors).await;
+            analyze_jwt(
+                url,
+                &token,
+                client,
+                config,
+                baseline_status,
+                &mut findings,
+                &mut errors,
+            )
+            .await;
         }
 
         (findings, errors)
@@ -157,7 +170,9 @@ async fn analyze_jwt(
         .and_then(|h| h.get("kid"))
         .and_then(Value::as_str)
     {
-        if kid.contains("..") || kid.starts_with("http://") || kid.starts_with("https://")
+        if kid.contains("..")
+            || kid.starts_with("http://")
+            || kid.starts_with("https://")
             || kid.starts_with("file:")
         {
             findings.push(
@@ -285,14 +300,8 @@ async fn analyze_jwt(
     }
 
     if config.active_checks && alg.eq_ignore_ascii_case("rs256") {
-    if let Some(finding) = attempt_alg_confusion(
-            url,
-            header.as_ref(),
-            parts[1],
-            client,
-            baseline_status,
-        )
-        .await
+        if let Some(finding) =
+            attempt_alg_confusion(url, header.as_ref(), parts[1], client, baseline_status).await
         {
             findings.push(finding);
         }

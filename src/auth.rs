@@ -144,8 +144,7 @@ impl LiveCredential {
 pub fn load_flow(path: &Path) -> Result<AuthFlow> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Cannot read auth flow file: {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| "Auth flow file is not valid JSON")
+    serde_json::from_str(&content).with_context(|| "Auth flow file is not valid JSON")
 }
 
 // ── Flow executor ─────────────────────────────────────────────────────────────
@@ -175,7 +174,9 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
         let url = substitute_env_vars(&step.url);
 
         let mut req = client.request(
-            step.method.parse().context("Invalid HTTP method in auth flow")?,
+            step.method
+                .parse()
+                .context("Invalid HTTP method in auth flow")?,
             &url,
         );
 
@@ -219,8 +220,9 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
         debug!("Auth flow step {} response: {}", i + 1, body);
 
         if let (Some(extract), Some(inject_as)) = (&step.extract, &step.inject_as) {
-            let token = extract_jsonpath(&body, extract)
-                .with_context(|| format!("JSONPath '{extract}' matched nothing in auth response"))?;
+            let token = extract_jsonpath(&body, extract).with_context(|| {
+                format!("JSONPath '{extract}' matched nothing in auth response")
+            })?;
 
             let expires_in = step
                 .extract_expires_in

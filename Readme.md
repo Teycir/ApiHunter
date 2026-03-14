@@ -8,6 +8,7 @@
 ![Security](https://img.shields.io/badge/security-scanner-red?style=flat)
 ![API](https://img.shields.io/badge/API-testing-blue?style=flat)
 ![Async](https://img.shields.io/badge/async-tokio-green?style=flat)
+![CI](https://github.com/Teycir/ApiHunter/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)
 
 </div>

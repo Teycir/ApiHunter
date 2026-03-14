@@ -4,8 +4,8 @@
 // and external consumers can reference them.
 
 pub mod auth;
-pub mod config;
 pub mod cli;
+pub mod config;
 #[allow(dead_code)]
 pub mod discovery;
 pub mod error;

@@ -30,7 +30,10 @@ impl WafEvasion {
 
         let pairs: &[(&str, &str)] = &[
             ("user-agent", ua),
-            ("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"),
+            (
+                "accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            ),
             ("accept-language", "en-US,en;q=0.5"),
             ("accept-encoding", "gzip, deflate, br"),
             ("dnt", "1"),

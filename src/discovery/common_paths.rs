@@ -103,7 +103,12 @@ impl<'a> CommonPathDiscovery<'a> {
         concurrency: usize,
         extra: Vec<String>,
     ) -> Self {
-        Self { client, base_url, concurrency, extra }
+        Self {
+            client,
+            base_url,
+            concurrency,
+            extra,
+        }
     }
 
     /// Returns only paths that responded with < 404 (i.e. exist or auth-gated)

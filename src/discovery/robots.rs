@@ -14,7 +14,11 @@ pub struct RobotsDiscovery<'a> {
 
 impl<'a> RobotsDiscovery<'a> {
     pub fn new(client: &'a HttpClient, base_url: &'a str, host: &'a str) -> Self {
-        Self { client, base_url, host }
+        Self {
+            client,
+            base_url,
+            host,
+        }
     }
 
     pub async fn run(&self) -> (HashSet<String>, Vec<CapturedError>) {

@@ -17,7 +17,11 @@ pub struct HeaderDiscovery<'a> {
 
 impl<'a> HeaderDiscovery<'a> {
     pub fn new(client: &'a HttpClient, base_url: &'a str, host: &'a str) -> Self {
-        Self { client, base_url, host }
+        Self {
+            client,
+            base_url,
+            host,
+        }
     }
 
     /// Probe the root URL (GET + HEAD) and extract navigational paths from headers.

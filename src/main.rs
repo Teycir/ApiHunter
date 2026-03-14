@@ -16,19 +16,19 @@
 use std::{io, process, sync::Arc, time::Instant};
 
 use anyhow::{bail, Context, Result};
-use clap::Parser;
-use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
 use base64::engine::general_purpose::STANDARD as BASE64_STD;
 use base64::Engine;
 use chrono::Utc;
+use clap::Parser;
+use tracing::{error, info, warn};
+use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth,
     cli::{default_user_agents, load_urls, Cli},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
-    reports::{self, ReportConfig, Reporter, ReportFormat, ReportMeta, Severity},
+    reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner,
 };
 
@@ -75,12 +75,12 @@ async fn run(cli: Cli) -> Result<i32> {
         max_endpoints,
         concurrency: cli.concurrency,
         politeness: PolitenessConfig {
-            delay_ms:     cli.delay_ms,
-            retries:      cli.retries,
+            delay_ms: cli.delay_ms,
+            retries: cli.retries,
             timeout_secs: cli.timeout_secs,
         },
         waf_evasion: WafEvasionConfig {
-            enabled:     cli.waf_evasion || !cli.user_agents.is_empty(),
+            enabled: cli.waf_evasion || !cli.user_agents.is_empty(),
             user_agents: if cli.user_agents.is_empty() {
                 default_user_agents()
             } else {
@@ -88,27 +88,27 @@ async fn run(cli: Cli) -> Result<i32> {
             },
         },
         default_headers: build_default_headers(&cli.headers, &cli.auth_bearer, &cli.auth_basic)?,
-        cookies:         parse_cookies(&cli.cookies)?,
-        proxy:                       cli.proxy.clone(),
+        cookies: parse_cookies(&cli.cookies)?,
+        proxy: cli.proxy.clone(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
-        active_checks:              cli.active_checks,
-        stream_findings:            cli.stream,
-        baseline_path:              cli.baseline.clone(),
-        session_file:               cli.session_file.clone(),
-        auth_bearer:                cli.auth_bearer.clone(),
-        auth_basic:                 cli.auth_basic.clone(),
-        auth_flow:                  cli.auth_flow.clone(),
-        auth_flow_b:                cli.auth_flow_b.clone(),
-        unauth_strip_headers:       build_unauth_strip_headers(cli.unauth_strip_headers.as_deref()),
-        per_host_clients:           cli.per_host_clients,
-        adaptive_concurrency:       cli.adaptive_concurrency,
+        active_checks: cli.active_checks,
+        stream_findings: cli.stream,
+        baseline_path: cli.baseline.clone(),
+        session_file: cli.session_file.clone(),
+        auth_bearer: cli.auth_bearer.clone(),
+        auth_basic: cli.auth_basic.clone(),
+        auth_flow: cli.auth_flow.clone(),
+        auth_flow_b: cli.auth_flow_b.clone(),
+        unauth_strip_headers: build_unauth_strip_headers(cli.unauth_strip_headers.as_deref()),
+        per_host_clients: cli.per_host_clients,
+        adaptive_concurrency: cli.adaptive_concurrency,
         toggles: ScannerToggles {
-            cors:         !cli.no_cors,
-            csp:          !cli.no_csp,
-            graphql:      !cli.no_graphql,
+            cors: !cli.no_cors,
+            csp: !cli.no_csp,
+            graphql: !cli.no_graphql,
             api_security: !cli.no_api_security,
-            jwt:          !cli.no_jwt,
-            openapi:      !cli.no_openapi,
+            jwt: !cli.no_jwt,
+            openapi: !cli.no_openapi,
         },
     });
 
@@ -119,11 +119,11 @@ async fn run(cli: Cli) -> Result<i32> {
     // ── 3. Build shared HttpClient ───────────────────────────────────────────
     // Execute auth flow if provided
     let http_client = if let Some(ref flow_path) = config.auth_flow {
-        let flow = auth::load_flow(flow_path)
-            .context("Failed to load auth flow")?;
+        let flow = auth::load_flow(flow_path).context("Failed to load auth flow")?;
 
         info!("Executing auth flow from {}...", flow_path.display());
-        let cred = auth::execute_flow(&flow).await
+        let cred = auth::execute_flow(&flow)
+            .await
             .context("Auth flow failed")?;
         let cred = Arc::new(cred);
 
@@ -131,26 +131,26 @@ async fn run(cli: Cli) -> Result<i32> {
         auth::spawn_refresh_task(flow, Arc::clone(&cred));
 
         Arc::new(
-            HttpClient::new(&config).context("Failed to build HTTP client")?
-                .with_credential(cred)
+            HttpClient::new(&config)
+                .context("Failed to build HTTP client")?
+                .with_credential(cred),
         )
     } else {
-        Arc::new(
-            HttpClient::new(&config).context("Failed to build HTTP client")?
-        )
+        Arc::new(HttpClient::new(&config).context("Failed to build HTTP client")?)
     };
 
     // Second credential for IDOR cross-user checks
     let http_client_b: Option<Arc<HttpClient>> = if let Some(ref flow_path) = config.auth_flow_b {
-        let flow = auth::load_flow(flow_path)
-            .context("Failed to load auth flow B")?;
-        let cred = auth::execute_flow(&flow).await
+        let flow = auth::load_flow(flow_path).context("Failed to load auth flow B")?;
+        let cred = auth::execute_flow(&flow)
+            .await
             .context("Auth flow B failed")?;
         let cred = Arc::new(cred);
         auth::spawn_refresh_task(flow, Arc::clone(&cred));
         Some(Arc::new(
-            HttpClient::new(&config).context("Failed to build HTTP client B")?
-                .with_credential(cred)
+            HttpClient::new(&config)
+                .context("Failed to build HTTP client B")?
+                .with_credential(cred),
         ))
     } else {
         None
@@ -159,11 +159,11 @@ async fn run(cli: Cli) -> Result<i32> {
     // ── 4. Build Reporter ─────────────────────────────────────────────────────
     let print_summary = cli.summary || !cli.quiet;
     let mut report_cfg = ReportConfig {
-        format:        cli.format.into(),
-        output_path:   cli.output.clone(),
+        format: cli.format.into(),
+        output_path: cli.output.clone(),
         print_summary,
-        quiet:         cli.quiet,
-        stream:        cli.stream,
+        quiet: cli.quiet,
+        stream: cli.stream,
     };
     if report_cfg.stream && report_cfg.format != ReportFormat::Ndjson {
         warn!("--stream is only supported for NDJSON output; disabling streaming.");
@@ -211,10 +211,8 @@ async fn run(cli: Cli) -> Result<i32> {
 
     if let Some(path) = &cli.baseline {
         let baseline = reports::load_baseline_keys(path)?;
-        filtered_result.findings = reports::filter_new_findings(
-            filtered_result.findings,
-            &baseline,
-        );
+        filtered_result.findings =
+            reports::filter_new_findings(filtered_result.findings, &baseline);
     }
 
     // ── 7. Emit report ────────────────────────────────────────────────────────
@@ -250,12 +248,12 @@ fn init_tracing(quiet: bool) {
     // RUST_LOG always wins; otherwise default to `warn` in quiet mode, `info` otherwise.
     let default_level = if quiet { "warn" } else { "info" };
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     fmt::Subscriber::builder()
         .with_env_filter(filter)
-        .with_writer(io::stderr)   // keep stdout clean for piped JSON output
+        .with_writer(io::stderr) // keep stdout clean for piped JSON output
         .with_target(false)
         .compact()
         .init();
@@ -277,7 +275,9 @@ fn build_default_headers(
         out.push((name.to_string(), value.to_string()));
     }
 
-    let has_auth = out.iter().any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
+    let has_auth = out
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
 
     if !has_auth {
         if let Some(token) = auth_bearer {
@@ -305,8 +305,7 @@ fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {
 }
 
 fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
-    raws
-        .unwrap_or(&[])
+    raws.unwrap_or(&[])
         .iter()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())

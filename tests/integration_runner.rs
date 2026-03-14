@@ -102,14 +102,7 @@ async fn cors_wildcard_origin_detected() {
     let client = Arc::new(HttpClient::new(&config).unwrap());
     let reporter = test_reporter();
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        reporter,
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, reporter).await;
 
     let cors_findings: Vec<_> = result
         .findings
@@ -184,14 +177,7 @@ async fn csp_missing_header_detected() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
     let has_csp_missing = result
         .findings
@@ -226,18 +212,12 @@ async fn csp_unsafe_inline_detected() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
-    let has_unsafe = result.findings.iter().any(|f| {
-        f.scanner == "csp" && f.title.to_lowercase().contains("unsafe-inline")
-    });
+    let has_unsafe = result
+        .findings
+        .iter()
+        .any(|f| f.scanner == "csp" && f.title.to_lowercase().contains("unsafe-inline"));
     assert!(has_unsafe, "'unsafe-inline' in CSP should be flagged");
 }
 

@@ -35,8 +35,7 @@ static INLINE_SCRIPT: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?s)<script[^>]*>(.*?)</script>").unwrap());
 
 // sourceMappingURL
-static SOURCEMAP: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"sourceMappingURL=([^\s*]+)").unwrap());
+static SOURCEMAP: Lazy<Regex> = Lazy::new(|| Regex::new(r"sourceMappingURL=([^\s*]+)").unwrap());
 
 pub struct JsDiscovery<'a> {
     client: &'a HttpClient,
@@ -46,8 +45,18 @@ pub struct JsDiscovery<'a> {
 }
 
 impl<'a> JsDiscovery<'a> {
-    pub fn new(client: &'a HttpClient, target_url: &'a str, host: &'a str, max_scripts: usize) -> Self {
-        Self { client, target_url, host, max_scripts }
+    pub fn new(
+        client: &'a HttpClient,
+        target_url: &'a str,
+        host: &'a str,
+        max_scripts: usize,
+    ) -> Self {
+        Self {
+            client,
+            target_url,
+            host,
+            max_scripts,
+        }
     }
 
     /// Main entry: parse the target page, extract + analyse JS files
@@ -83,7 +92,8 @@ impl<'a> JsDiscovery<'a> {
                 Ok(sr) => {
                     self.extract_from_text(&sr.body, &mut endpoints);
                     // Try sourcemap
-                    if let Some(sm_path) = SOURCEMAP.captures(&sr.body)
+                    if let Some(sm_path) = SOURCEMAP
+                        .captures(&sr.body)
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().to_string())
                     {
@@ -125,32 +135,28 @@ impl<'a> JsDiscovery<'a> {
         }
     }
 
-    async fn fetch_sourcemap(
-        &self,
-        sm_url: &str,
-    ) -> (HashSet<String>, Vec<CapturedError>) {
+    async fn fetch_sourcemap(&self, sm_url: &str) -> (HashSet<String>, Vec<CapturedError>) {
         let mut out = HashSet::new();
         let mut errors = Vec::new();
 
         match self.client.get(sm_url).await {
-            Ok(r) => {
-                match serde_json::from_str::<serde_json::Value>(&r.body) {
-                    Ok(map) => {
-                        let sources = map.get("sourcesContent")
-                            .and_then(|v| v.as_array())
-                            .cloned()
-                            .unwrap_or_default();
-                        for src in sources {
-                            if let Some(text) = src.as_str() {
-                                self.extract_from_text(text, &mut out);
-                            }
+            Ok(r) => match serde_json::from_str::<serde_json::Value>(&r.body) {
+                Ok(map) => {
+                    let sources = map
+                        .get("sourcesContent")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for src in sources {
+                        if let Some(text) = src.as_str() {
+                            self.extract_from_text(text, &mut out);
                         }
                     }
-                    Err(e) => {
-                        warn!("[js] sourcemap parse error at {sm_url}: {e}");
-                    }
                 }
-            }
+                Err(e) => {
+                    warn!("[js] sourcemap parse error at {sm_url}: {e}");
+                }
+            },
             Err(e) => errors.push(e),
         }
 

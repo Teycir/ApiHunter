@@ -42,10 +42,9 @@ pub fn normalize_path(raw: &str, target_host: &str) -> Option<String> {
 /// Keywords that flag a path as interesting for API discovery
 pub fn is_interesting(path: &str) -> bool {
     const KEYWORDS: &[&str] = &[
-        "api", "graphql", "swagger", "openapi", "admin", "internal", "private",
-        "debug", "actuator", "metrics", "health", "config", "oauth", "auth",
-        "token", "session", "keys", "secret", "rest", "v1", "v2", "v3",
-        "webhook", "upload", "download",
+        "api", "graphql", "swagger", "openapi", "admin", "internal", "private", "debug",
+        "actuator", "metrics", "health", "config", "oauth", "auth", "token", "session", "keys",
+        "secret", "rest", "v1", "v2", "v3", "webhook", "upload", "download",
     ];
     let lower = path.to_lowercase();
     KEYWORDS.iter().any(|k| lower.contains(k))
@@ -63,5 +62,3 @@ pub fn collect_paths(
         }
     }
 }
-
-
