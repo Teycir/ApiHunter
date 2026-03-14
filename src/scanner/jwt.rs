@@ -70,6 +70,40 @@ impl Scanner for JwtScanner {
         };
 
         let mut seen = HashSet::new();
+
+        // Scan response headers for JWTs (common in Set-Cookie or auth headers).
+        for (header_name, header_value) in &resp.headers {
+            if matches!(
+                header_name.as_str(),
+                "set-cookie"
+                    | "authorization"
+                    | "x-auth-token"
+                    | "x-access-token"
+                    | "x-id-token"
+            ) {
+                for m in JWT_RE.find_iter(header_value) {
+                    let token = m.as_str().to_string();
+                    if seen.insert(token.clone()) {
+                        analyze_jwt(url, &token, &mut findings);
+                    }
+                }
+            }
+        }
+
+        let ct = resp
+            .headers
+            .get("content-type")
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let scannable = ct.is_empty()
+            || ct.contains("json")
+            || ct.contains("text/")
+            || ct.contains("javascript")
+            || ct.contains("xml");
+        if !scannable {
+            return (findings, errors);
+        }
+
         for m in JWT_RE.find_iter(&resp.body) {
             let token = m.as_str().to_string();
             if !seen.insert(token.clone()) {

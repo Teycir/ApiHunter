@@ -84,11 +84,11 @@ pub async fn run(
         run_discovery(&unique_seeds, &config, &http_client).await;
     info!(discovered = discovered.len(), "Discovery complete");
 
-    let mut merged = unique_seeds.clone();
+    let mut merged = unique_seeds;
     merged.extend(discovered);
     let (unique_all, skipped_merged) = dedup(merged);
 
-    // ── 3. Apply max_endpoints cap ────────────────────────────────────────────
+    // ── 4. Apply max_endpoints cap ────────────────────────────────────────────
     let (work_list, skipped_cap) = apply_cap(unique_all, config.max_endpoints);
     if skipped_cap > 0 {
         warn!(
@@ -106,7 +106,7 @@ pub async fn run(
         return RunResult { elapsed: start.elapsed(), skipped, ..Default::default() };
     }
 
-    // ── 3. Shared state ───────────────────────────────────────────────────────
+    // ── 5. Shared state ───────────────────────────────────────────────────────
     let semaphore  = Arc::new(Semaphore::new(config.concurrency));
     let scanners   = build_scanners(&config);
 
@@ -116,7 +116,7 @@ pub async fn run(
     let (error_tx, mut error_rx) =
         mpsc::unbounded_channel::<Vec<CapturedError>>();
 
-    // ── 4. Spawn worker tasks ─────────────────────────────────────────────────
+    // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
 
     for url in work_list {
@@ -144,7 +144,7 @@ pub async fn run(
     drop(finding_tx);
     drop(error_tx);
 
-    // ── 5. Collect results while workers run ──────────────────────────────────
+    // ── 7. Collect results while workers run ──────────────────────────────────
     let mut findings: Vec<Finding>       = Vec::new();
     let mut errors:   Vec<CapturedError> = Vec::new();
     errors.append(&mut discovery_errors);
@@ -160,7 +160,7 @@ pub async fn run(
     while let Some(batch) = finding_rx.recv().await { findings.extend(batch); }
     while let Some(batch) = error_rx.recv().await   { errors.extend(batch);   }
 
-    // ── 6. Post-process ───────────────────────────────────────────────────────
+    // ── 8. Post-process ───────────────────────────────────────────────────────
     dedup_findings(&mut findings);
     sort_findings(&mut findings);
 

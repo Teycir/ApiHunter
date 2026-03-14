@@ -133,6 +133,15 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
+        self.enforce_host_delay(url).await;
+
+        // Random inter-request delay based on configured delay_ms.
+        if self.waf_enabled && self.delay_ms > 0 {
+            let min_secs = self.delay_ms as f64 / 1000.0;
+            let max_secs = min_secs * 3.0; // jitter up to 3x
+            WafEvasion::random_delay(min_secs, max_secs).await;
+        }
+
         let attempts = self.retries + 1;
         let mut last_err: Option<CapturedError> = None;
 
@@ -194,15 +203,6 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
-        self.enforce_host_delay(url).await;
-
-        // Random inter-request delay based on configured delay_ms.
-        if self.waf_enabled && self.delay_ms > 0 {
-            let min_secs = self.delay_ms as f64 / 1000.0;
-            let max_secs = min_secs * 3.0; // jitter up to 3x
-            WafEvasion::random_delay(min_secs, max_secs).await;
-        }
-
         let mut req = self.inner.request(method.clone(), url);
 
         // Rotate UA + evasion headers on every request.
