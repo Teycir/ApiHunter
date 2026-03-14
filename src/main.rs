@@ -62,8 +62,32 @@ async fn run(cli: Cli) -> Result<i32> {
         warn!("No URLs provided — nothing to scan.");
         return Ok(0);
     }
-    print_banner(&cli, raw_urls.len());
-    info!("Loaded {} URL(s) for scanning.", raw_urls.len());
+
+    // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
+    let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
+        info!("Pre-filtering inaccessible URLs (timeout={}s)...", cli.filter_timeout);
+        let (accessible, inaccessible) = filter_accessible_urls(&raw_urls, cli.filter_timeout).await;
+        if !inaccessible.is_empty() {
+            info!("Filtered out {} inaccessible URL(s), {} remaining.", inaccessible.len(), accessible.len());
+        }
+        (accessible, inaccessible)
+    } else {
+        (raw_urls, Vec::new())
+    };
+
+    if filtered_urls.is_empty() {
+        warn!("No accessible URLs remaining after filtering.");
+        if !inaccessible_urls.is_empty() {
+            eprintln!("\nInaccessible URLs:");
+            for url in &inaccessible_urls {
+                eprintln!("  - {}", url);
+            }
+        }
+        return Ok(0);
+    }
+
+    print_banner(&cli, filtered_urls.len());
+    info!("Loaded {} URL(s) for scanning.", filtered_urls.len());
 
     // ── 2. Build Config ──────────────────────────────────────────────────────
     let max_endpoints = if cli.max_endpoints == 0 {
@@ -189,7 +213,7 @@ async fn run(cli: Cli) -> Result<i32> {
     // ── 5. Run scanner ────────────────────────────────────────────────────────
     info!("Starting scan with concurrency={}.", config.concurrency);
     let run_result = runner::run(
-        raw_urls,
+        filtered_urls,
         config.clone(),
         Arc::clone(&http_client),
         http_client_b,
@@ -241,6 +265,17 @@ async fn run(cli: Cli) -> Result<i32> {
 
     let elapsed = start.elapsed();
     info!("Scan finished in {:.2}s.", elapsed.as_secs_f64());
+
+    // Display inaccessible URLs if any were filtered
+    if !inaccessible_urls.is_empty() && !cli.quiet {
+        eprintln!("\n┌──────────────────────────────┐");
+        eprintln!("│  INACCESSIBLE URLs ({:>2})  │", inaccessible_urls.len());
+        eprintln!("├──────────────────────────────┤");
+        for url in &inaccessible_urls {
+            eprintln!("│ {:<28} │", url);
+        }
+        eprintln!("└──────────────────────────────┘\n");
+    }
 
     // ── 9. Compute and return exit code ───────────────────────────────────────
     let summary = reports::build_summary(&filtered_result);
@@ -350,4 +385,61 @@ fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+// ── URL accessibility filter ──────────────────────────────────────────────
+
+async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<String>, Vec<String>) {
+    use tokio::time::Duration;
+    use futures::stream::{self, StreamExt};
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .connect_timeout(Duration::from_secs(2))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .expect("Failed to build reqwest client");
+
+    let total = urls.len();
+    let mut checked = 0;
+
+    let results: Vec<(String, bool)> = stream::iter(urls)
+        .map(|url| {
+            let client = client.clone();
+            let url = url.clone();
+            async move {
+                let is_accessible = match client.get(&url).send().await {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16();
+                        // 2xx, 3xx, 4xx (except 403, 451) = accessible
+                        // 403, 451, 5xx, timeout = inaccessible
+                        matches!(status, 200..=399 | 400..=402 | 404..=450 | 452..=499)
+                    }
+                    Err(_) => false,
+                };
+                (url, is_accessible)
+            }
+        })
+        .buffer_unordered(20)
+        .inspect(|_| {
+            checked += 1;
+            if checked % 10 == 0 || checked == total {
+                info!("Accessibility check: {}/{} URLs tested", checked, total);
+            }
+        })
+        .collect()
+        .await;
+
+    let mut accessible = Vec::new();
+    let mut inaccessible = Vec::new();
+
+    for (url, is_accessible) in results {
+        if is_accessible {
+            accessible.push(url);
+        } else {
+            inaccessible.push(url);
+        }
+    }
+
+    (accessible, inaccessible)
 }

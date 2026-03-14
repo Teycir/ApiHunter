@@ -42,6 +42,14 @@ pub struct Cli {
     #[arg(long, group = "input")]
     pub stdin: bool,
 
+    /// Skip pre-filtering of inaccessible URLs (enabled by default).
+    #[arg(long)]
+    pub no_filter: bool,
+
+    /// Timeout for accessibility pre-check (seconds).
+    #[arg(long, default_value_t = 3, value_name = "SECS")]
+    pub filter_timeout: u64,
+
     // ── Output ───────────────────────────────────────────────────────────────
     /// Write findings to this file path (default: stdout).
     #[arg(short = 'o', long, value_name = "FILE")]
@@ -73,20 +81,20 @@ pub struct Cli {
     pub concurrency: usize,
 
     /// Maximum number of endpoints to scan (0 = unlimited).
-    #[arg(short = 'n', long, default_value_t = 50, value_name = "N")]
+    #[arg(short = 'n', long, default_value_t = 15, value_name = "N")]
     pub max_endpoints: usize,
 
     // ── Politeness ───────────────────────────────────────────────────────────
     /// Per-domain minimum delay between requests (milliseconds).
-    #[arg(long, default_value_t = 100, value_name = "MS")]
+    #[arg(long, default_value_t = 150, value_name = "MS")]
     pub delay_ms: u64,
 
     /// Maximum number of retry attempts on transient errors.
-    #[arg(long, default_value_t = 3, value_name = "N")]
+    #[arg(long, default_value_t = 1, value_name = "N")]
     pub retries: u32,
 
     /// Per-request timeout (seconds).
-    #[arg(long, default_value_t = 30, value_name = "SECS")]
+    #[arg(long, default_value_t = 8, value_name = "SECS")]
     pub timeout_secs: u64,
 
     // ── WAF evasion ──────────────────────────────────────────────────────────
