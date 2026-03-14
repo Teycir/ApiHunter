@@ -24,6 +24,7 @@ use base64::Engine;
 use chrono::Utc;
 
 use api_scanner::{
+    auth,
     cli::{default_user_agents, load_urls, Cli},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
@@ -96,6 +97,9 @@ async fn run(cli: Cli) -> Result<i32> {
         session_file:               cli.session_file.clone(),
         auth_bearer:                cli.auth_bearer.clone(),
         auth_basic:                 cli.auth_basic.clone(),
+        auth_flow:                  cli.auth_flow.clone(),
+        auth_flow_b:                cli.auth_flow_b.clone(),
+        unauth_strip_headers:       build_unauth_strip_headers(cli.unauth_strip_headers.as_deref()),
         per_host_clients:           cli.per_host_clients,
         adaptive_concurrency:       cli.adaptive_concurrency,
         toggles: ScannerToggles {
@@ -109,9 +113,44 @@ async fn run(cli: Cli) -> Result<i32> {
     });
 
     // ── 3. Build shared HttpClient ───────────────────────────────────────────
-    let http_client = Arc::new(
-        HttpClient::new(&config).context("Failed to build HTTP client")?,
-    );
+    // Execute auth flow if provided
+    let http_client = if let Some(ref flow_path) = config.auth_flow {
+        let flow = auth::load_flow(flow_path)
+            .context("Failed to load auth flow")?;
+
+        info!("Executing auth flow from {}...", flow_path.display());
+        let cred = auth::execute_flow(&flow).await
+            .context("Auth flow failed")?;
+        let cred = Arc::new(cred);
+
+        // Spawn background refresh task
+        auth::spawn_refresh_task(flow, Arc::clone(&cred));
+
+        Arc::new(
+            HttpClient::new(&config).context("Failed to build HTTP client")?
+                .with_credential(cred)
+        )
+    } else {
+        Arc::new(
+            HttpClient::new(&config).context("Failed to build HTTP client")?
+        )
+    };
+
+    // Second credential for IDOR cross-user checks
+    let http_client_b: Option<Arc<HttpClient>> = if let Some(ref flow_path) = config.auth_flow_b {
+        let flow = auth::load_flow(flow_path)
+            .context("Failed to load auth flow B")?;
+        let cred = auth::execute_flow(&flow).await
+            .context("Auth flow B failed")?;
+        let cred = Arc::new(cred);
+        auth::spawn_refresh_task(flow, Arc::clone(&cred));
+        Some(Arc::new(
+            HttpClient::new(&config).context("Failed to build HTTP client B")?
+                .with_credential(cred)
+        ))
+    } else {
+        None
+    };
 
     // ── 4. Build Reporter ─────────────────────────────────────────────────────
     let print_summary = cli.summary || !cli.quiet;
@@ -148,6 +187,7 @@ async fn run(cli: Cli) -> Result<i32> {
         raw_urls,
         config.clone(),
         Arc::clone(&http_client),
+        http_client_b,
         reporter.clone(),
     )
     .await;
@@ -258,4 +298,26 @@ fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {
         out.push((name.to_string(), value.to_string()));
     }
     Ok(out)
+}
+
+fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
+    const DEFAULTS: &[&str] = &[
+        "authorization",
+        "cookie",
+        "x-api-key",
+        "x-auth-token",
+        "x-access-token",
+        "x-authorization",
+        "api-key",
+        "x-session-token",
+    ];
+
+    match raws {
+        Some(list) if !list.is_empty() => list
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => DEFAULTS.iter().map(|s| s.to_string()).collect(),
+    }
 }

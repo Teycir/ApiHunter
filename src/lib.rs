@@ -3,6 +3,7 @@
 // Library entry point — re-exports modules so that integration tests
 // and external consumers can reference them.
 
+pub mod auth;
 pub mod config;
 pub mod cli;
 #[allow(dead_code)]

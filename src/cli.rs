@@ -142,6 +142,19 @@ pub struct Cli {
     #[arg(long, value_name = "USER:PASS")]
     pub auth_basic: Option<String>,
 
+    /// Path to a JSON auth flow descriptor for pre-scan login.
+    /// See docs/auth-flow.md for the format.
+    #[arg(long, value_name = "FILE")]
+    pub auth_flow: Option<PathBuf>,
+
+    /// Second auth flow for cross-user IDOR checks (--active-checks required).
+    #[arg(long, value_name = "FILE")]
+    pub auth_flow_b: Option<PathBuf>,
+
+    /// Extra auth-like headers to strip for unauthenticated probes (comma-separated).
+    #[arg(long, value_name = "NAME", value_delimiter = ',')]
+    pub unauth_strip_headers: Option<Vec<String>>,
+
     /// Load/save cookies from a JSON session file.
     #[arg(long, value_name = "FILE")]
     pub session_file: Option<PathBuf>,

@@ -64,10 +64,11 @@ pub struct RunResult {
 
 /// Entry point called from `main`.
 pub async fn run(
-    urls:        Vec<String>,
-    config:      Arc<Config>,
-    http_client: Arc<HttpClient>,
-    reporter:   Arc<Reporter>,
+    urls:         Vec<String>,
+    config:       Arc<Config>,
+    http_client:  Arc<HttpClient>,
+    http_client_b: Option<Arc<HttpClient>>,
+    reporter:     Arc<Reporter>,
 ) -> RunResult {
     let start = Instant::now();
 
@@ -109,7 +110,7 @@ pub async fn run(
 
     // ── 5. Shared state ───────────────────────────────────────────────────────
     let semaphore  = Arc::new(Semaphore::new(config.concurrency));
-    let scanners   = build_scanners(&config);
+    let scanners   = build_scanners(&config, http_client_b.clone());
 
     // mpsc channels — workers send back results; main task collects
     let (finding_tx, mut finding_rx) =
@@ -234,7 +235,7 @@ async fn scan_url(
 
 // ── Scanner registry ───────────────────────────────────────────────────────────
 
-fn build_scanners(config: &Config) -> Vec<Arc<dyn Scanner>> {
+fn build_scanners(config: &Config, http_client_b: Option<Arc<HttpClient>>) -> Vec<Arc<dyn Scanner>> {
     let mut scanners: Vec<Arc<dyn Scanner>> = Vec::new();
 
     if config.toggles.cors {
@@ -247,7 +248,7 @@ fn build_scanners(config: &Config) -> Vec<Arc<dyn Scanner>> {
         scanners.push(Arc::new(GraphqlScanner::new(config)));
     }
     if config.toggles.api_security {
-        scanners.push(Arc::new(ApiSecurityScanner::new(config)));
+        scanners.push(Arc::new(ApiSecurityScanner::new(config, http_client_b.clone())));
     }
     if config.toggles.jwt {
         scanners.push(Arc::new(JwtScanner::new(config)));

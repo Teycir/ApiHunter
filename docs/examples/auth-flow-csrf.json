@@ -1,0 +1,25 @@
+{
+  "steps": [
+    {
+      "url": "https://app.example.com/login",
+      "method": "GET",
+      "extract": "$.csrf_token",
+      "inject_as": {
+        "header": "X-CSRF-Token"
+      }
+    },
+    {
+      "url": "https://app.example.com/login",
+      "method": "POST",
+      "body": {
+        "username": "{{SCAN_USER}}",
+        "password": "{{SCAN_PASS}}"
+      },
+      "extract": "$.session_token",
+      "inject_as": {
+        "cookie": "session"
+      }
+    }
+  ],
+  "refresh_interval_secs": 1800
+}

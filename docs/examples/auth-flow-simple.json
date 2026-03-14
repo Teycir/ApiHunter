@@ -1,0 +1,17 @@
+{
+  "steps": [
+    {
+      "url": "https://api.example.com/auth/login",
+      "method": "POST",
+      "body": {
+        "username": "{{SCAN_USER}}",
+        "password": "{{SCAN_PASS}}"
+      },
+      "extract": "$.data.access_token",
+      "extract_refresh": "$.data.refresh_token",
+      "extract_expires_in": "$.data.expires_in",
+      "inject_as": "bearer"
+    }
+  ],
+  "refresh_interval_secs": 840
+}

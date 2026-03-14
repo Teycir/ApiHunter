@@ -24,6 +24,9 @@ use url::Url;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 
+// Optional auth credential support
+pub use crate::auth::LiveCredential;
+
 /// Parsed, size-capped HTTP response.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -52,6 +55,18 @@ impl HttpResponse {
 /// Maximum response body size in bytes (512 KB).
 const MAX_RESPONSE_BYTES: usize = 512 * 1024;
 
+/// Default auth-like headers to strip for unauthenticated probes.
+const DEFAULT_UNAUTH_STRIP_HEADERS: &[&str] = &[
+    "authorization",
+    "cookie",
+    "x-api-key",
+    "x-auth-token",
+    "x-access-token",
+    "x-authorization",
+    "api-key",
+    "x-session-token",
+];
+
 /// Thin wrapper around `reqwest::Client` with WAF evasion & size capping.
 #[derive(Clone)]
 pub struct HttpClient {
@@ -67,6 +82,10 @@ pub struct HttpClient {
     session_store: Option<Arc<Mutex<SessionStore>>>,
     session_path: Option<PathBuf>,
     adaptive: Option<Arc<AdaptiveLimiter>>,
+    /// Optional live credential for auth flow injection.
+    live_credential: Option<Arc<LiveCredential>>,
+    /// Header names to strip for unauthenticated probes.
+    unauth_strip_headers: Vec<HeaderName>,
 }
 
 #[derive(Debug)]
@@ -191,6 +210,7 @@ impl HttpClient {
         };
 
         let inner = build_client(&client_config)?;
+        let unauth_strip_headers = build_unauth_strip_headers(&config.unauth_strip_headers)?;
 
         let session_store = if let Some(path) = &config.session_file {
             if path.exists() {
@@ -226,7 +246,15 @@ impl HttpClient {
             } else {
                 None
             },
+            live_credential: None,
+            unauth_strip_headers,
         })
+    }
+
+    /// Attach a live credential to this client for auth flow injection.
+    pub fn with_credential(mut self, cred: Arc<LiveCredential>) -> Self {
+        self.live_credential = Some(cred);
+        self
     }
 
     pub fn cache_spec(&self, url: &str, body: &str) {
@@ -368,6 +396,11 @@ impl HttpClient {
             }
         }
 
+        // Apply live credential from auth flow
+        if let Some(ref cred) = self.live_credential {
+            cred.apply_to(&mut combined_headers).await;
+        }
+
         if !combined_headers.is_empty() {
             req = req.headers(combined_headers);
         }
@@ -477,6 +510,36 @@ impl HttpClient {
         body: &serde_json::Value,
     ) -> Result<HttpResponse, CapturedError> {
         self.request(Method::POST, url, None, Some(body.clone())).await
+    }
+
+    /// GET request without the live credential (used for unauthenticated comparison in IDOR checks).
+    pub async fn get_without_auth(&self, url: &str) -> Result<HttpResponse, CapturedError> {
+        let client = self.client_for_url(url).map_err(|e| {
+            CapturedError::from_str("http::get_without_auth", Some(url.to_string()), e)
+        })?;
+
+        let mut req = client.request(reqwest::Method::GET, url);
+
+        if self.waf_enabled {
+            req = req.headers(WafEvasion::evasion_headers());
+        }
+
+        let mut req = req.build().map_err(|e| {
+            CapturedError::new("http::get_without_auth", Some(url.to_string()), &e)
+        })?;
+
+        // Strip any default auth-like headers that could be set on the client.
+        let headers = req.headers_mut();
+        for name in &self.unauth_strip_headers {
+            headers.remove(name);
+        }
+
+        let response = client.execute(req).await.map_err(|e| {
+            debug!("[GET {url}] send error (no auth): {e}");
+            CapturedError::new("http::get_without_auth", Some(url.to_string()), &e)
+        })?;
+
+        self.read_response(response, url).await
     }
 
     pub async fn method_probe(
@@ -627,6 +690,32 @@ impl HttpClient {
             .map_err(|e| ScannerError::Config(format!("Session write failed: {e}")))?;
         Ok(())
     }
+}
+
+fn build_unauth_strip_headers(raws: &[String]) -> ScannerResult<Vec<HeaderName>> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let names = DEFAULT_UNAUTH_STRIP_HEADERS
+        .iter()
+        .copied()
+        .chain(raws.iter().map(|s| s.as_str()));
+
+    for name in names {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_ascii_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        let header = HeaderName::from_bytes(trimmed.as_bytes()).map_err(|e| {
+            ScannerError::Config(format!("Invalid unauth strip header '{trimmed}': {e}"))
+        })?;
+        out.push(header);
+    }
+    Ok(out)
 }
 
 fn should_retry_status(status: u16) -> bool {

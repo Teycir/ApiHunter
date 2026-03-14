@@ -32,6 +32,9 @@ Durations are in milliseconds unless noted.
 | `cookies` | `Vec<String>` | `[]` | Default cookies (NAME=VALUE) |
 | `auth_bearer` | `Option<String>` | `None` | Shorthand for `Authorization: Bearer ...` |
 | `auth_basic` | `Option<String>` | `None` | Shorthand for HTTP Basic auth |
+| `auth_flow` | `Option<PathBuf>` | `None` | JSON auth flow file (see `docs/auth-flow.md`) |
+| `auth_flow_b` | `Option<PathBuf>` | `None` | Second auth flow for cross-user IDOR checks |
+| `unauth_strip_headers` | `Vec<String>` | default list | Header names stripped for unauthenticated probes |
 | `session_file` | `Option<PathBuf>` | `None` | Load/save cookies to JSON session file |
 | `proxy` | `Option<String>` | `None` | Proxy URL |
 | `danger_accept_invalid_certs` | `bool` | `false` | Skip TLS verification |

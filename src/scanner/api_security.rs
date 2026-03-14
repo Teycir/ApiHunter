@@ -29,12 +29,14 @@ use super::Scanner;
 
 pub struct ApiSecurityScanner {
     checked_hosts: Arc<DashSet<String>>,
+    client_b: Option<Arc<HttpClient>>,
 }
 
 impl ApiSecurityScanner {
-    pub fn new(_config: &Config) -> Self {
+    pub fn new(_config: &Config, client_b: Option<Arc<HttpClient>>) -> Self {
         Self {
             checked_hosts: Arc::new(DashSet::new()),
+            client_b,
         }
     }
 }
@@ -283,7 +285,14 @@ impl Scanner for ApiSecurityScanner {
         check_response_headers(url, client, &mut findings, &mut errors).await;
 
         if config.active_checks {
-            check_idor_bola(url, client, &mut findings, &mut errors).await;
+            check_idor_bola(
+                url,
+                client,
+                self.client_b.as_ref().map(|c| c.as_ref()),
+                &mut findings,
+                &mut errors,
+            )
+            .await;
             check_mass_assignment(url, client, &mut findings, &mut errors).await;
             check_rate_limit(
                 url,
@@ -972,15 +981,40 @@ fn snippet(s: &str, max_len: usize) -> String {
 
 // ── Active checks (opt-in) ────────────────────────────────────────────────────
 
+// ── IDOR / BOLA detection ─────────────────────────────────────────────────────
+//
+// Three tiers, each independently useful:
+//
+// Tier 1 — Unauthenticated comparison
+//   The same URL is fetched without credentials. If it returns a 200 with
+//   different content than the authenticated response, the endpoint may be
+//   publicly accessible when it shouldn't be.
+//
+// Tier 2 — ID range walk
+//   Walk a small window of IDs around the one in the URL. Track which return
+//   200 and which return 403/404. A pattern like [200, 200, 200, 403, 403]
+//   for consecutive IDs suggests authorization is not object-specific.
+//
+// Tier 3 — Cross-user comparison (requires client_b)
+//   Fetch the URL with a second identity. If the second identity gets the
+//   same content as the first, object-level authorization is missing.
+
 async fn check_idor_bola(
     url: &str,
     client: &HttpClient,
+    client_b: Option<&HttpClient>,
     findings: &mut Vec<Finding>,
     errors: &mut Vec<CapturedError>,
 ) {
-    let Some(alt) = bump_numeric_path(url) else { return; };
+    // Only run on URLs with numeric path segments
+    let numeric_seg = match find_numeric_segment(url) {
+        Some(s) => s,
+        None => return,
+    };
 
-    let base = match client.get(url).await {
+    // ── Tier 1: Unauthenticated comparison ────────────────────────────────────
+
+    let authed_resp = match client.get(url).await {
         Ok(r) => r,
         Err(e) => {
             errors.push(e);
@@ -988,11 +1022,11 @@ async fn check_idor_bola(
         }
     };
 
-    if base.status >= 400 {
-        return;
+    if authed_resp.status >= 400 {
+        return; // Not a live endpoint with our credentials
     }
 
-    let alt_resp = match client.get(&alt).await {
+    let unauth_resp = match client.get_without_auth(url).await {
         Ok(r) => r,
         Err(e) => {
             errors.push(e);
@@ -1000,29 +1034,227 @@ async fn check_idor_bola(
         }
     };
 
-    if alt_resp.status >= 400 {
-        return;
+    let authed_fp = body_fingerprint(&authed_resp.body);
+
+    match unauth_resp.status {
+        200..=299 => {
+            let unauth_fp = body_fingerprint(&unauth_resp.body);
+            if authed_fp == unauth_fp {
+                // Same content unauthenticated — endpoint is public (may be intentional)
+                findings.push(
+                    Finding::new(
+                        url,
+                        "api_security/unauthenticated-access",
+                        "Endpoint accessible without authentication",
+                        Severity::Medium,
+                        "Endpoint returns the same response with and without auth credentials. \
+                         If this resource should be protected, authentication is not enforced.",
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Authed: HTTP {}, Unauthed: HTTP {}",
+                        authed_resp.status, unauth_resp.status
+                    ))
+                    .with_remediation(
+                        "Enforce authentication middleware on all protected endpoints.",
+                    ),
+                );
+            } else {
+                // Different content unauthenticated — endpoint is accessible but
+                // returns different data. Could be IDOR or partial access.
+                findings.push(
+                    Finding::new(
+                        url,
+                        "api_security/partial-unauth-access",
+                        "Endpoint returns data without authentication",
+                        Severity::High,
+                        "Endpoint returns a successful response without credentials but \
+                         with different content than the authenticated response. \
+                         The unauthenticated response may contain another user's data.",
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Authed status: {}, Unauthed status: {}\n\
+                         Authed body hash: {:x}, Unauthed body hash: {:x}",
+                        authed_resp.status, unauth_resp.status, authed_fp.1, unauth_fp.1
+                    ))
+                    .with_remediation(
+                        "Verify object-level authorization is enforced for every identity, \
+                         including unauthenticated requests.",
+                    ),
+                );
+            }
+        }
+        401 | 403 => {
+            // Auth is being enforced — good. Continue to tier 2.
+        }
+        _ => {
+            // Unusual status — skip
+        }
     }
 
-    let base_fp = body_fingerprint(&base.body);
-    let alt_fp = body_fingerprint(&alt_resp.body);
+    // ── Tier 2: ID range walk ─────────────────────────────────────────────────
+    //
+    // Walk IDs [base-2, base-1, base, base+1, base+2].
+    // Collect (id, status, body_fp) tuples.
+    // Finding: if IDs outside the original all return 200, authorization
+    // may be missing per-object (returns data for any ID).
 
-    if base_fp != alt_fp {
+    let base_id = numeric_seg.value;
+    let range_ids: Vec<u64> = (base_id.saturating_sub(2)..=base_id + 2).collect();
+
+    let mut range_results: Vec<(u64, u16, Option<(usize, u64)>)> = Vec::new();
+
+    for &id in &range_ids {
+        let probe_url = replace_numeric_segment(url, &numeric_seg, id);
+        match client.get(&probe_url).await {
+            Ok(r) => {
+                let fp = if r.status < 400 {
+                    Some(body_fingerprint(&r.body))
+                } else {
+                    None
+                };
+                range_results.push((id, r.status, fp));
+            }
+            Err(e) => {
+                errors.push(e);
+                range_results.push((id, 0, None));
+            }
+        }
+    }
+
+    // Count how many IDs outside the original return 200 with real content
+    let other_successes: Vec<&(u64, u16, Option<(usize, u64)>)> = range_results
+        .iter()
+        .filter(|(id, status, fp)| {
+            *id != base_id && *status < 400 && fp.as_ref().map(|f| f.0 > 32).unwrap_or(false)
+            // non-trivial body
+        })
+        .collect();
+
+    if other_successes.len() >= 2 {
+        // At least 2 adjacent IDs return valid data — likely no per-object auth
+        let evidence_lines: Vec<String> = range_results
+            .iter()
+            .map(|(id, status, _)| {
+                let marker = if *id == base_id { " ← original" } else { "" };
+                format!("  ID {id}: HTTP {status}{marker}")
+            })
+            .collect();
+
         findings.push(
             Finding::new(
                 url,
-                "api_security/idor",
-                "Potential IDOR/BOLA",
+                "api_security/idor-id-enumerable",
+                "Object IDs appear enumerable (IDOR/BOLA)",
                 Severity::High,
-                "A modified numeric ID returned a different successful response. This may indicate broken object-level authorization.",
+                "Multiple adjacent numeric IDs return successful responses. \
+                 Object-level authorization may not be enforced per resource — \
+                 any authenticated user may be able to access other users' objects.",
                 "api_security",
             )
-            .with_evidence(format!("Original: {url}\nModified: {alt}"))
+            .with_evidence(format!(
+                "ID range probe results:\n{}",
+                evidence_lines.join("\n")
+            ))
             .with_remediation(
-                "Enforce object-level authorization checks for every resource access.",
+                "Enforce object-level authorization (BOLA) checks: verify the requesting \
+                 identity owns or has explicit access to each requested resource ID.",
             ),
         );
     }
+
+    // ── Tier 3: Cross-user comparison ─────────────────────────────────────────
+
+    let Some(client_b) = client_b else { return; };
+
+    let resp_b = match client_b.get(url).await {
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
+    };
+
+    // Both identities must get a 200 for this to be meaningful
+    if resp_b.status >= 400 {
+        return;
+    }
+
+    let fp_b = body_fingerprint(&resp_b.body);
+
+    if authed_fp == fp_b {
+        // Both users get identical responses — user B can see user A's data
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/idor-cross-user",
+                "IDOR: second identity accesses same object (BOLA confirmed)",
+                Severity::Critical,
+                "Two different identities received identical responses for the same resource. \
+                 This confirms broken object-level authorization — a user can access \
+                 another user's resources using their own valid credentials.",
+                "api_security",
+            )
+            .with_evidence(format!(
+                "Identity A: HTTP {}, body hash {:x}\n\
+                 Identity B: HTTP {}, body hash {:x} (identical)",
+                authed_resp.status, authed_fp.1, resp_b.status, fp_b.1,
+            ))
+            .with_remediation(
+                "Enforce strict object-level authorization. Every resource access must \
+                 verify the requesting identity's ownership or explicit permission for \
+                 that specific object — never rely solely on global authentication.",
+            ),
+        );
+    }
+}
+
+// ── Numeric segment helpers ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+struct NumericSegment {
+    /// The index in the path segments array.
+    segment_index: usize,
+    /// The numeric value.
+    value: u64,
+}
+
+fn find_numeric_segment(url: &str) -> Option<NumericSegment> {
+    let parsed = Url::parse(url).ok()?;
+    let segments: Vec<String> = parsed.path_segments()?.map(|s| s.to_string()).collect();
+
+    // Find the last numeric segment (most likely to be a resource ID)
+    for (i, seg) in segments.iter().enumerate().rev() {
+        if let Ok(num) = seg.parse::<u64>() {
+            // Sanity-check: IDs are typically < 10 billion
+            // Very large numbers are probably timestamps, not IDs
+            if num < 10_000_000_000 {
+                return Some(NumericSegment {
+                    segment_index: i,
+                    value: num,
+                });
+            }
+        }
+    }
+    None
+}
+
+fn replace_numeric_segment(url: &str, seg: &NumericSegment, new_id: u64) -> String {
+    let parsed = match Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return url.to_string(),
+    };
+    let mut segments: Vec<String> = match parsed.path_segments() {
+        Some(s) => s.map(|s| s.to_string()).collect(),
+        None => return url.to_string(),
+    };
+
+    segments[seg.segment_index] = new_id.to_string();
+    let new_path = format!("/{}", segments.join("/"));
+    let mut new_url = parsed.clone();
+    new_url.set_path(&new_path);
+    new_url.to_string()
 }
 
 async fn check_mass_assignment(
@@ -1149,4 +1381,9 @@ fn bump_numeric_path(url: &str) -> Option<String> {
     }
 
     None
+}
+
+#[allow(dead_code)]
+fn bump_numeric_path_legacy(url: &str) -> Option<String> {
+    bump_numeric_path(url)
 }

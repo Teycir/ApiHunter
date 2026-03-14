@@ -20,6 +20,7 @@ Complete guide to ApiHunter documentation and resources.
 | [README.md](../Readme.md) | Getting Started | Project overview, features, quick start, and CLI reference |
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
+| [Auth Flow](./auth-flow.md) | Configuration Guide | Auth flow format and usage |
 | [Scanners](./scanners.md) | Scanner Modules | Detection capabilities for each scanner module |
 | [Findings](./findings.md) | Results Interpretation | Understanding severity levels, findings, and remediation |
 

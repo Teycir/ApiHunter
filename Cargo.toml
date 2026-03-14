@@ -41,6 +41,9 @@ once_cell = "1"
 # URL parsing
 url = "2"
 
+# JSONPath extraction for auth flows
+jsonpath-rust = "0.3"
+
 # Random
 rand = "0.8"
 

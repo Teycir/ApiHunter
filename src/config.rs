@@ -48,6 +48,15 @@ pub struct Config {
     pub auth_bearer: Option<String>,
     pub auth_basic: Option<String>,
 
+    /// Optional auth flow descriptor (loaded from --auth-flow file).
+    pub auth_flow: Option<std::path::PathBuf>,
+
+    /// Second credential set for cross-user IDOR checks (--auth-flow-b).
+    pub auth_flow_b: Option<std::path::PathBuf>,
+
+    /// Additional auth-like headers to strip for unauthenticated probes.
+    pub unauth_strip_headers: Vec<String>,
+
     /// Enable per-host HTTP client pools.
     pub per_host_clients: bool,
 

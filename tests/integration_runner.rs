@@ -43,6 +43,9 @@ fn test_config() -> Config {
         session_file: None,
         auth_bearer: None,
         auth_basic: None,
+        auth_flow: None,
+        auth_flow_b: None,
+        unauth_strip_headers: vec![],
         per_host_clients: false,
         adaptive_concurrency: false,
         toggles: ScannerToggles {
