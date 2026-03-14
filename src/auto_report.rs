@@ -9,7 +9,11 @@ use tracing::info;
 use crate::{reports::ReportDocument, runner::RunResult};
 
 /// Create a timestamped report directory and save both JSON and markdown summary.
-pub fn save_auto_report(result: &RunResult, doc: &ReportDocument) -> Result<PathBuf> {
+pub fn save_auto_report(
+    result: &RunResult,
+    doc: &ReportDocument,
+    min_severity: &str,
+) -> Result<PathBuf> {
     let base_dir = get_reports_base_dir()?;
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let report_dir = base_dir.join(timestamp);
@@ -30,7 +34,7 @@ pub fn save_auto_report(result: &RunResult, doc: &ReportDocument) -> Result<Path
 
     // Save markdown summary
     let md_path = report_dir.join("summary.md");
-    let md_content = generate_markdown_summary(doc, result);
+    let md_content = generate_markdown_summary(doc, result, min_severity);
     fs::write(&md_path, md_content)
         .with_context(|| format!("Failed to write markdown summary: {}", md_path.display()))?;
 
@@ -57,7 +61,11 @@ fn get_reports_base_dir() -> Result<PathBuf> {
 }
 
 /// Generate a markdown summary of the scan results.
-fn generate_markdown_summary(doc: &ReportDocument, _result: &RunResult) -> String {
+fn generate_markdown_summary(
+    doc: &ReportDocument,
+    _result: &RunResult,
+    min_severity: &str,
+) -> String {
     let mut md = String::new();
 
     md.push_str("# ApiHunter Scan Report\n\n");
@@ -77,7 +85,8 @@ fn generate_markdown_summary(doc: &ReportDocument, _result: &RunResult) -> Strin
         doc.meta.scanner_ver
     ));
     md.push_str(&format!("- **URLs Scanned**: {}\n", doc.meta.scanned));
-    md.push_str(&format!("- **URLs Skipped**: {}\n\n", doc.meta.skipped));
+    md.push_str(&format!("- **URLs Skipped**: {}\n", doc.meta.skipped));
+    md.push_str(&format!("- **Min Severity Filter**: {}\n\n", min_severity));
 
     // Summary
     md.push_str("## Summary\n\n");

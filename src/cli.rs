@@ -180,8 +180,8 @@ pub struct Cli {
 
     // ── Reporting threshold ───────────────────────────────────────────────────
     /// Minimum severity to include in findings output.
-    #[arg(long, default_value = "high", value_name = "LEVEL")]
-    pub min_severity: CliSeverity,
+    #[arg(long, value_name = "LEVEL")]
+    pub min_severity: Option<CliSeverity>,
 
     /// Exit with code 1 when findings at or above this severity are found.
     #[arg(long, default_value = "medium", value_name = "LEVEL")]

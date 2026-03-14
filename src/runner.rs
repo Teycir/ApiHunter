@@ -157,7 +157,7 @@ pub async fn run(
                     0
                 };
                 let eta_mins = eta_secs / 60;
-                
+
                 eprint!(
                     "\r📊 {} / {} URLs scanned ({:.1}%) • {:.1}/s | ETA: {}m{}s   ",
                     completed,

@@ -1,0 +1,3 @@
+https://httpbin.org/get
+https://jsonplaceholder.typicode.com/posts
+https://api.github.com

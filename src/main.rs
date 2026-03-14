@@ -198,7 +198,10 @@ async fn run(cli: Cli) -> Result<i32> {
     .await;
 
     // ── 6. Filter findings by --min-severity ─────────────────────────────────
-    let min_sev: Severity = cli.min_severity.into();
+    let min_sev: Severity = match cli.min_severity {
+        Some(s) => s.into(),
+        None => Severity::High,
+    };
     let fail_on: Severity = cli.fail_on.into();
 
     let mut filtered_result = {
@@ -222,7 +225,11 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 8. Auto-save report ───────────────────────────────────────────────────
     let doc = reports::build_document(&filtered_result);
-    if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc) {
+    let min_sev_str = match cli.min_severity {
+        Some(s) => format!("{:?}", s),
+        None => "High".to_string(),
+    };
+    if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc, &min_sev_str) {
         warn!("Failed to auto-save report: {e}");
     }
 
