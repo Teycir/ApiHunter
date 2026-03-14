@@ -244,7 +244,7 @@ mod idor_tests {
         let success_fp = Some((100, 12345u64));
 
         // Only base ID returns 200; others return 403 (correct auth enforcement)
-        let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
+        let results: Vec<ScanResult> = vec![
             (40, 403, None),
             (41, 403, None),
             (42, 200, success_fp),

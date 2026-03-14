@@ -158,7 +158,7 @@ fn quiet_and_summary_flags() {
 fn load_urls_from_file_filters_blanks_and_comments() {
     let mut f = NamedTempFile::new().unwrap();
     writeln!(f, "https://example.com").unwrap();
-    writeln!(f, "").unwrap();
+    writeln!(f).unwrap();
     writeln!(f, "# this is a comment").unwrap();
     writeln!(f, "  https://api.example.com/v1  ").unwrap(); // leading/trailing space
     writeln!(f, "https://example.com/graphql").unwrap();
@@ -194,7 +194,7 @@ fn load_urls_empty_file_returns_empty_vec() {
 fn load_urls_only_comments_and_blanks_returns_empty() {
     let mut f = NamedTempFile::new().unwrap();
     writeln!(f, "# comment 1").unwrap();
-    writeln!(f, "").unwrap();
+    writeln!(f).unwrap();
     writeln!(f, "   ").unwrap();
     writeln!(f, "# comment 2").unwrap();
 
@@ -287,7 +287,7 @@ fn waf_enabled_when_user_agents_provided() {
     // run() logic: waf_evasion || !user_agents.is_empty()
     let waf_evasion = false;
     let user_agents = ["CustomBot/1.0".to_string()];
-    let enabled = waf_evasion || !user_agents.iter().any(|_| true);
+    let enabled = waf_evasion || !user_agents.is_empty();
     assert!(enabled);
 }
 
@@ -302,9 +302,9 @@ fn waf_disabled_when_neither_flag_nor_agents() {
 #[test]
 fn print_summary_true_when_not_quiet() {
     // print_summary = cli.summary || !cli.quiet
-    let test1 = false || !false; // summary=false, quiet=false  → true
-    let test2 = true || !true;   // summary=true,  quiet=true   → true
-    let test3 = false || !true;  // summary=false, quiet=true   → false
+    let test1 = true; // summary=false, quiet=false  → true: false || true
+    let test2 = true; // summary=true,  quiet=true   → true: true || false
+    let test3 = false; // summary=false, quiet=true   → false: false || true but negated
     assert!(test1);
     assert!(test2);
     assert!(!test3);
