@@ -58,15 +58,18 @@ struct SarifDriver {
 struct SarifRule {
     id: String,
     name: String,
-    shortDescription: SarifText,
-    fullDescription: SarifText,
+    #[serde(rename = "shortDescription")]
+    short_description: SarifText,
+    #[serde(rename = "fullDescription")]
+    full_description: SarifText,
     #[serde(skip_serializing_if = "Option::is_none")]
     help: Option<SarifText>,
 }
 
 #[derive(Debug, Serialize)]
 struct SarifResult {
-    ruleId: String,
+    #[serde(rename = "ruleId")]
+    rule_id: String,
     level: String,
     message: SarifText,
     locations: Vec<SarifLocation>,
@@ -74,12 +77,14 @@ struct SarifResult {
 
 #[derive(Debug, Serialize)]
 struct SarifLocation {
-    physicalLocation: SarifPhysicalLocation,
+    #[serde(rename = "physicalLocation")]
+    physical_location: SarifPhysicalLocation,
 }
 
 #[derive(Debug, Serialize)]
 struct SarifPhysicalLocation {
-    artifactLocation: SarifArtifactLocation,
+    #[serde(rename = "artifactLocation")]
+    artifact_location: SarifArtifactLocation,
 }
 
 #[derive(Debug, Serialize)]
@@ -442,8 +447,8 @@ impl Reporter {
                 SarifRule {
                     id: f.check.clone(),
                     name: f.title.clone(),
-                    shortDescription: SarifText { text: f.title.clone() },
-                    fullDescription: SarifText { text: f.detail.clone() },
+                    short_description: SarifText { text: f.title.clone() },
+                    full_description: SarifText { text: f.detail.clone() },
                     help: f.remediation.as_ref().map(|r| SarifText { text: r.clone() }),
                 }
             });
@@ -461,12 +466,12 @@ impl Reporter {
             };
 
             results.push(SarifResult {
-                ruleId: f.check.clone(),
+                rule_id: f.check.clone(),
                 level: level.to_string(),
                 message: SarifText { text: message },
                 locations: vec![SarifLocation {
-                    physicalLocation: SarifPhysicalLocation {
-                        artifactLocation: SarifArtifactLocation { uri: f.url.clone() },
+                    physical_location: SarifPhysicalLocation {
+                        artifact_location: SarifArtifactLocation { uri: f.url.clone() },
                     },
                 }],
             });

@@ -147,7 +147,10 @@ fn baseline_loader_ignores_meta_lines() {
     std::fs::write(&path, content).unwrap();
 
     let keys = load_baseline_keys(&path).unwrap();
-    assert!(keys.contains(&(\"https://example.com\".to_string(), \"cors.wildcard\".to_string())));
+    assert!(keys.contains(&(
+        "https://example.com".to_string(),
+        "cors.wildcard".to_string(),
+    )));
 }
 
 // ── Exit code logic ──────────────────────────────────────────────────────────

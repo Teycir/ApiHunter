@@ -59,6 +59,7 @@ pub struct HttpClient {
     client_config: ClientConfig,
     per_host_clients: bool,
     clients: Arc<DashMap<String, Client>>,
+    spec_cache: Arc<DashMap<String, String>>,
     waf_enabled: bool,
     delay_ms: u64,
     retries: u32,
@@ -70,7 +71,7 @@ pub struct HttpClient {
 
 #[derive(Debug)]
 struct AdaptiveLimiter {
-    semaphore: Semaphore,
+    semaphore: Arc<Semaphore>,
     max: usize,
     min: usize,
     held: Mutex<Vec<OwnedSemaphorePermit>>,
@@ -80,7 +81,7 @@ struct AdaptiveLimiter {
 impl AdaptiveLimiter {
     fn new(max: usize) -> Self {
         Self {
-            semaphore: Semaphore::new(max),
+            semaphore: Arc::new(Semaphore::new(max)),
             max,
             min: 1,
             held: Mutex::new(Vec::new()),
@@ -89,7 +90,11 @@ impl AdaptiveLimiter {
     }
 
     async fn acquire(&self) -> OwnedSemaphorePermit {
-        self.semaphore.acquire_owned().await.expect("semaphore closed")
+        self.semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore closed")
     }
 
     async fn on_success(&self) {
@@ -111,7 +116,7 @@ impl AdaptiveLimiter {
         if target <= self.min {
             return;
         }
-        if let Ok(permit) = self.semaphore.try_acquire_owned() {
+        if let Ok(permit) = self.semaphore.clone().try_acquire_owned() {
             held.push(permit);
         }
     }
@@ -188,13 +193,17 @@ impl HttpClient {
         let inner = build_client(&client_config)?;
 
         let session_store = if let Some(path) = &config.session_file {
-            match load_session_file(path) {
-                Ok(store) => Some(Arc::new(Mutex::new(store))),
-                Err(e) => {
-                    return Err(ScannerError::Config(format!(
-                        "Failed to load session file: {e}"
-                    )));
+            if path.exists() {
+                match load_session_file(path) {
+                    Ok(store) => Some(Arc::new(Mutex::new(store))),
+                    Err(e) => {
+                        return Err(ScannerError::Config(format!(
+                            "Failed to load session file: {e}"
+                        )));
+                    }
                 }
+            } else {
+                Some(Arc::new(Mutex::new(HashMap::new())))
             }
         } else {
             None
@@ -205,6 +214,7 @@ impl HttpClient {
             client_config,
             per_host_clients: config.per_host_clients,
             clients: Arc::new(DashMap::new()),
+            spec_cache: Arc::new(DashMap::new()),
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
@@ -217,6 +227,14 @@ impl HttpClient {
                 None
             },
         })
+    }
+
+    pub fn cache_spec(&self, url: &str, body: &str) {
+        self.spec_cache.insert(url.to_string(), body.to_string());
+    }
+
+    pub fn get_cached_spec(&self, url: &str) -> Option<String> {
+        self.spec_cache.get(url).map(|v| v.value().clone())
     }
 
     // ------------------------------------------------------------------ //

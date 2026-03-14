@@ -127,6 +127,7 @@ pub async fn run(
         let ftx      = finding_tx.clone();
         let etx      = error_tx.clone();
         let cfg      = Arc::clone(&config);
+        let rpt      = Arc::clone(&reporter);
 
         join_set.spawn(async move {
             let _permit = match sem.acquire().await {
@@ -137,7 +138,7 @@ pub async fn run(
                 }
             };
 
-            scan_url(url, &client, &scanners, &cfg, &reporter, ftx, etx).await;
+            scan_url(url, &client, &scanners, &cfg, &rpt, ftx, etx).await;
         });
     }
 

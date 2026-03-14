@@ -90,6 +90,7 @@ impl<'a> SwaggerDiscovery<'a> {
             };
 
             debug!("[swagger] found spec at {url}");
+            self.client.cache_spec(&url, &resp.body);
             self.parse_spec(&resp.body, &mut paths, &mut errors);
         }
 

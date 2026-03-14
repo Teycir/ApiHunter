@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use dashmap::DashSet;
 use regex::Regex;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use tracing::debug;
 use url::Url;
 
@@ -27,11 +27,15 @@ use crate::{
 
 use super::Scanner;
 
-pub struct ApiSecurityScanner;
+pub struct ApiSecurityScanner {
+    checked_hosts: Arc<DashSet<String>>,
+}
 
 impl ApiSecurityScanner {
     pub fn new(_config: &Config) -> Self {
-        Self
+        Self {
+            checked_hosts: Arc::new(DashSet::new()),
+        }
     }
 }
 
@@ -41,7 +45,6 @@ static RE_AWS_ACCESS:  Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}"
 static RE_AWS_SECRET:  Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap());
 static RE_API_KEY:     Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,64}['"]?"#).unwrap());
 
-static RATE_LIMIT_CHECKED: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 static RE_BEARER:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").unwrap());
 static RE_GENERIC_SEC: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"][^'"]{8,}['"]"#).unwrap());
 static RE_PRIVATE_KEY: Lazy<Regex> = Lazy::new(|| Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap());
@@ -282,7 +285,14 @@ impl Scanner for ApiSecurityScanner {
         if config.active_checks {
             check_idor_bola(url, client, &mut findings, &mut errors).await;
             check_mass_assignment(url, client, &mut findings, &mut errors).await;
-            check_rate_limit(url, client, &mut findings, &mut errors).await;
+            check_rate_limit(
+                url,
+                client,
+                &self.checked_hosts,
+                &mut findings,
+                &mut errors,
+            )
+            .await;
         }
 
         (findings, errors)
@@ -1073,16 +1083,17 @@ async fn check_mass_assignment(
 async fn check_rate_limit(
     url: &str,
     client: &HttpClient,
+    checked_hosts: &Arc<DashSet<String>>,
     findings: &mut Vec<Finding>,
     errors: &mut Vec<CapturedError>,
 ) {
     let host = Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_string()));
     let Some(host) = host else { return; };
 
-    if RATE_LIMIT_CHECKED.contains(&host) {
+    if checked_hosts.contains(&host) {
         return;
     }
-    RATE_LIMIT_CHECKED.insert(host.clone());
+    checked_hosts.insert(host.clone());
 
     let mut rate_limited = 0;
     let mut ok = 0;

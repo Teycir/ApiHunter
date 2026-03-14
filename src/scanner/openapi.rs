@@ -59,18 +59,24 @@ impl Scanner for OpenApiScanner {
 
         for spec_path in SPEC_PATHS {
             let spec_url = format!("{base}{spec_path}");
-            let resp = match client.get(&spec_url).await {
-                Ok(r) if r.status < 400 => r,
-                Ok(_) => continue,
-                Err(e) => {
-                    errors.push(e);
-                    continue;
-                }
+            let body = if let Some(cached) = client.get_cached_spec(&spec_url) {
+                cached
+            } else {
+                let resp = match client.get(&spec_url).await {
+                    Ok(r) if r.status < 400 => r,
+                    Ok(_) => continue,
+                    Err(e) => {
+                        errors.push(e);
+                        continue;
+                    }
+                };
+                client.cache_spec(&spec_url, &resp.body);
+                resp.body
             };
 
             debug!("[openapi] found spec at {spec_url}");
 
-            match parse_spec(&resp.body) {
+            match parse_spec(&body) {
                 Ok(spec) => analyze_spec(&spec_url, &spec, &mut findings),
                 Err(e) => errors.push(CapturedError::parse("openapi/parse", e)),
             }
@@ -229,7 +235,7 @@ fn is_http_method(method: &str) -> bool {
     )
 }
 
-fn looks_like_file_upload(op_obj: &std::collections::HashMap<String, Value>) -> bool {
+fn looks_like_file_upload(op_obj: &serde_json::Map<String, Value>) -> bool {
     if let Some(req) = op_obj.get("requestBody") {
         if let Some(content) = req.get("content").and_then(|v| v.as_object()) {
             for key in content.keys() {

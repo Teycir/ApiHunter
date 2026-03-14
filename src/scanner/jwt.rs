@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD as BASE64_STD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
@@ -129,11 +129,12 @@ impl Scanner for JwtScanner {
 
 async fn analyze_jwt(
     url: &str,
+    token: &str,
     client: &HttpClient,
     config: &Config,
     baseline_status: u16,
     findings: &mut Vec<Finding>,
-    errors: &mut Vec<CapturedError>,
+    _errors: &mut Vec<CapturedError>,
 ) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
@@ -352,16 +353,17 @@ async fn attempt_alg_confusion(
     client: &HttpClient,
     baseline_status: u16,
 ) -> Option<Finding> {
-    if !(baseline_status == 401 || baseline_status == 403) {
-        return None;
-    }
-
     let header = header?;
 
+    // NOTE: For RS256->HS256 confusion, the HMAC key should be the raw public
+    // key bytes (SPKI). We attempt a best-effort decode from x5c or jwk, but a
+    // full, correct extraction requires certificate/JWK parsing.
     let secret = if let Some(x5c) = header.get("x5c").and_then(Value::as_array) {
-        x5c.get(0).and_then(Value::as_str).map(|s| s.to_string())
+        x5c.get(0)
+            .and_then(Value::as_str)
+            .and_then(|s| BASE64_STD.decode(s.as_bytes()).ok())
     } else if let Some(jwk) = header.get("jwk") {
-        serde_json::to_string(jwk).ok()
+        serde_json::to_string(jwk).ok().map(|s| s.into_bytes())
     } else {
         None
     }?;
@@ -375,7 +377,7 @@ async fn attempt_alg_confusion(
     let header_b64 = URL_SAFE_NO_PAD.encode(header_json);
 
     let signing_input = format!("{header_b64}.{payload_b64}");
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
+    let mut mac = HmacSha256::new_from_slice(&secret).ok()?;
     mac.update(signing_input.as_bytes());
     let sig = mac.finalize().into_bytes();
     let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
