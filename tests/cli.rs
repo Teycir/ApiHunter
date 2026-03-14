@@ -44,9 +44,9 @@ fn rejects_both_input_sources() {
 fn default_concurrency_and_delay() {
     let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
     assert_eq!(cli.concurrency, 20);
-    assert_eq!(cli.delay_ms, 100);
-    assert_eq!(cli.retries, 3);
-    assert_eq!(cli.timeout_secs, 30);
+    assert_eq!(cli.delay_ms, 150);
+    assert_eq!(cli.retries, 1);
+    assert_eq!(cli.timeout_secs, 8);
 }
 
 #[test]

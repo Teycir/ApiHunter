@@ -425,7 +425,7 @@ async fn run_discovery_per_site(
 
         let site_urls: Vec<String> = site_discovered.into_iter().collect();
         let capped_count = site_urls.len().min(max_per_site);
-        
+
         if site_urls.len() > max_per_site {
             debug!(
                 site = %host,
@@ -450,7 +450,6 @@ fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
         out.insert(url);
     }
 }
-
 
 fn dedup_findings(findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();

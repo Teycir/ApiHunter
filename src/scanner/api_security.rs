@@ -49,13 +49,19 @@ static RE_AWS_ACCESS: Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}")
 static RE_AWS_SECRET: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap());
 static RE_API_KEY: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,64}['"]?"#).unwrap()
+    // Match api_key/apikey patterns with or without quotes
+    // Minimum 16 chars to balance false positives vs recall
+    Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?([A-Za-z0-9\-_]{16,64})['"]?"#)
+        .expect("Invalid API_KEY regex")
 });
 
 static RE_BEARER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").unwrap());
-static RE_GENERIC_SEC: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"][^'"]{8,}['"]"#).unwrap());
+    Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").expect("Invalid BEARER regex"));
+static RE_GENERIC_SEC: Lazy<Regex> = Lazy::new(|| {
+    // Keep minimum at 12 chars with quotes to catch real secrets
+    Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"]([^'"]{12,})['"]"#)
+        .expect("Invalid GENERIC_SEC regex")
+});
 static RE_PRIVATE_KEY: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap());
 static RE_GITHUB: Lazy<Regex> = Lazy::new(|| Regex::new(r"ghp_[0-9a-zA-Z]{36}").unwrap());
@@ -247,6 +253,15 @@ fn is_properties_body(body: &str) -> bool {
     RE.find_iter(body).count() >= 3
 }
 
+/// Returns `true` for Symfony profiler output.
+fn is_profiler_page(body: &str) -> bool {
+    // Symfony profiler has distinctive markers
+    (body.contains("sf-toolbar") || body.contains("symfony-profiler"))
+        && (body.contains("profiler") || body.contains("_profiler"))
+        || body.contains("Symfony Profiler")
+        || body.contains("data-symfony-profiler")
+}
+
 /// Returns `true` for phpinfo() output.
 fn is_phpinfo(body: &str) -> bool {
     body.contains("phpinfo()") || body.contains("PHP Version") && body.contains("Configure Command")
@@ -411,8 +426,8 @@ static DEBUG_ENDPOINTS: &[DebugEndpoint] = &[
     },
     DebugEndpoint {
         path: "/_profiler",
-        expected_ct: &[],
-        body_validators: &[any_non_html],
+        expected_ct: &["text/html"],
+        body_validators: &[is_profiler_page],
     },
     DebugEndpoint {
         path: "/__clockwork",
@@ -608,7 +623,23 @@ async fn check_secrets_in_response(
         }
     };
 
+    // Skip checking large minified JavaScript files - too many false positives
+    // But still check smaller JS files and all other content types
+    let ct = resp
+        .headers
+        .get("content-type")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+    let is_js = ct.contains("javascript") || ct.contains("ecmascript");
+    let looks_minified = is_js && resp.body.len() > 50000 && !resp.body.contains("\n\n");
+
     for chk in SECRET_CHECKS {
+        // Only skip generic patterns on very large minified JS (>50KB)
+        // This keeps recall high while reducing noise from webpack bundles
+        if looks_minified && matches!(chk.name, "Generic API Key" | "Generic Secret") {
+            continue;
+        }
+
         if let Some(m) = chk.re.find(&resp.body) {
             let matched = m.as_str();
             let redacted = redact(matched);

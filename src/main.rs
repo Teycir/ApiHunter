@@ -65,10 +65,18 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
-        info!("Pre-filtering inaccessible URLs (timeout={}s)...", cli.filter_timeout);
-        let (accessible, inaccessible) = filter_accessible_urls(&raw_urls, cli.filter_timeout).await;
+        info!(
+            "Pre-filtering inaccessible URLs (timeout={}s)...",
+            cli.filter_timeout
+        );
+        let (accessible, inaccessible) =
+            filter_accessible_urls(&raw_urls, cli.filter_timeout).await;
         if !inaccessible.is_empty() {
-            info!("Filtered out {} inaccessible URL(s), {} remaining.", inaccessible.len(), accessible.len());
+            info!(
+                "Filtered out {} inaccessible URL(s), {} remaining.",
+                inaccessible.len(),
+                accessible.len()
+            );
         }
         (accessible, inaccessible)
     } else {
@@ -390,8 +398,8 @@ fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
 // ── URL accessibility filter ──────────────────────────────────────────────
 
 async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<String>, Vec<String>) {
-    use tokio::time::Duration;
     use futures::stream::{self, StreamExt};
+    use tokio::time::Duration;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
