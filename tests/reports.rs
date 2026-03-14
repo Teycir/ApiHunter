@@ -40,7 +40,7 @@ fn severity_display_round_trips() {
 #[test]
 fn severity_serde_round_trips() {
     let json = serde_json::to_string(&Severity::High).unwrap();
-    assert_eq!(json, r#"\"HIGH\""#);
+    assert_eq!(json, r#""HIGH""#);
     let back: Severity = serde_json::from_str(&json).unwrap();
     assert_eq!(back, Severity::High);
 }
