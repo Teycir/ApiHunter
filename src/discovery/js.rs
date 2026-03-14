@@ -7,7 +7,7 @@ use url::Url;
 
 use crate::{error::CapturedError, http_client::HttpClient};
 
-use super::{collect_paths, normalize_path};
+use super::normalize_path;
 
 // Pre-compiled patterns for extracting API paths from JS
 static API_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {

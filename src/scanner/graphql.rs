@@ -1,12 +1,20 @@
+// src/scanner/graphql.rs
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tracing::debug;
 
-use crate::{config::Config, error::CapturedError, http_client::HttpClient};
+use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
 
-use super::{Finding, Scanner, Severity};
+use super::Scanner;
 
 pub struct GraphqlScanner;
+
+impl GraphqlScanner {
+    pub fn new(_config: &Config) -> Self {
+        Self
+    }
+}
 
 static GQL_PATHS: &[&str] = &[
     "/graphql",
@@ -27,13 +35,10 @@ fn introspection_payload() -> Value {
 }
 
 fn field_suggestion_payload() -> Value {
-    // Intentional typo — GraphQL servers with suggestions enabled will
-    // hint the real field name in the error message.
     json!({ "query": "{ __typ }" })
 }
 
 fn batch_payload() -> Value {
-    // Two queries in one POST — if both are answered, batching is enabled.
     json!([
         { "query": "{ __typename }" },
         { "query": "{ __typename }" }
@@ -41,7 +46,6 @@ fn batch_payload() -> Value {
 }
 
 fn alias_dos_payload() -> Value {
-    // Cheap server-side amplification probe (10× aliases, not 1000).
     let aliases: String = (0..10)
         .map(|i| format!("a{i}: __typename "))
         .collect();
@@ -105,8 +109,9 @@ async fn probe_endpoint(
         }
     };
 
-    // Non-GraphQL or hard error — skip remaining checks for this candidate
-    if resp.status >= 500 || (resp.status >= 400 && resp.status != 400) {
+    // Non-GraphQL or hard error — skip remaining checks for this candidate.
+    // Status >= 500 is a server error; 401-499 (except 400) are auth/not-found.
+    if resp.status >= 500 || (resp.status >= 401) {
         return;
     }
 
@@ -122,17 +127,17 @@ async fn probe_endpoint(
 
     if let Some(types_val) = types_ptr {
         // ── 1a. Introspection enabled ─────────────────────────────────────────
-        findings.push(Finding {
-            url: url.to_string(),
-            check: "graphql/introspection-enabled".to_string(),
-            severity: Severity::Medium,
-            detail: "GraphQL introspection is enabled. Full schema is publicly discoverable."
-                .to_string(),
-            evidence: Some(format!(
-                "POST {url}\nPayload: {payload}\nStatus: {}",
-                resp.status
-            )),
-        });
+        findings.push(Finding::new(
+            url,
+            "graphql/introspection-enabled",
+            "GraphQL introspection enabled",
+            Severity::Medium,
+            "GraphQL introspection is enabled. Full schema is publicly discoverable.",
+            "graphql",
+        ).with_evidence(format!(
+            "POST {url}\nPayload: {payload}\nStatus: {}",
+            resp.status
+        )));
 
         // ── 1b. Sensitive type / field names in schema ────────────────────────
         if let Some(types) = types_val.as_array() {
@@ -144,12 +149,10 @@ async fn probe_endpoint(
                     .unwrap_or("")
                     .to_ascii_lowercase();
 
-                // Check type name itself
                 if is_sensitive(&type_name) && !type_name.starts_with("__") {
                     matched.push(format!("type:{type_name}"));
                 }
 
-                // Check each field name
                 if let Some(fields) = t["fields"].as_array() {
                     for field in fields {
                         let fname = field["name"]
@@ -168,28 +171,29 @@ async fn probe_endpoint(
             }
 
             if !matched.is_empty() {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "graphql/sensitive-schema-fields".to_string(),
-                    severity: Severity::High,
-                    detail: format!(
+                findings.push(Finding::new(
+                    url,
+                    "graphql/sensitive-schema-fields",
+                    "Sensitive GraphQL schema fields",
+                    Severity::High,
+                    format!(
                         "Schema exposes potentially sensitive types/fields: {}",
                         matched.join(", ")
                     ),
-                    evidence: Some(format!("Matched names: {}", matched.join(", "))),
-                });
+                    "graphql",
+                ).with_evidence(format!("Matched names: {}", matched.join(", "))));
             }
         }
     } else if let Some(errors_val) = body.get("errors") {
-        // ── 1c. Introspection disabled but GraphQL is live ────────────────────
         debug!("[graphql] introspection disabled at {url}: {errors_val}");
-        findings.push(Finding {
-            url: url.to_string(),
-            check: "graphql/endpoint-detected".to_string(),
-            severity: Severity::Info,
-            detail: "GraphQL endpoint detected; introspection is disabled (good).".to_string(),
-            evidence: Some(format!("Errors: {errors_val}")),
-        });
+        findings.push(Finding::new(
+            url,
+            "graphql/endpoint-detected",
+            "GraphQL endpoint detected",
+            Severity::Info,
+            "GraphQL endpoint detected; introspection is disabled (good).",
+            "graphql",
+        ).with_evidence(format!("Errors: {errors_val}")));
     }
 
     // ── Step 2: Field suggestions (information leakage) ──────────────────────
@@ -211,15 +215,15 @@ async fn probe_endpoint(
                 .unwrap_or(false);
 
             if has_suggestion {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "graphql/field-suggestions".to_string(),
-                    severity: Severity::Low,
-                    detail: "Server returns field-name suggestions in errors, leaking schema \
-                             information even with introspection disabled."
-                        .to_string(),
-                    evidence: Some(sr.body.chars().take(512).collect()),
-                });
+                findings.push(Finding::new(
+                    url,
+                    "graphql/field-suggestions",
+                    "GraphQL field suggestions enabled",
+                    Severity::Low,
+                    "Server returns field-name suggestions in errors, leaking schema \
+                     information even with introspection disabled.",
+                    "graphql",
+                ).with_evidence(sr.body.chars().take(512).collect::<String>()));
             }
         }
     }
@@ -229,15 +233,15 @@ async fn probe_endpoint(
     if let Ok(br) = client.post_json(url, &batch).await {
         if let Ok(bv) = serde_json::from_str::<Value>(&br.body) {
             if bv.as_array().map(|a| a.len() >= 2).unwrap_or(false) {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "graphql/batching-enabled".to_string(),
-                    severity: Severity::Low,
-                    detail: "GraphQL query batching is enabled. This can amplify DoS impact \
-                             and may bypass rate limiting applied per-request."
-                        .to_string(),
-                    evidence: Some(br.body.chars().take(256).collect()),
-                });
+                findings.push(Finding::new(
+                    url,
+                    "graphql/batching-enabled",
+                    "GraphQL query batching enabled",
+                    Severity::Low,
+                    "GraphQL query batching is enabled. This can amplify DoS impact \
+                     and may bypass rate limiting applied per-request.",
+                    "graphql",
+                ).with_evidence(br.body.chars().take(256).collect::<String>()));
             }
         }
     }
@@ -246,39 +250,37 @@ async fn probe_endpoint(
     let alias = alias_dos_payload();
     if let Ok(ar) = client.post_json(url, &alias).await {
         if let Ok(av) = serde_json::from_str::<Value>(&ar.body) {
-            // If we see 10 `a0..a9` keys under `data`, the server resolved all aliases
             let resolved = (0..10)
                 .filter(|i| av.pointer(&format!("/data/a{i}")).is_some())
                 .count();
             if resolved >= 10 {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "graphql/alias-amplification".to_string(),
-                    severity: Severity::Low,
-                    detail: "Server resolves all query aliases without restriction. \
-                             Malicious clients can craft deeply aliased queries to amplify \
-                             server-side work (alias-based DoS)."
-                        .to_string(),
-                    evidence: Some(format!("{resolved}/10 aliases resolved")),
-                });
+                findings.push(Finding::new(
+                    url,
+                    "graphql/alias-amplification",
+                    "GraphQL alias amplification possible",
+                    Severity::Low,
+                    "Server resolves all query aliases without restriction. \
+                     Malicious clients can craft deeply aliased queries to amplify \
+                     server-side work (alias-based DoS).",
+                    "graphql",
+                ).with_evidence(format!("{resolved}/10 aliases resolved")));
             }
         }
     }
 
     // ── Step 5: GraphiQL / playground UI exposed ──────────────────────────────
-    // We already fetched via POST; check if a GET returns the IDE HTML.
     if let Ok(gr) = client.get(url).await {
         let body_lower = gr.body.to_ascii_lowercase();
         if body_lower.contains("graphiql") || body_lower.contains("graphql playground") {
-            findings.push(Finding {
-                url: url.to_string(),
-                check: "graphql/playground-exposed".to_string(),
-                severity: Severity::Low,
-                detail: "GraphQL IDE (GraphiQL / Playground) is exposed. Attackers can \
-                         interactively explore and query the API."
-                    .to_string(),
-                evidence: Some(format!("GET {url} → HTML contains IDE marker")),
-            });
+            findings.push(Finding::new(
+                url,
+                "graphql/playground-exposed",
+                "GraphQL IDE exposed",
+                Severity::Low,
+                "GraphQL IDE (GraphiQL / Playground) is exposed. Attackers can \
+                 interactively explore and query the API.",
+                "graphql",
+            ).with_evidence(format!("GET {url} → HTML contains IDE marker")));
         }
     }
 }

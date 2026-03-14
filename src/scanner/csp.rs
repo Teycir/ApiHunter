@@ -1,12 +1,20 @@
+// src/scanner/csp.rs
+
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::{config::Config, error::CapturedError, http_client::HttpClient};
+use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
 
-use super::{Finding, Scanner, Severity};
+use super::Scanner;
 
 pub struct CspScanner;
+
+impl CspScanner {
+    pub fn new(_config: &Config) -> Self {
+        Self
+    }
+}
 
 // Directives that must exist for a meaningful CSP
 static REQUIRED_DIRECTIVES: &[&str] = &[
@@ -68,28 +76,29 @@ impl Scanner for CspScanner {
 
         // ── Header presence ───────────────────────────────────────────────────
         let csp_value = match resp.header("content-security-policy") {
-            Some(v) => v,
+            Some(v) => v.to_string(),
             None => {
                 // Check report-only as informational
                 if let Some(ro) = resp.header("content-security-policy-report-only") {
-                    findings.push(Finding {
-                        url: url.to_string(),
-                        check: "csp/report-only".to_string(),
-                        severity: Severity::Info,
-                        detail: "Only CSP Report-Only header present; policy is not enforced."
-                            .to_string(),
-                        evidence: Some(format!(
-                            "Content-Security-Policy-Report-Only: {ro}"
-                        )),
-                    });
+                    findings.push(Finding::new(
+                        url,
+                        "csp/report-only",
+                        "CSP Report-Only",
+                        Severity::Info,
+                        "Only CSP Report-Only header present; policy is not enforced.",
+                        "csp",
+                    ).with_evidence(format!(
+                        "Content-Security-Policy-Report-Only: {ro}"
+                    )));
                 } else {
-                    findings.push(Finding {
-                        url: url.to_string(),
-                        check: "csp/missing".to_string(),
-                        severity: Severity::Medium,
-                        detail: "No Content-Security-Policy header detected.".to_string(),
-                        evidence: None,
-                    });
+                    findings.push(Finding::new(
+                        url,
+                        "csp/missing",
+                        "No CSP header",
+                        Severity::Medium,
+                        "No Content-Security-Policy header detected.",
+                        "csp",
+                    ));
                 }
                 return (findings, errors);
             }
@@ -101,8 +110,6 @@ impl Scanner for CspScanner {
         // ── Missing required directives ───────────────────────────────────────
         for req in REQUIRED_DIRECTIVES {
             if !directives.contains_key(*req) {
-                // 'object-src' and 'base-uri' absence is only critical when
-                // default-src is also missing or too permissive
                 let severity = match *req {
                     "default-src" => Severity::Medium,
                     "script-src"  => Severity::Medium,
@@ -110,18 +117,18 @@ impl Scanner for CspScanner {
                     "base-uri"    => Severity::Low,
                     _             => Severity::Info,
                 };
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: format!("csp/missing-directive/{req}"),
+                findings.push(Finding::new(
+                    url,
+                    format!("csp/missing-directive/{req}"),
+                    format!("CSP missing '{req}'"),
                     severity,
-                    detail: format!("CSP is missing the '{req}' directive."),
-                    evidence: Some(format!("Content-Security-Policy: {csp_value}")),
-                });
+                    format!("CSP is missing the '{req}' directive."),
+                    "csp",
+                ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
             }
         }
 
         // ── Unsafe source values ──────────────────────────────────────────────
-        // Check script-src first; fall back to default-src
         let script_sources = directives
             .get("script-src")
             .or_else(|| directives.get("default-src"))
@@ -133,13 +140,14 @@ impl Scanner for CspScanner {
                 .iter()
                 .any(|s| s.eq_ignore_ascii_case(token))
             {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: format!("csp/unsafe-source/{}", token.trim_matches('\'')),
-                    severity: Severity::High,
-                    detail: format!("script-src contains '{token}': {desc}"),
-                    evidence: Some(format!("Content-Security-Policy: {csp_value}")),
-                });
+                findings.push(Finding::new(
+                    url,
+                    format!("csp/unsafe-source/{}", token.trim_matches('\'')),
+                    format!("CSP unsafe source: {token}"),
+                    Severity::High,
+                    format!("script-src contains '{token}': {desc}"),
+                    "csp",
+                ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
             }
         }
 
@@ -147,16 +155,17 @@ impl Scanner for CspScanner {
         for source in &script_sources {
             for re in BYPASS_HOSTS.iter() {
                 if re.is_match(source) {
-                    findings.push(Finding {
-                        url: url.to_string(),
-                        check: "csp/bypassable-cdn".to_string(),
-                        severity: Severity::Medium,
-                        detail: format!(
+                    findings.push(Finding::new(
+                        url,
+                        "csp/bypassable-cdn",
+                        "CSP bypassable CDN",
+                        Severity::Medium,
+                        format!(
                             "script-src allows '{source}', which hosts JSONP endpoints or \
                              third-party scripts that can bypass CSP."
                         ),
-                        evidence: Some(format!("Content-Security-Policy: {csp_value}")),
-                    });
+                        "csp",
+                    ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
                     break;
                 }
             }
@@ -164,13 +173,14 @@ impl Scanner for CspScanner {
 
         // ── Frame ancestors / clickjacking ────────────────────────────────────
         if !directives.contains_key("frame-ancestors") {
-            findings.push(Finding {
-                url: url.to_string(),
-                check: "csp/missing-frame-ancestors".to_string(),
-                severity: Severity::Low,
-                detail: "CSP lacks 'frame-ancestors' directive (clickjacking protection).".to_string(),
-                evidence: Some(format!("Content-Security-Policy: {csp_value}")),
-            });
+            findings.push(Finding::new(
+                url,
+                "csp/missing-frame-ancestors",
+                "CSP missing frame-ancestors",
+                Severity::Low,
+                "CSP lacks 'frame-ancestors' directive (clickjacking protection).",
+                "csp",
+            ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
         }
 
         (findings, errors)

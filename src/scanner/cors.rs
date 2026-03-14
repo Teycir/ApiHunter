@@ -1,10 +1,18 @@
+// src/scanner/cors.rs
+
 use async_trait::async_trait;
 
-use crate::{config::Config, error::CapturedError, http_client::HttpClient};
+use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
 
-use super::{Finding, Scanner, Severity};
+use super::Scanner;
 
 pub struct CorsScanner;
+
+impl CorsScanner {
+    pub fn new(_config: &Config) -> Self {
+        Self
+    }
+}
 
 static PROBE_ORIGINS: &[&str] = &[
     "https://evil.com",
@@ -44,25 +52,27 @@ impl Scanner for CorsScanner {
             let acac = resp.header("access-control-allow-credentials");
 
             // ── Wildcard ──────────────────────────────────────────────────────
-            if acao.as_deref() == Some("*") {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "cors/wildcard".to_string(),
-                    severity: Severity::Medium,
-                    detail: "ACAO header is '*', allowing any origin.".to_string(),
-                    evidence: Some("Access-Control-Allow-Origin: *".to_string()),
-                });
+            if acao == Some("*") {
+                findings.push(Finding::new(
+                    url,
+                    "cors/wildcard",
+                    "Wildcard CORS",
+                    Severity::Medium,
+                    "ACAO header is '*', allowing any origin.",
+                    "cors",
+                ).with_evidence("Access-Control-Allow-Origin: *"));
                 break;
             }
 
             // ── Origin reflected ──────────────────────────────────────────────
-            if acao.as_deref() == Some(origin) {
-                let creds = acac.as_deref() == Some("true");
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "cors/reflected-origin".to_string(),
-                    severity: if creds { Severity::High } else { Severity::Low },
-                    detail: if creds {
+            if acao == Some(origin) {
+                let creds = acac == Some("true");
+                findings.push(Finding::new(
+                    url,
+                    "cors/reflected-origin",
+                    "Reflected CORS origin",
+                    if creds { Severity::High } else { Severity::Low },
+                    if creds {
                         format!(
                             "Origin '{origin}' reflected with credentials allowed — \
                              potential credential theft via cross-origin request."
@@ -70,31 +80,31 @@ impl Scanner for CorsScanner {
                     } else {
                         format!("Origin '{origin}' reflected (credentials not allowed).")
                     },
-                    evidence: Some(format!(
-                        "Origin: {origin}\n\
-                         Access-Control-Allow-Origin: {}\n\
-                         Access-Control-Allow-Credentials: {}",
-                        acao.as_deref().unwrap_or("-"),
-                        acac.as_deref().unwrap_or("-"),
-                    )),
-                });
+                    "cors",
+                ).with_evidence(format!(
+                    "Origin: {origin}\n\
+                     Access-Control-Allow-Origin: {}\n\
+                     Access-Control-Allow-Credentials: {}",
+                    acao.unwrap_or("-"),
+                    acac.unwrap_or("-"),
+                )));
             }
 
             // ── null origin ───────────────────────────────────────────────────
-            if *origin == "null" && acao.as_deref() == Some("null") {
-                findings.push(Finding {
-                    url: url.to_string(),
-                    check: "cors/null-origin".to_string(),
-                    severity: Severity::Medium,
-                    detail: "Server accepts 'null' origin, exploitable from sandboxed iframes \
-                             or local file:// contexts."
-                        .to_string(),
-                    evidence: Some(format!(
-                        "Origin: null\nAccess-Control-Allow-Origin: null\n\
-                         Access-Control-Allow-Credentials: {}",
-                        acac.as_deref().unwrap_or("-"),
-                    )),
-                });
+            if *origin == "null" && acao == Some("null") {
+                findings.push(Finding::new(
+                    url,
+                    "cors/null-origin",
+                    "Null origin accepted",
+                    Severity::Medium,
+                    "Server accepts 'null' origin, exploitable from sandboxed iframes \
+                     or local file:// contexts.",
+                    "cors",
+                ).with_evidence(format!(
+                    "Origin: null\nAccess-Control-Allow-Origin: null\n\
+                     Access-Control-Allow-Credentials: {}",
+                    acac.unwrap_or("-"),
+                )));
             }
         }
 
