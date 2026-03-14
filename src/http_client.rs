@@ -1,17 +1,23 @@
+// src/http_client.rs
+//
+// Thin wrapper around `reqwest::Client` with WAF evasion, size capping,
+// and convenience methods for the scanner modules.
+
 use crate::{
     config::Config,
     error::{CapturedError, ScannerError, ScannerResult},
     waf::WafEvasion,
 };
 use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
+    header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Client, Method, Response,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tracing::debug;
 
-/// Parsed, size-capped HTTP response
+/// Parsed, size-capped HTTP response.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
@@ -19,6 +25,7 @@ pub struct HttpResponse {
     pub url: String,
 }
 
+#[allow(dead_code)]
 impl HttpResponse {
     pub fn header(&self, key: &str) -> Option<&str> {
         self.headers.get(&key.to_lowercase()).map(|s| s.as_str())
@@ -33,25 +40,28 @@ impl HttpResponse {
     }
 }
 
-/// Thin wrapper around `reqwest::Client` with WAF evasion & size capping
+/// Maximum response body size in bytes (512 KB).
+const MAX_RESPONSE_BYTES: usize = 512 * 1024;
+
+/// Thin wrapper around `reqwest::Client` with WAF evasion & size capping.
 #[derive(Clone)]
 pub struct HttpClient {
     inner: Client,
-    config: Arc<Config>,
+    waf_enabled: bool,
+    delay_ms: u64,
 }
 
 impl HttpClient {
-    pub fn new(config: Arc<Config>) -> ScannerResult<Self> {
+    pub fn new(config: &Config) -> ScannerResult<Self> {
         let mut builder = Client::builder()
-            .timeout(Duration::from_secs(config.timeout))
-            .danger_accept_invalid_certs(config.insecure)
+            .timeout(Duration::from_secs(config.politeness.timeout_secs))
+            .danger_accept_invalid_certs(config.danger_accept_invalid_certs)
             .gzip(true)
             .deflate(true)
-            .brotli(true)
             .redirect(reqwest::redirect::Policy::limited(5))
             .tcp_keepalive(Duration::from_secs(30));
 
-        if config.waf_evasion_enabled() {
+        if config.waf_evasion.enabled {
             builder = builder.default_headers(WafEvasion::evasion_headers());
         }
 
@@ -65,7 +75,11 @@ impl HttpClient {
             .build()
             .map_err(|e| ScannerError::Config(format!("Client build failed: {e}")))?;
 
-        Ok(Self { inner, config })
+        Ok(Self {
+            inner,
+            waf_enabled: config.waf_evasion.enabled,
+            delay_ms: config.politeness.delay_ms,
+        })
     }
 
     // ------------------------------------------------------------------ //
@@ -73,7 +87,6 @@ impl HttpClient {
     // ------------------------------------------------------------------ //
 
     /// Send a request, applying WAF evasion delays + rotating headers.
-    /// Always returns `Ok(HttpResponse)` or `Err(CapturedError)` — never panics.
     pub async fn request(
         &self,
         method: Method,
@@ -81,15 +94,17 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
-        // Random inter-request delay
-        if self.config.waf_evasion_enabled() {
-            WafEvasion::random_delay(self.config.min_delay, self.config.max_delay).await;
+        // Random inter-request delay based on configured delay_ms.
+        if self.waf_enabled && self.delay_ms > 0 {
+            let min_secs = self.delay_ms as f64 / 1000.0;
+            let max_secs = min_secs * 3.0; // jitter up to 3x
+            WafEvasion::random_delay(min_secs, max_secs).await;
         }
 
         let mut req = self.inner.request(method.clone(), url);
 
-        // Rotate UA + evasion headers on every request
-        if self.config.waf_evasion_enabled() {
+        // Rotate UA + evasion headers on every request.
+        if self.waf_enabled {
             req = req.headers(WafEvasion::evasion_headers());
         }
 
@@ -119,6 +134,25 @@ impl HttpClient {
         self.request(Method::GET, url, None, None).await
     }
 
+    /// GET with extra request headers specified as `[(name, value)]` pairs.
+    pub async fn get_with_headers(
+        &self,
+        url: &str,
+        extra: &[(String, String)],
+    ) -> Result<HttpResponse, CapturedError> {
+        let mut map = HeaderMap::new();
+        for (k, v) in extra {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(v),
+            ) {
+                map.insert(name, value);
+            }
+        }
+        self.request(Method::GET, url, Some(map), None).await
+    }
+
+    #[allow(dead_code)]
     pub async fn head(&self, url: &str) -> Result<HttpResponse, CapturedError> {
         self.request(Method::HEAD, url, None, None).await
     }
@@ -134,9 +168,9 @@ impl HttpClient {
     pub async fn post_json(
         &self,
         url: &str,
-        body: serde_json::Value,
+        body: &serde_json::Value,
     ) -> Result<HttpResponse, CapturedError> {
-        self.request(Method::POST, url, None, Some(body)).await
+        self.request(Method::POST, url, None, Some(body.clone())).await
     }
 
     pub async fn method_probe(
@@ -162,7 +196,7 @@ impl HttpClient {
         let status = response.status().as_u16();
         let final_url = response.url().to_string();
 
-        // Flatten headers into lowercase map (last value wins for duplicates)
+        // Flatten headers into lowercase map (last value wins for duplicates).
         let headers: HashMap<String, String> = response
             .headers()
             .iter()
@@ -174,19 +208,18 @@ impl HttpClient {
             })
             .collect();
 
-        // Stream body with size cap
-        let max = self.config.max_response_bytes();
+        // Read body with size cap.
         let raw_bytes = response.bytes().await.map_err(|e| {
             CapturedError::new("http::read_body", Some(url.to_string()), &e)
         })?;
 
-        let capped: &[u8] = if raw_bytes.len() > max {
-            &raw_bytes[..max]
+        let capped: &[u8] = if raw_bytes.len() > MAX_RESPONSE_BYTES {
+            &raw_bytes[..MAX_RESPONSE_BYTES]
         } else {
             &raw_bytes
         };
 
-        // Best-effort UTF-8 decode
+        // Best-effort UTF-8 decode.
         let body = String::from_utf8_lossy(capped).into_owned();
 
         Ok(HttpResponse {

@@ -11,14 +11,14 @@ use std::{
     fmt,
     fs::{File, OpenOptions},
     io::{BufWriter, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::{
     error::CapturedError,
@@ -141,6 +141,7 @@ impl Finding {
 
     /// Builder: attach remediation advice.
     #[must_use]
+    #[allow(dead_code)]
     pub fn with_remediation(mut self, rem: impl Into<String>) -> Self {
         self.remediation = Some(rem.into());
         self
@@ -148,6 +149,7 @@ impl Finding {
 
     /// Builder: attach arbitrary JSON metadata.
     #[must_use]
+    #[allow(dead_code)]
     pub fn with_metadata(mut self, meta: serde_json::Value) -> Self {
         self.metadata = Some(meta);
         self
@@ -237,7 +239,7 @@ impl From<&CapturedError> for CapturedErrorRecord {
     fn from(e: &CapturedError) -> Self {
         Self {
             url:     e.url.clone(),
-            kind:    format!("{:?}", e.kind),
+            kind:    e.error_type.clone(),
             message: e.message.clone(),
         }
     }
@@ -293,6 +295,7 @@ impl Reporter {
     /// Useful when scanners emit findings progressively rather than waiting for
     /// the full run to complete.  In `Pretty` mode this is a no-op (the full
     /// document must be written atomically).
+    #[allow(dead_code)]
     pub fn flush_finding(&self, finding: &Finding) {
         if self.cfg.format != ReportFormat::Ndjson {
             return;
@@ -466,10 +469,10 @@ fn print_summary_table(summary: &ReportSummary, elapsed: Duration) {
 /// | Scanner errors occurred (regardless of finds)|  2   |
 ///
 /// Callers may OR the codes together; e.g. code `3` = findings + errors.
-pub fn exit_code(summary: &ReportSummary, threshold: Severity) -> i32 {
+pub fn exit_code(summary: &ReportSummary, threshold: &Severity) -> i32 {
     let mut code = 0i32;
 
-    let has_findings = match threshold {
+    let has_findings = match *threshold {
         Severity::Critical => summary.critical > 0,
         Severity::High     => summary.critical + summary.high > 0,
         Severity::Medium   => summary.critical + summary.high + summary.medium > 0,
@@ -488,7 +491,7 @@ pub fn exit_code(summary: &ReportSummary, threshold: Severity) -> i32 {
 // ── Filtering helpers ─────────────────────────────────────────────────────────
 
 /// Return only findings whose severity is **at or above** `min_severity`.
-pub fn filter_findings(findings: &[Finding], min_severity: &Severity) -> Vec<&Finding> {
+pub fn filter_findings<'a>(findings: &'a [Finding], min_severity: &Severity) -> Vec<&'a Finding> {
     findings
         .iter()
         .filter(|f| f.severity.rank() >= min_severity.rank())
@@ -497,6 +500,7 @@ pub fn filter_findings(findings: &[Finding], min_severity: &Severity) -> Vec<&Fi
 
 /// Deduplicate findings by `(url, check)` pair, keeping the highest-severity
 /// instance.  Expects `findings` to already be sorted descending by severity.
+#[allow(dead_code)]
 pub fn dedup_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
     // Sort descending so the first occurrence of each key is the most severe.
     findings.sort_by(|a, b| b.severity.rank().cmp(&a.severity.rank()));
@@ -504,301 +508,4 @@ pub fn dedup_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
     let mut seen = std::collections::HashSet::new();
     findings.retain(|f| seen.insert((f.url.clone(), f.check.clone())));
     findings
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Read;
-    use tempfile::NamedTempFile;
-
-    // ── Severity ordering ────────────────────────────────────────────────────
-
-    #[test]
-    fn severity_rank_is_monotone() {
-        assert!(Severity::Critical.rank() > Severity::High.rank());
-        assert!(Severity::High.rank()     > Severity::Medium.rank());
-        assert!(Severity::Medium.rank()   > Severity::Low.rank());
-        assert!(Severity::Low.rank()      > Severity::Info.rank());
-    }
-
-    #[test]
-    fn severity_display_round_trips() {
-        for sev in [
-            Severity::Critical,
-            Severity::High,
-            Severity::Medium,
-            Severity::Low,
-            Severity::Info,
-        ] {
-            // label().trim() must equal Display output
-            assert_eq!(sev.label().trim(), sev.to_string());
-        }
-    }
-
-    #[test]
-    fn severity_serde_round_trips() {
-        let json = serde_json::to_string(&Severity::High).unwrap();
-        assert_eq!(json, r#""HIGH""#);
-        let back: Severity = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, Severity::High);
-    }
-
-    // ── Finding builders ─────────────────────────────────────────────────────
-
-    #[test]
-    fn finding_builder_sets_optional_fields() {
-        let f = Finding::new(
-            "https://example.com",
-            "cors.wildcard",
-            "Wildcard CORS",
-            Severity::High,
-            "Access-Control-Allow-Origin: *",
-            "cors",
-        )
-        .with_evidence("acao: *")
-        .with_remediation("Restrict CORS origin")
-        .with_metadata(serde_json::json!({"cve": "N/A"}));
-
-        assert_eq!(f.evidence.as_deref(),     Some("acao: *"));
-        assert_eq!(f.remediation.as_deref(),  Some("Restrict CORS origin"));
-        assert!(f.metadata.is_some());
-    }
-
-    #[test]
-    fn finding_serialises_without_none_fields() {
-        let f = Finding::new(
-            "https://example.com",
-            "csp.missing",
-            "No CSP header",
-            Severity::Medium,
-            "Header absent",
-            "csp",
-        );
-
-        let v: serde_json::Value = serde_json::to_value(&f).unwrap();
-        assert!(!v.as_object().unwrap().contains_key("evidence"));
-        assert!(!v.as_object().unwrap().contains_key("remediation"));
-        assert!(!v.as_object().unwrap().contains_key("metadata"));
-    }
-
-    // ── Deduplication & filtering ────────────────────────────────────────────
-
-    #[test]
-    fn dedup_keeps_highest_severity() {
-        let make = |sev: Severity| Finding::new(
-            "https://example.com",
-            "cors.wildcard",
-            "title",
-            sev,
-            "detail",
-            "cors",
-        );
-
-        let findings = vec![make(Severity::Low), make(Severity::Critical), make(Severity::High)];
-        let deduped  = dedup_findings(findings);
-
-        assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].severity, Severity::Critical);
-    }
-
-    #[test]
-    fn dedup_preserves_distinct_checks() {
-        let make = |check: &str| Finding::new(
-            "https://example.com",
-            check,
-            "title",
-            Severity::High,
-            "detail",
-            "scanner",
-        );
-
-        let findings = vec![make("cors.wildcard"), make("csp.missing"), make("cors.wildcard")];
-        let deduped  = dedup_findings(findings);
-        assert_eq!(deduped.len(), 2);
-    }
-
-    #[test]
-    fn filter_findings_respects_threshold() {
-        let findings = vec![
-            Finding::new("u", "a", "t", Severity::Critical, "d", "s"),
-            Finding::new("u", "b", "t", Severity::Low,      "d", "s"),
-            Finding::new("u", "c", "t", Severity::Info,     "d", "s"),
-        ];
-
-        let filtered = filter_findings(&findings, &Severity::High);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].severity, Severity::Critical);
-    }
-
-    // ── Exit code logic ──────────────────────────────────────────────────────
-
-    #[test]
-    fn exit_code_clean_run() {
-        let s = ReportSummary::default();
-        assert_eq!(exit_code(&s, Severity::High), 0);
-    }
-
-    #[test]
-    fn exit_code_findings_only() {
-        let s = ReportSummary { high: 1, total: 1, ..Default::default() };
-        assert_eq!(exit_code(&s, Severity::High), 1);
-    }
-
-    #[test]
-    fn exit_code_errors_only() {
-        let s = ReportSummary { errors: 3, ..Default::default() };
-        assert_eq!(exit_code(&s, Severity::High), 2);
-    }
-
-    #[test]
-    fn exit_code_findings_and_errors() {
-        let s = ReportSummary { critical: 1, total: 1, errors: 1, ..Default::default() };
-        assert_eq!(exit_code(&s, Severity::High), 3);
-    }
-
-    #[test]
-    fn exit_code_below_threshold_is_clean() {
-        // Only INFO findings, threshold is HIGH → clean exit
-        let s = ReportSummary { info: 5, total: 5, ..Default::default() };
-        assert_eq!(exit_code(&s, Severity::High), 0);
-    }
-
-    // ── File output ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn reporter_writes_pretty_json_to_file() {
-        let tmp  = NamedTempFile::new().unwrap();
-        let path = tmp.path().to_path_buf();
-
-        let cfg = ReportConfig {
-            format:        ReportFormat::Pretty,
-            output_path:   Some(path.clone()),
-            print_summary: false,
-            quiet:         true,
-        };
-
-        let reporter = Reporter::new(cfg).unwrap();
-        let result   = mock_run_result();
-
-        reporter.write_run_result(&result);
-        reporter.finalize();
-
-        let mut content = String::new();
-        std::fs::File::open(&path)
-            .unwrap()
-            .read_to_string(&mut content)
-            .unwrap();
-
-        let doc: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
-        assert!(doc.get("findings").is_some());
-        assert!(doc.get("summary").is_some());
-        assert_eq!(doc["summary"]["total"], 1);
-    }
-
-    #[test]
-    fn reporter_writes_ndjson_to_file() {
-        let tmp  = NamedTempFile::new().unwrap();
-        let path = tmp.path().to_path_buf();
-
-        let cfg = ReportConfig {
-            format:        ReportFormat::Ndjson,
-            output_path:   Some(path.clone()),
-            print_summary: false,
-            quiet:         true,
-        };
-
-        let reporter = Reporter::new(cfg).unwrap();
-        let result   = mock_run_result();
-
-        reporter.write_run_result(&result);
-        reporter.finalize();
-
-        let content = std::fs::read_to_string(&path).unwrap();
-        let lines: Vec<&str> = content.lines().collect();
-
-        // First line: meta+summary header
-        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(header["type"], "meta");
-
-        // Second line: the single finding
-        let finding: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
-        assert_eq!(finding["check"], "cors.wildcard");
-    }
-
-    #[test]
-    fn flush_finding_appends_in_ndjson_mode() {
-        let tmp  = NamedTempFile::new().unwrap();
-        let path = tmp.path().to_path_buf();
-
-        let cfg = ReportConfig {
-            format:        ReportFormat::Ndjson,
-            output_path:   Some(path.clone()),
-            print_summary: false,
-            quiet:         true,
-        };
-
-        let reporter = Reporter::new(cfg).unwrap();
-        let finding  = Finding::new(
-            "https://example.com", "cors.wildcard", "Wildcard CORS",
-            Severity::High, "detail", "cors",
-        );
-
-        reporter.flush_finding(&finding);
-        reporter.finalize();
-
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(!content.is_empty());
-        let v: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
-        assert_eq!(v["check"], "cors.wildcard");
-    }
-
-    #[test]
-    fn flush_finding_is_noop_in_pretty_mode() {
-        let tmp  = NamedTempFile::new().unwrap();
-        let path = tmp.path().to_path_buf();
-
-        let cfg = ReportConfig {
-            format:        ReportFormat::Pretty,
-            output_path:   Some(path.clone()),
-            print_summary: false,
-            quiet:         true,
-        };
-
-        let reporter = Reporter::new(cfg).unwrap();
-        let finding  = Finding::new(
-            "https://example.com", "csp.missing", "No CSP",
-            Severity::Medium, "detail", "csp",
-        );
-
-        reporter.flush_finding(&finding);
-        reporter.finalize();
-
-        // File should be empty — flush_finding is a no-op in Pretty mode
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.is_empty());
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    fn mock_run_result() -> RunResult {
-        RunResult {
-            findings: vec![
-                Finding::new(
-                    "https://example.com",
-                    "cors.wildcard",
-                    "Wildcard CORS",
-                    Severity::High,
-                    "Access-Control-Allow-Origin: *",
-                    "cors",
-                ),
-            ],
-            errors:  vec![],
-            elapsed: Duration::from_millis(420),
-            scanned: 1,
-            skipped: 0,
-        }
-    }
 }

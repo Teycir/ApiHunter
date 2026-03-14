@@ -1,6 +1,12 @@
+// src/error.rs
+//
+// Scanner error types.
+
 use thiserror::Error;
 
+/// Typed error variants produced during scanning.
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum ScannerError {
     #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
@@ -33,7 +39,7 @@ pub enum ScannerError {
     Other(String),
 }
 
-/// A captured error event stored in the report
+/// A captured error event stored in the report.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CapturedError {
     pub timestamp: String,
@@ -43,13 +49,23 @@ pub struct CapturedError {
     pub message: String,
 }
 
+impl std::fmt::Display for CapturedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref url) = self.url {
+            write!(f, "[{}] {} (url: {}): {}", self.context, self.error_type, url, self.message)
+        } else {
+            write!(f, "[{}] {}: {}", self.context, self.error_type, self.message)
+        }
+    }
+}
+
 impl CapturedError {
     pub fn new(context: impl Into<String>, url: Option<String>, err: &dyn std::error::Error) -> Self {
         Self {
             timestamp: chrono::Utc::now().to_rfc3339(),
             context: context.into(),
             url,
-            error_type: std::any::type_name_of_val(err).to_string(),
+            error_type: std::any::type_name::<dyn std::error::Error>().to_string(),
             message: err.to_string(),
         }
     }
@@ -66,11 +82,24 @@ impl CapturedError {
 
     /// Construct a non-HTTP internal error (e.g. task panic).
     pub fn internal(msg: impl Into<String>) -> Self {
-        CapturedError {
-            url:     None,
-            kind:    ErrorKind::Internal,
+        Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: "internal".to_string(),
+            url: None,
+            error_type: "Internal".to_string(),
             message: msg.into(),
-            ..Default::default()
+        }
+    }
+
+    /// Construct a parse error.
+    #[allow(dead_code)]
+    pub fn parse(context: impl Into<String>, msg: impl Into<String>) -> Self {
+        Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            context: context.into(),
+            url: None,
+            error_type: "ParseError".to_string(),
+            message: msg.into(),
         }
     }
 }

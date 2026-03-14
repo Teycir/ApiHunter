@@ -58,8 +58,10 @@ impl WafEvasion {
 
     /// Async random sleep between [min, max] seconds
     pub async fn random_delay(min_secs: f64, max_secs: f64) {
-        let mut rng = rand::thread_rng();
-        let delay = rng.gen_range(min_secs..=max_secs);
+        let delay = {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(min_secs..=max_secs)
+        };
         tokio::time::sleep(Duration::from_secs_f64(delay)).await;
     }
 }
