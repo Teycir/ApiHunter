@@ -25,7 +25,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth,
-    cli::{default_user_agents, load_urls, Cli},
+    cli::{default_user_agents, load_urls, Cli, CliFormat},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
@@ -62,6 +62,7 @@ async fn run(cli: Cli) -> Result<i32> {
         warn!("No URLs provided — nothing to scan.");
         return Ok(0);
     }
+    print_banner(&cli, raw_urls.len());
     info!("Loaded {} URL(s) for scanning.", raw_urls.len());
 
     // ── 2. Build Config ──────────────────────────────────────────────────────
@@ -257,6 +258,33 @@ fn init_tracing(quiet: bool) {
         .with_target(false)
         .compact()
         .init();
+}
+
+fn print_banner(cli: &Cli, url_count: usize) {
+    if cli.quiet {
+        return;
+    }
+
+    let version = env!("CARGO_PKG_VERSION");
+    let format = match cli.format {
+        CliFormat::Pretty => "pretty",
+        CliFormat::Ndjson => "ndjson",
+        CliFormat::Sarif => "sarif",
+    };
+    let output = cli
+        .output
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "stdout".to_string());
+
+    eprintln!("     _    ____  _   _            _           ");
+    eprintln!("    / \\\\  |  _ \\\\| | | | ___  _ __| |_ ___ _ __");
+    eprintln!("   / _ \\\\ | |_) | |_| |/ _ \\\\| '__| __/ _ \\\\ '__|");
+    eprintln!("  / ___ \\\\|  __/|  _  | (_) | |  | ||  __/ |   ");
+    eprintln!(" /_/   \\\\_\\\\_|   |_| |_|\\\\___/|_|   \\\\__\\\\___|_|   ");
+    eprintln!("         ApiHunter v{version}  |  targets: {url_count}");
+    eprintln!("         format: {format}  |  output: {output}");
+    eprintln!();
 }
 
 fn build_default_headers(
