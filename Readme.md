@@ -16,7 +16,9 @@
 ---
 
 An async, modular web security scanner written in Rust.  
-Detects misconfigurations in CORS, CSP, GraphQL, and API security posture across target endpoints.
+Great for quickly baselining API exposure in staging or production-like environments, and for catching regressions after gateway, WAF, or auth changes.  
+Innovation: combines discovery + targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT) with fast, adaptive concurrency, producing actionable outputs (NDJSON/SARIF) that slot into CI.  
+Benefit: faster feedback loops, fewer false positives, and security findings your teams can triage immediately.
 
 ## Features
 
