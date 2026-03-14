@@ -100,7 +100,7 @@ impl<'a> JsDiscovery<'a> {
                         if let Some(sm_url) = self.resolve_from(&full_url, &sm_path) {
                             let (mut ep, mut er) = self.fetch_sourcemap(&sm_url).await;
                             endpoints.extend(ep.drain());
-                            errors.extend(er.drain(..));
+                            errors.append(&mut er);
                         }
                     }
                 }

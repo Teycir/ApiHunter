@@ -1352,10 +1352,12 @@ async fn check_idor_bola(
     // Finding: if IDs outside the original all return 200, authorization
     // may be missing per-object (returns data for any ID).
 
+    type RangeResult = (u64, u16, Option<(usize, u64)>);
+
     let base_id = numeric_seg.value;
     let range_ids: Vec<u64> = (base_id.saturating_sub(2)..=base_id + 2).collect();
 
-    let mut range_results: Vec<(u64, u16, Option<(usize, u64)>)> = Vec::new();
+    let mut range_results: Vec<RangeResult> = Vec::new();
 
     for &id in &range_ids {
         let probe_url = replace_numeric_segment(url, &numeric_seg, id);
@@ -1376,7 +1378,7 @@ async fn check_idor_bola(
     }
 
     // Count how many IDs outside the original return 200 with real content
-    let other_successes: Vec<&(u64, u16, Option<(usize, u64)>)> = range_results
+    let other_successes: Vec<&RangeResult> = range_results
         .iter()
         .filter(|(id, status, fp)| {
             *id != base_id && *status < 400 && fp.as_ref().map(|f| f.0 > 32).unwrap_or(false)

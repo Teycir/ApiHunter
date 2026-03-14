@@ -368,7 +368,7 @@ async fn attempt_alg_confusion(
     // key bytes (SPKI). We attempt a best-effort decode from x5c or jwk, but a
     // full, correct extraction requires certificate/JWK parsing.
     let secret = if let Some(x5c) = header.get("x5c").and_then(Value::as_array) {
-        x5c.get(0)
+        x5c.first()
             .and_then(Value::as_str)
             .and_then(|s| BASE64_STD.decode(s.as_bytes()).ok())
     } else if let Some(jwk) = header.get("jwk") {

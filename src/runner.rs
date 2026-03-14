@@ -409,7 +409,7 @@ fn dedup_findings(findings: &mut Vec<Finding>) {
     findings.retain(|f| seen.insert((f.url.clone(), f.check.clone())));
 }
 
-fn sort_findings(findings: &mut Vec<Finding>) {
+fn sort_findings(findings: &mut [Finding]) {
     findings.sort_by(|a, b| {
         b.severity
             .rank()
