@@ -72,24 +72,16 @@ pub async fn run(
         "URL list normalised"
     );
 
-    // ── 2. Discovery phase ────────────────────────────────────────────────────
+    // ── 2. Discovery phase with per-site cap ────────────────────────────────
     let (discovered, mut discovery_errors) =
-        run_discovery(&unique_seeds, &config, &http_client).await;
+        run_discovery_per_site(&unique_seeds, &config, &http_client).await;
     info!(discovered = discovered.len(), "Discovery complete");
 
     let mut merged = unique_seeds;
     merged.extend(discovered);
-    let (unique_all, skipped_merged) = dedup(merged);
+    let (work_list, skipped_merged) = dedup(merged);
 
-    // ── 4. Apply max_endpoints cap ────────────────────────────────────────────
-    let (work_list, skipped_cap) = apply_cap(unique_all, config.max_endpoints);
-    if skipped_cap > 0 {
-        warn!(
-            cap = config.max_endpoints,
-            skipped = skipped_cap,
-            "URL list truncated to max_endpoints"
-        );
-    }
+    let skipped_cap = 0; // No global cap anymore, handled per-site
 
     let scanned = work_list.len();
     let skipped = skipped_dedup + skipped_merged + skipped_cap;
@@ -362,7 +354,7 @@ fn canonicalise(raw: &str) -> Option<String> {
 
 // ── Discovery orchestration ─────────────────────────────────────────────────
 
-async fn run_discovery(
+async fn run_discovery_per_site(
     seeds: &[String],
     config: &Config,
     client: &HttpClient,
@@ -370,8 +362,8 @@ async fn run_discovery(
     const MAX_SITEMAPS: usize = 5;
     const MAX_SCRIPTS: usize = 10;
 
-    let mut discovered: HashSet<String> = HashSet::new();
-    let mut errors: Vec<CapturedError> = Vec::new();
+    let mut all_discovered: HashSet<String> = HashSet::new();
+    let mut all_errors: Vec<CapturedError> = Vec::new();
 
     for seed in seeds {
         let parsed = match Url::parse(seed) {
@@ -392,39 +384,63 @@ async fn run_discovery(
             b
         };
 
+        let mut site_discovered: HashSet<String> = HashSet::new();
+        let mut errors: Vec<CapturedError> = Vec::new();
+
         let (paths, errs) = RobotsDiscovery::new(client, &base, &host).run().await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
 
         let (paths, errs) = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS)
             .run()
             .await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
 
         let (paths, errs) = SwaggerDiscovery::new(client, &base, &host).run().await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
 
         let (paths, errs) = JsDiscovery::new(client, seed, &host, MAX_SCRIPTS)
             .run()
             .await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
 
         let (paths, errs) = HeaderDiscovery::new(client, &base, &host).run().await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
 
         let (paths, errs) = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new())
             .run()
             .await;
         errors.extend(errs);
-        insert_paths(&base, paths, &mut discovered);
+        insert_paths(&base, paths, &mut site_discovered);
+
+        let max_per_site = if config.max_endpoints == 0 {
+            usize::MAX
+        } else {
+            config.max_endpoints
+        };
+
+        let site_urls: Vec<String> = site_discovered.into_iter().collect();
+        let capped_count = site_urls.len().min(max_per_site);
+        
+        if site_urls.len() > max_per_site {
+            debug!(
+                site = %host,
+                discovered = site_urls.len(),
+                capped = capped_count,
+                "Site endpoints capped"
+            );
+        }
+
+        all_discovered.extend(site_urls.into_iter().take(capped_count));
+        all_errors.extend(errors);
     }
 
-    let urls = discovered.into_iter().collect();
-    (urls, errors)
+    let urls = all_discovered.into_iter().collect();
+    (urls, all_errors)
 }
 
 fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
@@ -435,14 +451,6 @@ fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
     }
 }
 
-fn apply_cap(mut urls: Vec<String>, max: usize) -> (Vec<String>, usize) {
-    if max == 0 || urls.len() <= max {
-        return (urls, 0);
-    }
-    let dropped = urls.len() - max;
-    urls.truncate(max);
-    (urls, dropped)
-}
 
 fn dedup_findings(findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();

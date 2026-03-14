@@ -80,8 +80,8 @@ pub struct Cli {
     #[arg(short = 'c', long, default_value_t = 20, value_name = "N")]
     pub concurrency: usize,
 
-    /// Maximum number of endpoints to scan (0 = unlimited).
-    #[arg(short = 'n', long, default_value_t = 15, value_name = "N")]
+    /// Maximum number of endpoints to scan per site (0 = unlimited).
+    #[arg(short = 'n', long, default_value_t = 50, value_name = "N")]
     pub max_endpoints: usize,
 
     // ── Politeness ───────────────────────────────────────────────────────────
