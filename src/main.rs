@@ -301,23 +301,10 @@ fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {
 }
 
 fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
-    const DEFAULTS: &[&str] = &[
-        "authorization",
-        "cookie",
-        "x-api-key",
-        "x-auth-token",
-        "x-access-token",
-        "x-authorization",
-        "api-key",
-        "x-session-token",
-    ];
-
-    match raws {
-        Some(list) if !list.is_empty() => list
-            .iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => DEFAULTS.iter().map(|s| s.to_string()).collect(),
-    }
+    raws
+        .unwrap_or(&[])
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }

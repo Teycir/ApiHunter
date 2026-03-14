@@ -106,6 +106,7 @@ async fn cors_wildcard_origin_detected() {
         vec![server.uri()],
         config,
         client,
+        None,
         reporter,
     )
     .await;
@@ -149,6 +150,7 @@ async fn cors_no_headers_no_finding() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -193,6 +195,7 @@ async fn csp_missing_header_detected() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -234,6 +237,7 @@ async fn csp_unsafe_inline_detected() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -280,6 +284,7 @@ async fn api_security_spa_catchall_suppresses_false_positive() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -349,6 +354,7 @@ async fn api_security_real_env_file_detected() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -376,6 +382,7 @@ async fn runner_handles_connection_error_gracefully() {
         vec!["http://127.0.0.1:1".to_string()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -419,6 +426,7 @@ async fn runner_aggregates_findings_across_scanners() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;
@@ -457,6 +465,7 @@ async fn runner_returns_scanned_count() {
         vec![server.uri()],
         config,
         client,
+        None,
         test_reporter(),
     )
     .await;

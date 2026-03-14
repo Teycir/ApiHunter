@@ -71,9 +71,12 @@ const DEFAULT_UNAUTH_STRIP_HEADERS: &[&str] = &[
 #[derive(Clone)]
 pub struct HttpClient {
     inner: Client,
+    unauth_inner: Client,
     client_config: ClientConfig,
+    unauth_client_config: ClientConfig,
     per_host_clients: bool,
     clients: Arc<DashMap<String, Client>>,
+    unauth_clients: Arc<DashMap<String, Client>>,
     spec_cache: Arc<DashMap<String, String>>,
     waf_enabled: bool,
     delay_ms: u64,
@@ -210,6 +213,11 @@ impl HttpClient {
         };
 
         let inner = build_client(&client_config)?;
+        let unauth_client_config = ClientConfig {
+            default_headers: HeaderMap::new(),
+            ..client_config.clone()
+        };
+        let unauth_inner = build_client(&unauth_client_config)?;
         let unauth_strip_headers = build_unauth_strip_headers(&config.unauth_strip_headers)?;
 
         let session_store = if let Some(path) = &config.session_file {
@@ -231,9 +239,12 @@ impl HttpClient {
 
         Ok(Self {
             inner,
+            unauth_inner,
             client_config,
+            unauth_client_config,
             per_host_clients: config.per_host_clients,
             clients: Arc::new(DashMap::new()),
+            unauth_clients: Arc::new(DashMap::new()),
             spec_cache: Arc::new(DashMap::new()),
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
@@ -514,7 +525,7 @@ impl HttpClient {
 
     /// GET request without the live credential (used for unauthenticated comparison in IDOR checks).
     pub async fn get_without_auth(&self, url: &str) -> Result<HttpResponse, CapturedError> {
-        let client = self.client_for_url(url).map_err(|e| {
+        let client = self.client_for_url_unauth(url).map_err(|e| {
             CapturedError::from_str("http::get_without_auth", Some(url.to_string()), e)
         })?;
 
@@ -629,6 +640,26 @@ impl HttpClient {
         let client = build_client(&self.client_config)
             .map_err(|e| format!("per-host client build failed: {e}"))?;
         self.clients.insert(host, client.clone());
+        Ok(client)
+    }
+
+    fn client_for_url_unauth(&self, url: &str) -> Result<Client, String> {
+        if !self.per_host_clients {
+            return Ok(self.unauth_inner.clone());
+        }
+
+        let host = Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        if let Some(client) = self.unauth_clients.get(&host) {
+            return Ok(client.value().clone());
+        }
+
+        let client = build_client(&self.unauth_client_config)
+            .map_err(|e| format!("per-host unauth client build failed: {e}"))?;
+        self.unauth_clients.insert(host, client.clone());
         Ok(client)
     }
 

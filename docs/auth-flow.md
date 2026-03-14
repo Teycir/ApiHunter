@@ -48,3 +48,17 @@ See the example files in `docs/examples/`:
 
 - `docs/examples/auth-flow-simple.json`
 - `docs/examples/auth-flow-csrf.json`
+
+## Non-JSON Responses
+
+Auth flow steps currently expect JSON responses. Some OAuth2 token endpoints
+return `application/x-www-form-urlencoded`, which is not supported. If you need
+to use such an endpoint, wrap it in a small proxy/adapter that converts the
+response to JSON.
+
+## Multi-Cookie Flows
+
+If a login response sets multiple cookies (for example `session_id` and
+`csrf_token`) and both are required in subsequent requests, only one can be
+extracted and injected via `extract` + `inject_as`. Any additional cookies
+must be provided via `--cookies` on the CLI.

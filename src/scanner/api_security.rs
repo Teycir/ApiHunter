@@ -1362,28 +1362,3 @@ async fn check_rate_limit(
         );
     }
 }
-
-fn bump_numeric_path(url: &str) -> Option<String> {
-    let parsed = Url::parse(url).ok()?;
-    let mut segments: Vec<String> = parsed.path_segments()?.map(|s| s.to_string()).collect();
-    if segments.is_empty() {
-        return None;
-    }
-
-    for i in (0..segments.len()).rev() {
-        if let Ok(num) = segments[i].parse::<u64>() {
-            segments[i] = (num + 1).to_string();
-            let new_path = format!("/{}", segments.join("/"));
-            let mut new_url = parsed.clone();
-            new_url.set_path(&new_path);
-            return Some(new_url.to_string());
-        }
-    }
-
-    None
-}
-
-#[allow(dead_code)]
-fn bump_numeric_path_legacy(url: &str) -> Option<String> {
-    bump_numeric_path(url)
-}

@@ -210,10 +210,12 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
             bail!("Auth flow step {} returned HTTP {status}", i + 1);
         }
 
+        // Note: this implementation expects JSON responses from all steps.
+        // application/x-www-form-urlencoded token responses are not supported.
         let body: Value = resp
             .json()
             .await
-            .context("Auth flow response is not JSON")?;
+            .context("Auth flow response is not JSON. If your endpoint returns form-encoded data, see docs/auth-flow.md#non-json-responses")?;
         debug!("Auth flow step {} response: {}", i + 1, body);
 
         if let (Some(extract), Some(inject_as)) = (&step.extract, &step.inject_as) {
@@ -257,6 +259,7 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
 /// expires. Writes the new token into `cred.value` so all in-flight requests
 /// automatically pick it up on the next read.
 pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) {
+    // TODO: add cancellation support for library use in long-running processes.
     tokio::spawn(async move {
         loop {
             let sleep_secs = cred.refresh_lead_secs.max(1);

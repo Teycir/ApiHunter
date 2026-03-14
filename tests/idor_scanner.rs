@@ -195,8 +195,9 @@ mod idor_tests {
         assert!(other_successes.len() >= 2, "Should detect 2+ adjacent IDs with 200");
     }
 
+    // Tier 2 fires on adjacent IDs returning 200, regardless of body similarity.
     #[test]
-    fn test_id_range_varied_responses() {
+    fn test_id_range_adjacent_ids_counted_regardless_of_content() {
         let base_id = 42u64;
         let base_fp = (100, 12345u64);
         
@@ -244,4 +245,3 @@ mod idor_tests {
         assert_eq!(other_successes.len(), 0, "Should not count 403 responses");
     }
 }
-
