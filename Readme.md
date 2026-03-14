@@ -57,6 +57,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Scanners](docs/scanners.md)
+- [Findings & Remediation](docs/findings.md)
 - [HOWTO](HOWTO.md)
 
 ## Installation

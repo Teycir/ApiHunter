@@ -177,3 +177,152 @@ RUST_LOG=debug cargo test -- --nocapture
 
 See [`docs/configuration.md`](docs/configuration.md) for every config field,
 its type, default, and environment variable override.
+---
+
+## Advanced Examples
+
+### Run with active checks (intrusive probes)
+
+```bash
+./target/release/api-scanner \
+  --urls https://staging.example.com \
+  --active-checks \
+  --concurrency 10
+```
+
+Use only on staging or with explicit production team approval. Active checks may:
+- Generate high request volume
+- Trigger WAF/IDS alerts  
+- Be detected as attack traffic
+
+---
+
+### Parse results with jq
+
+Count findings by severity:
+```bash
+cat results.ndjson | jq -r 'select(.type != "meta") | .severity' | sort | uniq -c
+```
+
+Extract critical findings only:
+```bash
+cat results.ndjson | jq 'select(.severity == "CRITICAL")'
+```
+
+List unique checks:
+```bash
+cat results.ndjson | jq -r '.check' | sort -u
+```
+
+---
+
+### Scan with custom headers and bearer token
+
+```bash
+./target/release/api-scanner \
+  --urls https://api.example.com \
+  --auth-bearer "eyJhbGciOiJIUzI1NiIs..." \
+  --headers "X-Request-ID:scan-001" \
+  --format ndjson
+```
+
+---
+
+### Comparative scans (baseline diffing)
+
+Run baseline on clean version:
+```bash
+./target/release/api-scanner \
+  --urls https://api.example.com \
+  --format ndjson \
+  --output baseline.ndjson
+```
+
+Scan after changes and report only new/changed findings:
+```bash
+./target/release/api-scanner \
+  --urls https://api.example.com \
+  --baseline baseline.ndjson \
+  --format ndjson \
+  --output new-findings.ndjson
+```
+
+---
+
+### Upload SARIF to GitHub Code Scanning
+
+```bash
+# Generate SARIF report
+./target/release/api-scanner \
+  --urls https://github.com/my-org/my-repo \
+  --format sarif \
+  --output results.sarif
+
+# Upload to GitHub (requires gh CLI)
+gh code-scanning upload-sarif results.sarif \
+  --repository my-org/my-repo
+```
+
+---
+
+## Troubleshooting
+
+### High error rate / timeouts
+
+**Problem:** Many endpoints fail with timeout errors.
+
+**Solution:**
+- Increase `--timeout-secs` (default 30)
+- Decrease `--concurrency` (default 20)
+- Add `--delay-ms` to slow down per-host requests
+
+```bash
+./target/release/api-scanner \
+  --urls ./targets.txt \
+  --timeout-secs 60 \
+  --concurrency 5 \
+  --delay-ms 500
+```
+
+---
+
+### WAF blocking requests
+
+**Problem:** Scanner gets 403/429 errors, WAF blocks requests.
+
+**Solution:** Enable WAF evasion, rotate user agents, add delays:
+
+```bash
+./target/release/api-scanner \
+  --urls https://target.example.com \
+  --waf-evasion \
+  --delay-ms 500 \
+  --retries 5
+```
+
+---
+
+### Scanner panics or crashes
+
+**Problem:** Specific endpoint causes scanner to panic.
+
+**Solution:**
+- Check the error output for the failing URL
+- Run with `RUST_LOG=debug` for more detail
+- Report with reproduction steps to the project
+
+```bash
+RUST_LOG=debug ./target/release/api-scanner \
+  --urls https://problematic-url.com \
+  2>&1 | tee debug.log
+```
+
+---
+
+## Interpreting Results
+
+See [`docs/findings.md`](docs/findings.md) for detailed guidance on:
+- Severity level meanings
+- Common finding types and remediations
+- Output formats (NDJSON, SARIF)
+- Reducing false positives

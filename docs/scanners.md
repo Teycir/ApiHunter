@@ -3,7 +3,7 @@ author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
 last_updated: 2026-03-14
-tags: [scanners, cors, csp, graphql, api-security, jwt, openapi]
+tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, active-checks]
 category: Scanner Modules
 ---
 
@@ -73,8 +73,47 @@ Deep inspection of JWTs found in responses.
 
 Analyses OpenAPI / Swagger specs discovered at common paths.
 
+The OpenAPI scanner discovers JSON/YAML spec files at common endpoints:
+- `/swagger.json`, `/api/swagger.json`
+- `/openapi.json`, `/api/openapi.json`
+- `/v1/openapi.json`, `/v2/openapi.json`
+- `/openapi.yaml`, `/swagger.yaml`
+
 **Detects:**
 - Missing security schemes in the spec
 - Operations without explicit security requirements
-- File upload endpoints
+- File upload endpoints (e.g., `multipart/form-data`)
 - Deprecated operations still present in the spec
+- Unsecured endpoints that should require authentication
+
+---
+
+## Active Checks (Opt-In)
+
+When `--active-checks` is enabled, additional potentially invasive probes are performed.
+These should only be used in controlled environments or with explicit permission.
+
+### CORS Active Checks
+- **OPTIONS request analysis** — probes HTTP method exposure via `OPTIONS` verb
+- **Method tampering** — tests response to uncommon HTTP methods
+
+### API Security Active Checks
+- **Verb tampering** — attempts `TRACE`, `PATCH`, `HEAD` (if not already detected passively)
+- **BOLA/IDOR probing** — numeric ID swap tests on detected endpoints
+- **Rate-limit detection** — controlled burst probes to detect 429 (Too Many Requests) thresholds
+- **Mass-assignment heuristics** — POST/PUT with extra JSON fields to detect reflection
+
+### JWT Active Checks
+- **Algorithm confusion** — attempts RS256 → HS256 substitution attacks
+- **Key ID injection** — probes for `kid` header manipulation vulnerabilities
+
+### GraphQL Active Checks
+- **Complexity/depth bombs** — sophisticated query structures to test depth limits
+- **Query cost analysis** — attempts to measure GraphQL cost limiting
+
+⚠️ **Warning:** Active checks generate significantly higher request volume and may:
+- Trigger WAF/IDS alerts and rate limiting
+- Disrupt service monitoring or analytics
+- Be treated as security attacks depending on your environment
+
+Only enable in controlled environments with proper authorization and testing windows.

@@ -21,6 +21,7 @@ Complete guide to ApiHunter documentation and resources.
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
 | [Scanners](./scanners.md) | Scanner Modules | Detection capabilities for each scanner module |
+| [Findings](./findings.md) | Results Interpretation | Understanding severity levels, findings, and remediation |
 
 ### 📋 Additional Resources
 
@@ -37,7 +38,8 @@ Complete guide to ApiHunter documentation and resources.
 
 ### Security Scanning
 - [README.md](../Readme.md) - `security, scanner, api`
-- [Scanners](./scanners.md) - `cors, csp, graphql, api-security`
+- [Scanners](./scanners.md) - `cors, csp, graphql, api-security, jwt, openapi, active-checks`
+- [Findings](./findings.md) - `findings, severity, remediation`
 
 ### Technical Design
 - [Architecture](./architecture.md) - `architecture, design, modules, async-runtime`
