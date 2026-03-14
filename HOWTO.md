@@ -6,18 +6,21 @@ Practical recipes for common tasks.
 
 ## Run a basic scan
 
+Note: `--urls` expects a file path. For a single URL, use `--stdin`:
+
 ```bash
-./target/release/api-scanner --urls https://target.example.com
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin
 ```
 
-Findings are written as NDJSON to **stdout**; diagnostics to **stderr**.
+Findings are written to **stdout** (default `pretty`; use `--format ndjson` for NDJSON);
+diagnostics to **stderr**.
 
 ---
 
 ## Save results to a file
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --output report.ndjson
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --output report.ndjson
 ```
 
 When `--output` is set, the report is written to the file. Stdout still prints
@@ -28,7 +31,7 @@ unless `--quiet` is used.
 ## Stream findings as NDJSON
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --format ndjson --stream
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --format ndjson --stream
 ```
 
 ---
@@ -36,7 +39,7 @@ unless `--quiet` is used.
 ## SARIF output (GitHub Code Scanning)
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --format sarif --output results.sarif
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --format sarif --output results.sarif
 ```
 
 ---
@@ -44,7 +47,7 @@ unless `--quiet` is used.
 ## Baseline diff mode
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --baseline last.ndjson --format ndjson
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --baseline last.ndjson --format ndjson
 ```
 
 ---
@@ -52,7 +55,7 @@ unless `--quiet` is used.
 ## Filter by severity
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --min-severity high
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --min-severity high
 ```
 
 Accepted values (low → critical): `low` `medium` `high` `critical`
@@ -62,10 +65,12 @@ Accepted values (low → critical): `low` `medium` `high` `critical`
 ## Scan multiple targets
 
 ```bash
-./target/release/api-scanner \
-  --urls https://app.example.com \
-  --urls https://api.example.com \
-  --concurrency 40
+cat <<'EOF' > targets.txt
+https://app.example.com
+https://api.example.com
+EOF
+
+./target/release/api-scanner --urls ./targets.txt --concurrency 40
 ```
 
 ---
@@ -73,7 +78,7 @@ Accepted values (low → critical): `low` `medium` `high` `critical`
 ## Use in CI
 
 ```bash
-./target/release/api-scanner --urls "$TARGET" --quiet --min-severity medium
+printf "%s\n" "$TARGET" | ./target/release/api-scanner --stdin --quiet --min-severity medium
 EXIT=$?
 
 if (( EXIT & 1 )); then echo "Findings detected"; fi
@@ -85,8 +90,8 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
 ## Scan through a proxy (Burp, mitmproxy, etc.)
 
 ```bash
-./target/release/api-scanner \
-  --urls https://target.example.com \
+printf "https://target.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --proxy http://127.0.0.1:8080 \
   --danger-accept-invalid-certs
 ```
@@ -96,7 +101,7 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
 ## Enable active checks (opt-in)
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --active-checks
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --active-checks
 ```
 
 ---
@@ -104,9 +109,9 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
 ## Auth helpers and session cookies
 
 ```bash
-./target/release/api-scanner --urls https://target.example.com --auth-bearer "$TOKEN"
-./target/release/api-scanner --urls https://target.example.com --auth-basic "user:pass"
-./target/release/api-scanner --urls https://target.example.com --session-file session.json
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-bearer "$TOKEN"
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-basic "user:pass"
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file session.json
 ```
 
 `session.json` format:
@@ -184,8 +189,8 @@ its type, default, and environment variable override.
 ### Run with active checks (intrusive probes)
 
 ```bash
-./target/release/api-scanner \
-  --urls https://staging.example.com \
+printf "https://staging.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --active-checks \
   --concurrency 10
 ```
@@ -219,8 +224,8 @@ cat results.ndjson | jq -r '.check' | sort -u
 ### Scan with custom headers and bearer token
 
 ```bash
-./target/release/api-scanner \
-  --urls https://api.example.com \
+printf "https://api.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --auth-bearer "eyJhbGciOiJIUzI1NiIs..." \
   --headers "X-Request-ID:scan-001" \
   --format ndjson
@@ -232,16 +237,16 @@ cat results.ndjson | jq -r '.check' | sort -u
 
 Run baseline on clean version:
 ```bash
-./target/release/api-scanner \
-  --urls https://api.example.com \
+printf "https://api.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --format ndjson \
   --output baseline.ndjson
 ```
 
 Scan after changes and report only new/changed findings:
 ```bash
-./target/release/api-scanner \
-  --urls https://api.example.com \
+printf "https://api.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --baseline baseline.ndjson \
   --format ndjson \
   --output new-findings.ndjson
@@ -253,8 +258,8 @@ Scan after changes and report only new/changed findings:
 
 ```bash
 # Generate SARIF report
-./target/release/api-scanner \
-  --urls https://github.com/my-org/my-repo \
+printf "https://github.com/my-org/my-repo\n" | ./target/release/api-scanner \
+  --stdin \
   --format sarif \
   --output results.sarif
 
@@ -291,10 +296,11 @@ gh code-scanning upload-sarif results.sarif \
 **Problem:** Scanner gets 403/429 errors, WAF blocks requests.
 
 **Solution:** Enable WAF evasion, rotate user agents, add delays:
+Start conservatively (lower concurrency, higher delay) to avoid triggering rate limits.
 
 ```bash
-./target/release/api-scanner \
-  --urls https://target.example.com \
+printf "https://target.example.com\n" | ./target/release/api-scanner \
+  --stdin \
   --waf-evasion \
   --delay-ms 500 \
   --retries 5
@@ -312,8 +318,8 @@ gh code-scanning upload-sarif results.sarif \
 - Report with reproduction steps to the project
 
 ```bash
-RUST_LOG=debug ./target/release/api-scanner \
-  --urls https://problematic-url.com \
+printf "https://problematic-url.com\n" | RUST_LOG=debug ./target/release/api-scanner \
+  --stdin \
   2>&1 | tee debug.log
 ```
 

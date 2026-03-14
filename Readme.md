@@ -80,6 +80,8 @@ cargo build --release
 | `--format` | `pretty` | Output format: `pretty`, `ndjson`, or `sarif` |
 | `--stream` | off | Stream NDJSON findings as they arrive |
 | `--baseline` | none | Baseline NDJSON for diff-only findings |
+| `--quiet` | off | Suppress non-error stdout output |
+| `--summary` | off | Print summary even in quiet mode |
 | `--min-severity` | `info` | Filter findings below this level |
 | `--fail-on` | `medium` | Exit non-zero at or above this severity |
 | `--concurrency` | `20` | Max in-flight requests |
@@ -93,6 +95,9 @@ cargo build --release
 | `--cookies` | none | Comma-separated cookies (e.g. `session=abc,theme=dark`) |
 | `--auth-bearer` | none | Add `Authorization: Bearer <token>` |
 | `--auth-basic` | none | Add HTTP Basic auth (`user:pass`) |
+| `--auth-flow` | none | JSON auth flow file (pre-scan login) |
+| `--auth-flow-b` | none | Second auth flow for cross-user IDOR checks |
+| `--unauth-strip-headers` | default list | Extra header names to strip for unauth probes |
 | `--session-file` | none | Load/save cookies from JSON session file |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |

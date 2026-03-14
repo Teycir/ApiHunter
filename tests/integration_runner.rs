@@ -273,14 +273,7 @@ async fn api_security_spa_catchall_suppresses_false_positive() {
     let config = Arc::new(cfg);
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
     // SPA catch-all guard should suppress all debug-endpoint false positives.
     let debug_findings: Vec<_> = result
@@ -343,19 +336,9 @@ async fn api_security_real_env_file_detected() {
     let config = Arc::new(cfg);
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
-    let env_finding = result
-        .findings
-        .iter()
-        .any(|f| f.check.contains(".env"));
+    let env_finding = result.findings.iter().any(|f| f.check.contains(".env"));
 
     assert!(
         env_finding,
@@ -405,10 +388,7 @@ async fn runner_aggregates_findings_across_scanners() {
         .await;
 
     Mock::given(method("OPTIONS"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Access-Control-Allow-Origin", "*"),
-        )
+        .respond_with(ResponseTemplate::new(200).insert_header("Access-Control-Allow-Origin", "*"))
         .mount(&server)
         .await;
 

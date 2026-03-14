@@ -112,6 +112,10 @@ async fn run(cli: Cli) -> Result<i32> {
         },
     });
 
+    if config.danger_accept_invalid_certs {
+        warn!("TLS certificate validation is disabled (--danger-accept-invalid-certs). This is insecure for production scans.");
+    }
+
     // ── 3. Build shared HttpClient ───────────────────────────────────────────
     // Execute auth flow if provided
     let http_client = if let Some(ref flow_path) = config.auth_flow {
