@@ -98,7 +98,11 @@ fn dedup_keeps_highest_severity() {
         )
     };
 
-    let findings = vec![make(Severity::Low), make(Severity::Critical), make(Severity::High)];
+    let findings = vec![
+        make(Severity::Low),
+        make(Severity::Critical),
+        make(Severity::High),
+    ];
     let deduped = dedup_findings(findings);
 
     assert_eq!(deduped.len(), 1);
@@ -118,7 +122,11 @@ fn dedup_preserves_distinct_checks() {
         )
     };
 
-    let findings = vec![make("cors.wildcard"), make("csp.missing"), make("cors.wildcard")];
+    let findings = vec![
+        make("cors.wildcard"),
+        make("csp.missing"),
+        make("cors.wildcard"),
+    ];
     let deduped = dedup_findings(findings);
     assert_eq!(deduped.len(), 2);
 }
