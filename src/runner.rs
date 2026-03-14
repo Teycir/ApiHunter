@@ -107,6 +107,11 @@ pub async fn run(
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let scanners = build_scanners(&config, http_client_b.clone());
 
+    // Progress tracking
+    let progress = Arc::new(tokio::sync::Mutex::new(0usize));
+    let total_urls = scanned;
+    let scan_start = Instant::now();
+
     // mpsc channels — workers send back results; main task collects
     let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
     let (error_tx, mut error_rx) = mpsc::unbounded_channel::<Vec<CapturedError>>();
@@ -122,6 +127,7 @@ pub async fn run(
         let etx = error_tx.clone();
         let cfg = Arc::clone(&config);
         let rpt = Arc::clone(&reporter);
+        let prog = Arc::clone(&progress);
 
         join_set.spawn(async move {
             let _permit = match sem.acquire().await {
@@ -133,6 +139,37 @@ pub async fn run(
             };
 
             scan_url(url, &client, &scanners, &cfg, &rpt, ftx, etx).await;
+
+            // Update progress
+            let mut p = prog.lock().await;
+            *p += 1;
+            let completed = *p;
+            drop(p);
+
+            // Print progress every 5 URLs
+            if completed % 5 == 0 || completed == total_urls {
+                let elapsed = scan_start.elapsed().as_secs_f64();
+                let rate = completed as f64 / elapsed;
+                let remaining = total_urls - completed;
+                let eta_secs = if rate > 0.0 {
+                    (remaining as f64 / rate) as u64
+                } else {
+                    0
+                };
+                let eta_mins = eta_secs / 60;
+                
+                eprint!(
+                    "\r📊 {} / {} URLs scanned ({:.1}%) • {:.1}/s | ETA: {}m{}s   ",
+                    completed,
+                    total_urls,
+                    (completed as f64 / total_urls as f64) * 100.0,
+                    rate,
+                    eta_mins,
+                    eta_secs % 60
+                );
+                use std::io::Write;
+                std::io::stderr().flush().ok();
+            }
         });
     }
 
@@ -159,6 +196,9 @@ pub async fn run(
     while let Some(batch) = error_rx.recv().await {
         errors.extend(batch);
     }
+
+    // Clear progress line
+    eprintln!("\r                                                                                ");
 
     // ── 8. Post-process ───────────────────────────────────────────────────────
     dedup_findings(&mut findings);
