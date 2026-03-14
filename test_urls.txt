@@ -1,0 +1,3 @@
+https://httpbin.org/get
+https://httpbin.org/headers
+https://httpbin.org/user-agent

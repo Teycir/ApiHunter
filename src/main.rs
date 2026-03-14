@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
-    auth,
+    auth, auto_report,
     cli::{default_user_agents, load_urls, Cli, CliFormat},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
@@ -220,6 +220,12 @@ async fn run(cli: Cli) -> Result<i32> {
     reporter.write_run_result(&filtered_result);
     reporter.finalize();
 
+    // ── 8. Auto-save report ───────────────────────────────────────────────────
+    let doc = reports::build_document(&filtered_result);
+    if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc) {
+        warn!("Failed to auto-save report: {e}");
+    }
+
     if config.session_file.is_some() {
         if let Err(e) = http_client.save_session().await {
             warn!("Failed to save session file: {e}");
@@ -229,7 +235,7 @@ async fn run(cli: Cli) -> Result<i32> {
     let elapsed = start.elapsed();
     info!("Scan finished in {:.2}s.", elapsed.as_secs_f64());
 
-    // ── 8. Compute and return exit code ───────────────────────────────────────
+    // ── 9. Compute and return exit code ───────────────────────────────────────
     let summary = reports::build_summary(&filtered_result);
     let code = reports::exit_code(&summary, &fail_on);
 
@@ -246,16 +252,15 @@ async fn run(cli: Cli) -> Result<i32> {
 // ── Tracing initialisation ────────────────────────────────────────────────────
 
 fn init_tracing(quiet: bool) {
-    // RUST_LOG always wins; otherwise default to `warn` in quiet mode, `info` otherwise.
     let default_level = if quiet { "warn" } else { "info" };
-
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     fmt::Subscriber::builder()
         .with_env_filter(filter)
-        .with_writer(io::stderr) // keep stdout clean for piped JSON output
+        .with_writer(io::stderr)
         .with_target(false)
+        .with_ansi(false)
         .compact()
         .init();
 }

@@ -73,7 +73,7 @@ pub struct Cli {
     pub concurrency: usize,
 
     /// Maximum number of endpoints to scan (0 = unlimited).
-    #[arg(short = 'n', long, default_value_t = 0, value_name = "N")]
+    #[arg(short = 'n', long, default_value_t = 50, value_name = "N")]
     pub max_endpoints: usize,
 
     // ── Politeness ───────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ pub struct Cli {
 
     // ── Reporting threshold ───────────────────────────────────────────────────
     /// Minimum severity to include in findings output.
-    #[arg(long, default_value = "info", value_name = "LEVEL")]
+    #[arg(long, default_value = "high", value_name = "LEVEL")]
     pub min_severity: CliSeverity,
 
     /// Exit with code 1 when findings at or above this severity are found.

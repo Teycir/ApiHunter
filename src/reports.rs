@@ -357,6 +357,10 @@ impl Reporter {
     pub fn write_run_result(&self, result: &RunResult) {
         let doc = build_document(result);
 
+        if self.cfg.print_summary {
+            print_summary_table(&doc.summary, result.elapsed);
+        }
+
         match self.cfg.format {
             ReportFormat::Pretty => self.write_pretty(&doc),
             ReportFormat::Ndjson => {
@@ -367,10 +371,6 @@ impl Reporter {
                 }
             }
             ReportFormat::Sarif => self.write_sarif(&doc),
-        }
-
-        if self.cfg.print_summary {
-            print_summary_table(&doc.summary, result.elapsed);
         }
     }
 
@@ -612,7 +612,7 @@ impl Reporter {
 
 // ── Document builders ─────────────────────────────────────────────────────────
 
-fn build_document(result: &RunResult) -> ReportDocument {
+pub fn build_document(result: &RunResult) -> ReportDocument {
     let summary = build_summary(result);
     let errors: Vec<CapturedErrorRecord> = result
         .errors
