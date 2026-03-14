@@ -23,6 +23,14 @@ use url::Url;
 
 use crate::{
     config::Config,
+    discovery::{
+        common_paths::CommonPathDiscovery,
+        headers::HeaderDiscovery,
+        js::JsDiscovery,
+        robots::RobotsDiscovery,
+        sitemap::SitemapDiscovery,
+        swagger::SwaggerDiscovery,
+    },
     error::CapturedError,
     http_client::HttpClient,
     reports::{Finding, Reporter},
@@ -31,6 +39,7 @@ use crate::{
         cors::CorsScanner,
         csp::CspScanner,
         graphql::GraphqlScanner,
+        jwt::JwtScanner,
         Scanner,
     },
 };
@@ -62,16 +71,25 @@ pub async fn run(
     let start = Instant::now();
 
     // ── 1. Normalise + deduplicate ────────────────────────────────────────────
-    let (unique, skipped_dedup) = dedup(urls);
+    let (unique_seeds, skipped_dedup) = dedup(urls);
     info!(
-        total   = unique.len() + skipped_dedup,
-        unique  = unique.len(),
+        total   = unique_seeds.len() + skipped_dedup,
+        unique  = unique_seeds.len(),
         skipped = skipped_dedup,
         "URL list normalised"
     );
 
-    // ── 2. Apply max_endpoints cap ────────────────────────────────────────────
-    let (work_list, skipped_cap) = apply_cap(unique, config.max_endpoints);
+    // ── 2. Discovery phase ────────────────────────────────────────────────────
+    let (discovered, mut discovery_errors) =
+        run_discovery(&unique_seeds, &config, &http_client).await;
+    info!(discovered = discovered.len(), "Discovery complete");
+
+    let mut merged = unique_seeds.clone();
+    merged.extend(discovered);
+    let (unique_all, skipped_merged) = dedup(merged);
+
+    // ── 3. Apply max_endpoints cap ────────────────────────────────────────────
+    let (work_list, skipped_cap) = apply_cap(unique_all, config.max_endpoints);
     if skipped_cap > 0 {
         warn!(
             cap     = config.max_endpoints,
@@ -81,7 +99,7 @@ pub async fn run(
     }
 
     let scanned = work_list.len();
-    let skipped = skipped_dedup + skipped_cap;
+    let skipped = skipped_dedup + skipped_merged + skipped_cap;
 
     if scanned == 0 {
         warn!("No URLs to scan — returning empty result");
@@ -129,6 +147,7 @@ pub async fn run(
     // ── 5. Collect results while workers run ──────────────────────────────────
     let mut findings: Vec<Finding>       = Vec::new();
     let mut errors:   Vec<CapturedError> = Vec::new();
+    errors.append(&mut discovery_errors);
 
     while let Some(result) = join_set.join_next().await {
         match result {
@@ -222,6 +241,9 @@ fn build_scanners(config: &Config) -> Vec<Arc<dyn Scanner>> {
     if config.toggles.api_security {
         scanners.push(Arc::new(ApiSecurityScanner::new(config)));
     }
+    if config.toggles.jwt {
+        scanners.push(Arc::new(JwtScanner::new(config)));
+    }
 
     if scanners.is_empty() {
         warn!("All scanners are disabled — no findings will be produced");
@@ -279,6 +301,76 @@ fn canonicalise(raw: &str) -> Option<String> {
     }
 
     Some(u.to_string())
+}
+
+// ── Discovery orchestration ─────────────────────────────────────────────────
+
+async fn run_discovery(
+    seeds: &[String],
+    config: &Config,
+    client: &HttpClient,
+) -> (Vec<String>, Vec<CapturedError>) {
+    const MAX_SITEMAPS: usize = 5;
+    const MAX_SCRIPTS: usize = 10;
+
+    let mut discovered: HashSet<String> = HashSet::new();
+    let mut errors: Vec<CapturedError> = Vec::new();
+
+    for seed in seeds {
+        let parsed = match Url::parse(seed) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+
+        let host = match parsed.host_str() {
+            Some(h) => h.to_string(),
+            None => continue,
+        };
+
+        let base = {
+            let mut b = format!("{}://{}", parsed.scheme(), host);
+            if let Some(port) = parsed.port() {
+                b.push_str(&format!(":{port}"));
+            }
+            b
+        };
+
+        let (paths, errs) = RobotsDiscovery::new(client, &base, &host).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+
+        let (paths, errs) = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+
+        let (paths, errs) = SwaggerDiscovery::new(client, &base, &host).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+
+        let (paths, errs) = JsDiscovery::new(client, seed, &host, MAX_SCRIPTS).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+
+        let (paths, errs) = HeaderDiscovery::new(client, &base, &host).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+
+        let (paths, errs) =
+            CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new()).run().await;
+        errors.extend(errs);
+        insert_paths(&base, paths, &mut discovered);
+    }
+
+    let urls = discovered.into_iter().collect();
+    (urls, errors)
+}
+
+fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
+    let base = base.trim_end_matches('/');
+    for path in paths {
+        let url = format!("{base}{path}");
+        out.insert(url);
+    }
 }
 
 fn apply_cap(mut urls: Vec<String>, max: usize) -> (Vec<String>, usize) {

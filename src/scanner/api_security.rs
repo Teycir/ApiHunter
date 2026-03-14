@@ -46,7 +46,6 @@ static RE_SLACK:       Lazy<Regex> = Lazy::new(|| Regex::new(r"xox[baprs]-[0-9a-
 static RE_STRIPE:      Lazy<Regex> = Lazy::new(|| Regex::new(r"sk_live_[0-9a-zA-Z]{24,}").unwrap());
 static RE_SENDGRID:    Lazy<Regex> = Lazy::new(|| Regex::new(r"SG\.[A-Za-z0-9\-_\.]{20,}").unwrap());
 static RE_GOOGLE:      Lazy<Regex> = Lazy::new(|| Regex::new(r"AIza[0-9A-Za-z\-_]{35}").unwrap());
-static RE_JWT:         Lazy<Regex> = Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap());
 static RE_DB_URL:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)(mysql|postgres|mongodb|redis|amqp)://[^@\s]+:[^@\s]+@[^\s]+").unwrap());
 
 struct SecretCheck {
@@ -66,7 +65,6 @@ static SECRET_CHECKS: &[SecretCheck] = &[
     SecretCheck { name: "Stripe Secret Key",  re: &RE_STRIPE },
     SecretCheck { name: "Sendgrid API Key",   re: &RE_SENDGRID },
     SecretCheck { name: "Google API Key",     re: &RE_GOOGLE },
-    SecretCheck { name: "JWT",                re: &RE_JWT },
     SecretCheck { name: "Database URL",       re: &RE_DB_URL },
 ];
 
@@ -358,10 +356,14 @@ async fn check_secrets_in_response(
                 Severity::Critical,
                 format!("Possible {} found in HTTP response body.", chk.name),
                 "api_security",
-            ).with_evidence(format!(
+            )
+            .with_evidence(format!(
                 "Pattern: {}\nMatch (redacted): {redacted}\nURL: {url}",
                 chk.name
-            )));
+            ))
+            .with_remediation(
+                "Remove secrets from responses and rotate exposed credentials immediately.",
+            ));
         }
     }
 }
@@ -398,11 +400,15 @@ async fn check_error_disclosure(
                         chk.name
                     ),
                     "api_security",
-                ).with_evidence(format!(
+                )
+                .with_evidence(format!(
                     "Probe URL: {probe}\nStatus: {}\nSnippet: {}",
                     resp.status,
                     snippet(&resp.body, 400)
-                )));
+                ))
+                .with_remediation(
+                    "Disable verbose error pages in production and return generic errors.",
+                ));
                 break;
             }
         }
@@ -481,7 +487,11 @@ async fn check_http_methods(
             "HTTP TRACE method is enabled. Combined with client-side bugs it can \
              enable Cross-Site Tracing (XST) attacks.",
             "api_security",
-        ).with_evidence(format!("TRACE responded with status < 405 on {url}")));
+        )
+        .with_evidence(format!("TRACE responded with status < 405 on {url}"))
+        .with_remediation(
+            "Disable TRACE at the web server or reverse proxy configuration.",
+        ));
     }
 
     let write_methods: Vec<&str> = dangerous_allowed
@@ -502,10 +512,14 @@ async fn check_http_methods(
                 write_methods.join(", ")
             ),
             "api_security",
-        ).with_evidence(format!(
+        )
+        .with_evidence(format!(
             "Methods returning non-405 on {url}: {}",
             write_methods.join(", ")
-        )));
+        ))
+        .with_remediation(
+            "Require authentication/authorization for write methods and disable them when unused.",
+        ));
     }
 }
 
@@ -605,10 +619,14 @@ async fn check_debug_endpoints(
                 ep.path
             ),
             "api_security",
-        ).with_evidence(format!(
+        )
+        .with_evidence(format!(
             "URL: {probe}\nStatus: 200\nContent-Type: {ct}\nBody snippet:\n{}",
             snippet(&resp.body, 500)
-        )));
+        ))
+        .with_remediation(
+            "Restrict debug/admin endpoints to internal networks or require authentication.",
+        ));
     }
 }
 
@@ -661,10 +679,14 @@ async fn check_directory_listing(
                      Attackers can enumerate files and discover sensitive assets."
                 ),
                 "api_security",
-            ).with_evidence(format!(
+            )
+            .with_evidence(format!(
                 "URL: {probe}\nMatched marker: \"{marker}\"\nSnippet:\n{}",
                 snippet(&resp.body, 400)
-            )));
+            ))
+            .with_remediation(
+                "Disable directory listing in the web server and restrict public file access.",
+            ));
         }
     }
 }
@@ -706,6 +728,8 @@ async fn check_security_txt(
             "No valid security.txt found at /.well-known/security.txt or /security.txt. \
              RFC 9116 recommends publishing one so researchers can report vulnerabilities.",
             "api_security",
+        ).with_remediation(
+            "Publish a security.txt with contact and policy details under /.well-known/security.txt.",
         ));
     }
 }
@@ -841,7 +865,9 @@ async fn check_response_headers(
                                         check.name
                                     ),
                                     "api_security",
-                                ).with_evidence(format!("{}: {v}", check.name)));
+                                )
+                                .with_evidence(format!("{}: {v}", check.name))
+                                .with_remediation(header_remediation(check)));
                             }
                         }
                     }
@@ -861,9 +887,32 @@ fn header_finding(url: &str, check: &HeaderCheck, value: Option<&String>) -> Fin
         check.severity.clone(),
         check.detail,
         "api_security",
-    ).with_evidence(
+    )
+    .with_evidence(
         value.map(|v| format!("{}: {v}", check.name)).unwrap_or_default()
     )
+    .with_remediation(header_remediation(check))
+}
+
+fn header_remediation(check: &HeaderCheck) -> &'static str {
+    match check.slug {
+        "hsts-missing" =>
+            "Enable HSTS (Strict-Transport-Security) with a long max-age and includeSubDomains.",
+        "xcto-missing" =>
+            "Set X-Content-Type-Options: nosniff.",
+        "xfo-missing" =>
+            "Set X-Frame-Options to DENY or SAMEORIGIN, or use CSP frame-ancestors.",
+        "referrer-policy-missing" =>
+            "Set Referrer-Policy to a restrictive value such as no-referrer or strict-origin-when-cross-origin.",
+        "permissions-policy-missing" =>
+            "Set Permissions-Policy to disable unused browser features.",
+        "x-powered-by-present" =>
+            "Remove X-Powered-By to reduce stack fingerprinting.",
+        "server-version-leaked" =>
+            "Remove or genericize the Server header to reduce fingerprinting.",
+        _ =>
+            "Harden response headers according to your security baseline.",
+    }
 }
 
 fn redact(s: &str) -> String {

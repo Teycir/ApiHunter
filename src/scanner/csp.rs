@@ -87,9 +87,13 @@ impl Scanner for CspScanner {
                         Severity::Info,
                         "Only CSP Report-Only header present; policy is not enforced.",
                         "csp",
-                    ).with_evidence(format!(
+                    )
+                    .with_evidence(format!(
                         "Content-Security-Policy-Report-Only: {ro}"
-                    )));
+                    ))
+                    .with_remediation(
+                        "Deploy an enforcing Content-Security-Policy header after validating reports.",
+                    ));
                 } else {
                     findings.push(Finding::new(
                         url,
@@ -98,6 +102,8 @@ impl Scanner for CspScanner {
                         Severity::Medium,
                         "No Content-Security-Policy header detected.",
                         "csp",
+                    ).with_remediation(
+                        "Add a Content-Security-Policy header with least-privilege sources.",
                     ));
                 }
                 return (findings, errors);
@@ -124,7 +130,11 @@ impl Scanner for CspScanner {
                     severity,
                     format!("CSP is missing the '{req}' directive."),
                     "csp",
-                ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
+                )
+                .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                .with_remediation(format!(
+                    "Add the '{req}' directive with a restrictive allowlist."
+                )));
             }
         }
 
@@ -147,7 +157,11 @@ impl Scanner for CspScanner {
                     Severity::High,
                     format!("script-src contains '{token}': {desc}"),
                     "csp",
-                ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
+                )
+                .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                .with_remediation(
+                    "Remove unsafe script sources and use nonces or hashes for inline scripts.",
+                ));
             }
         }
 
@@ -165,7 +179,11 @@ impl Scanner for CspScanner {
                              third-party scripts that can bypass CSP."
                         ),
                         "csp",
-                    ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
+                    )
+                    .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+                    .with_remediation(
+                        "Pin scripts with subresource integrity or self-host critical assets.",
+                    ));
                     break;
                 }
             }
@@ -180,7 +198,11 @@ impl Scanner for CspScanner {
                 Severity::Low,
                 "CSP lacks 'frame-ancestors' directive (clickjacking protection).",
                 "csp",
-            ).with_evidence(format!("Content-Security-Policy: {csp_value}")));
+            )
+            .with_evidence(format!("Content-Security-Policy: {csp_value}"))
+            .with_remediation(
+                "Add 'frame-ancestors' with a strict allowlist (or 'none') to prevent clickjacking.",
+            ));
         }
 
         (findings, errors)

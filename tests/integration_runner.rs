@@ -29,18 +29,21 @@ fn test_config() -> Config {
             retries: 0,
             timeout_secs: 5,
         },
+        waf_evasion: WafEvasionConfig {
+            enabled: false,
+            user_agents: vec![],
+        },
+        default_headers: vec![],
+        cookies: vec![],
+        proxy: None,
+        danger_accept_invalid_certs: false,
         toggles: ScannerToggles {
             cors: true,
             csp: true,
             graphql: true,
             api_security: true,
+            jwt: true,
         },
-        waf_evasion: WafEvasionConfig {
-            enabled: false,
-            user_agents: vec![],
-        },
-        proxy: None,
-        danger_accept_invalid_certs: false,
     }
 }
 

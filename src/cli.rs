@@ -98,6 +98,14 @@ pub struct Cli {
 
     // ── Proxy / TLS ──────────────────────────────────────────────────────────
 
+    /// Extra request headers applied to every request (e.g. "Authorization: Bearer xxx").
+    #[arg(long, value_name = "NAME:VALUE", value_delimiter = ',')]
+    pub headers: Vec<String>,
+
+    /// Cookies applied to every request (e.g. "session=abc123,theme=dark").
+    #[arg(long, value_name = "NAME=VALUE", value_delimiter = ',')]
+    pub cookies: Vec<String>,
+
     /// HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:8080).
     #[arg(long, value_name = "URL")]
     pub proxy: Option<String>,
@@ -123,6 +131,10 @@ pub struct Cli {
     /// Disable the API-security scanner.
     #[arg(long)]
     pub no_api_security: bool,
+
+    /// Disable the JWT scanner.
+    #[arg(long)]
+    pub no_jwt: bool,
 
     // ── Reporting threshold ───────────────────────────────────────────────────
 

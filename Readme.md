@@ -25,6 +25,7 @@ Detects misconfigurations in CORS, CSP, GraphQL, and API security posture across
 - 📊 **NDJSON output** for pipelines and CI integration
 - 🔒 **Proxy support** and TLS control
 - 🚦 **Exit-code bitmask** for scripting (`0x01` findings, `0x02` errors)
+- 🧾 **JWT checks** — alg=none, weak HS256 secrets, long-lived tokens
 
 ## Use Cases
 
@@ -84,12 +85,15 @@ cargo build --release
 | `--timeout-secs` | `30` | Per-request timeout in seconds |
 | `--waf-evasion` | off | Enable WAF evasion heuristics |
 | `--user-agents` | none | Comma-separated UA list (implies WAF evasion) |
+| `--headers` | none | Extra request headers (e.g. `Authorization: Bearer ...`) |
+| `--cookies` | none | Comma-separated cookies (e.g. `session=abc,theme=dark`) |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
 | `--no-cors` | off | Disable the CORS scanner |
 | `--no-csp` | off | Disable the CSP scanner |
 | `--no-graphql` | off | Disable the GraphQL scanner |
 | `--no-api-security` | off | Disable the API security scanner |
+| `--no-jwt` | off | Disable the JWT scanner |
 
 *You must provide exactly one of `--urls` or `--stdin`.
 

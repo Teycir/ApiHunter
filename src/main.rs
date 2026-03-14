@@ -15,7 +15,7 @@
 
 use std::{io, process, sync::Arc, time::Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
@@ -83,6 +83,8 @@ async fn run(cli: Cli) -> Result<i32> {
                 cli.user_agents.clone()
             },
         },
+        default_headers: parse_headers(&cli.headers)?,
+        cookies:         parse_cookies(&cli.cookies)?,
         proxy:                       cli.proxy.clone(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
         toggles: ScannerToggles {
@@ -90,6 +92,7 @@ async fn run(cli: Cli) -> Result<i32> {
             csp:          !cli.no_csp,
             graphql:      !cli.no_graphql,
             api_security: !cli.no_api_security,
+            jwt:          !cli.no_jwt,
         },
     });
 
@@ -161,4 +164,32 @@ fn init_tracing(quiet: bool) {
         .with_target(false)
         .compact()
         .init();
+}
+
+fn parse_headers(raws: &[String]) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for raw in raws {
+        let mut parts = raw.splitn(2, ':');
+        let name = parts.next().unwrap_or("").trim();
+        let value = parts.next().unwrap_or("").trim();
+        if name.is_empty() || value.is_empty() {
+            bail!("Invalid header format: '{raw}' (expected NAME:VALUE)");
+        }
+        out.push((name.to_string(), value.to_string()));
+    }
+    Ok(out)
+}
+
+fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for raw in raws {
+        let mut parts = raw.splitn(2, '=');
+        let name = parts.next().unwrap_or("").trim();
+        let value = parts.next().unwrap_or("").trim();
+        if name.is_empty() || value.is_empty() {
+            bail!("Invalid cookie format: '{raw}' (expected NAME=VALUE)");
+        }
+        out.push((name.to_string(), value.to_string()));
+    }
+    Ok(out)
 }

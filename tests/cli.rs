@@ -58,12 +58,14 @@ fn scanner_toggle_flags() {
         "--no-csp",
         "--no-graphql",
         "--no-api-security",
+        "--no-jwt",
     ])
     .unwrap();
     assert!(cli.no_cors);
     assert!(cli.no_csp);
     assert!(cli.no_graphql);
     assert!(cli.no_api_security);
+    assert!(cli.no_jwt);
 }
 
 #[test]
@@ -113,6 +115,25 @@ fn proxy_and_tls_flags() {
     .unwrap();
     assert_eq!(cli.proxy.as_deref(), Some("http://127.0.0.1:8080"));
     assert!(cli.danger_accept_invalid_certs);
+}
+
+#[test]
+fn headers_and_cookies_flags() {
+    let cli = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--headers",
+        "Authorization: Bearer abc,X-Test: 1",
+        "--cookies",
+        "session=abc,theme=dark",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        cli.headers,
+        vec!["Authorization: Bearer abc", "X-Test: 1"]
+    );
+    assert_eq!(cli.cookies, vec!["session=abc", "theme=dark"]);
 }
 
 #[test]
@@ -271,11 +292,13 @@ fn toggles_all_on_by_default() {
         csp: !cli.no_csp,
         graphql: !cli.no_graphql,
         api_security: !cli.no_api_security,
+        jwt: !cli.no_jwt,
     };
     assert!(toggles.cors);
     assert!(toggles.csp);
     assert!(toggles.graphql);
     assert!(toggles.api_security);
+    assert!(toggles.jwt);
 }
 
 #[test]
@@ -286,9 +309,11 @@ fn toggles_selectively_disabled() {
         csp: !cli.no_csp,
         graphql: !cli.no_graphql,
         api_security: !cli.no_api_security,
+        jwt: !cli.no_jwt,
     };
     assert!(!toggles.cors);
     assert!(toggles.csp);
     assert!(!toggles.graphql);
     assert!(toggles.api_security);
+    assert!(toggles.jwt);
 }

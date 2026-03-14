@@ -70,6 +70,7 @@ Complete guide to ApiHunter documentation and resources.
 - **CSP** - Content Security Policy validation
 - **GraphQL** - GraphQL endpoint security analysis
 - **API Security** - General API hardening checks
+- **JWT** - Token inspection and weak-signature checks
 
 ### Configuration Areas
 - **URLs & Targets** - Target specification and discovery
@@ -97,8 +98,8 @@ Complete guide to ApiHunter documentation and resources.
 ## Documentation Stats
 
 - **Total Documents:** 5 core documents (+ HOWTO, Changelog, License)
-- **Scanner Modules:** 4 built-in scanners
-- **Configuration Parameters:** 12 main parameters
+- **Scanner Modules:** 5 built-in scanners
+- **Configuration Parameters:** 16+ options
 - **Exit Codes:** 4 different exit codes
 
 ---

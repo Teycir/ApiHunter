@@ -3,7 +3,7 @@ author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
 last_updated: 2026-03-14
-tags: [scanners, cors, csp, graphql, api-security]
+tags: [scanners, cors, csp, graphql, api-security, jwt]
 category: Scanner Modules
 ---
 
@@ -54,3 +54,15 @@ General API hardening checks.
 - Missing `X-Frame-Options` / `frame-ancestors`
 - Server version disclosure via `Server` header
 - Unauthenticated access to common sensitive paths
+
+---
+
+## JWT (`scanner::jwt`)
+
+Deep inspection of JWTs found in responses.
+
+**Detects:**
+- `alg=none` tokens
+- Weak HS256 secrets (small candidate list)
+- Long-lived or missing `exp` claim
+- Sensitive claims in payload

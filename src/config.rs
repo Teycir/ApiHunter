@@ -20,6 +20,12 @@ pub struct Config {
     /// WAF-evasion settings.
     pub waf_evasion: WafEvasionConfig,
 
+    /// Default headers applied to every request.
+    pub default_headers: Vec<(String, String)>,
+
+    /// Cookies applied to every request.
+    pub cookies: Vec<(String, String)>,
+
     /// Optional HTTP/HTTPS proxy URL.
     pub proxy: Option<String>,
 
@@ -34,6 +40,7 @@ pub struct ScannerToggles {
     pub csp: bool,
     pub graphql: bool,
     pub api_security: bool,
+    pub jwt: bool,
 }
 
 /// Network politeness knobs.

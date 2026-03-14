@@ -8,12 +8,14 @@ use crate::{
     error::{CapturedError, ScannerError, ScannerResult},
     waf::WafEvasion,
 };
+use dashmap::DashMap;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE},
     Client, Method, Response,
 };
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::debug;
+use url::Url;
 
 /// Parsed, size-capped HTTP response.
 #[derive(Debug, Clone)]
@@ -50,6 +52,7 @@ pub struct HttpClient {
     waf_enabled: bool,
     delay_ms: u64,
     retries: u32,
+    host_last_request: Arc<DashMap<String, tokio::time::Instant>>,
 }
 
 impl HttpClient {
@@ -61,6 +64,43 @@ impl HttpClient {
             .deflate(true)
             .redirect(reqwest::redirect::Policy::limited(5))
             .tcp_keepalive(Duration::from_secs(30));
+
+        let mut default_headers = HeaderMap::new();
+        for (k, v) in &config.default_headers {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(v),
+            ) {
+                default_headers.insert(name, value);
+            }
+        }
+
+        if !config.cookies.is_empty() {
+            let cookie_value = config
+                .cookies
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            let key = HeaderName::from_static("cookie");
+            if let Some(existing) = default_headers.get(&key).cloned() {
+                let mut combined = existing.to_str().unwrap_or("").to_string();
+                if !combined.is_empty() {
+                    combined.push_str("; ");
+                }
+                combined.push_str(&cookie_value);
+                if let Ok(value) = HeaderValue::from_str(&combined) {
+                    default_headers.insert(key, value);
+                }
+            } else if let Ok(value) = HeaderValue::from_str(&cookie_value) {
+                default_headers.insert(key, value);
+            }
+        }
+
+        if !default_headers.is_empty() {
+            builder = builder.default_headers(default_headers);
+        }
 
         if let Some(proxy_url) = &config.proxy {
             let proxy = reqwest::Proxy::all(proxy_url)
@@ -77,6 +117,7 @@ impl HttpClient {
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
+            host_last_request: Arc::new(DashMap::new()),
         })
     }
 
@@ -153,6 +194,8 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
+        self.enforce_host_delay(url).await;
+
         // Random inter-request delay based on configured delay_ms.
         if self.waf_enabled && self.delay_ms > 0 {
             let min_secs = self.delay_ms as f64 / 1000.0;
@@ -183,6 +226,38 @@ impl HttpClient {
         })?;
 
         self.read_response(response, url).await
+    }
+
+    async fn enforce_host_delay(&self, url: &str) {
+        if self.delay_ms == 0 {
+            return;
+        }
+
+        let parsed = match Url::parse(url) {
+            Ok(u) => u,
+            Err(_) => return,
+        };
+
+        let host = match parsed.host_str() {
+            Some(h) => h,
+            None => return,
+        };
+
+        let mut key = host.to_string();
+        if let Some(port) = parsed.port() {
+            key.push_str(&format!(":{port}"));
+        }
+
+        let now = tokio::time::Instant::now();
+        if let Some(last) = self.host_last_request.get(&key) {
+            let elapsed = now.duration_since(*last);
+            let min_gap = Duration::from_millis(self.delay_ms);
+            if elapsed < min_gap {
+                tokio::time::sleep(min_gap - elapsed).await;
+            }
+        }
+
+        self.host_last_request.insert(key, tokio::time::Instant::now());
     }
 
     // ------------------------------------------------------------------ //

@@ -137,10 +137,14 @@ async fn probe_endpoint(
             Severity::Medium,
             "GraphQL introspection is enabled. Full schema is publicly discoverable.",
             "graphql",
-        ).with_evidence(format!(
+        )
+        .with_evidence(format!(
             "POST {url}\nPayload: {payload}\nStatus: {}",
             resp.status
-        )));
+        ))
+        .with_remediation(
+            "Disable introspection in production or restrict it to authenticated/admin users.",
+        ));
 
         // ── 1b. Sensitive type / field names in schema ────────────────────────
         if let Some(types) = types_val.as_array() {
@@ -184,7 +188,11 @@ async fn probe_endpoint(
                         matched.join(", ")
                     ),
                     "graphql",
-                ).with_evidence(format!("Matched names: {}", matched.join(", "))));
+                )
+                .with_evidence(format!("Matched names: {}", matched.join(", ")))
+                .with_remediation(
+                    "Review schema for sensitive fields and enforce authorization on resolvers.",
+                ));
             }
         }
     } else if let Some(errors_val) = body.get("errors") {
@@ -196,7 +204,11 @@ async fn probe_endpoint(
             Severity::Info,
             "GraphQL endpoint detected; introspection is disabled (good).",
             "graphql",
-        ).with_evidence(format!("Errors: {errors_val}")));
+        )
+        .with_evidence(format!("Errors: {errors_val}"))
+        .with_remediation(
+            "Ensure the endpoint requires authentication and applies query cost limits.",
+        ));
     }
 
     // ── Step 2: Field suggestions (information leakage) ──────────────────────
@@ -226,7 +238,11 @@ async fn probe_endpoint(
                     "Server returns field-name suggestions in errors, leaking schema \
                      information even with introspection disabled.",
                     "graphql",
-                ).with_evidence(sr.body.chars().take(512).collect::<String>()));
+                )
+                .with_evidence(sr.body.chars().take(512).collect::<String>())
+                .with_remediation(
+                    "Disable field suggestions or hide detailed error messages in production.",
+                ));
             }
         }
     }
@@ -244,7 +260,11 @@ async fn probe_endpoint(
                     "GraphQL query batching is enabled. This can amplify DoS impact \
                      and may bypass rate limiting applied per-request.",
                     "graphql",
-                ).with_evidence(br.body.chars().take(256).collect::<String>()));
+                )
+                .with_evidence(br.body.chars().take(256).collect::<String>())
+                .with_remediation(
+                    "Disable batching or enforce per-operation rate limits and cost controls.",
+                ));
             }
         }
     }
@@ -266,7 +286,11 @@ async fn probe_endpoint(
                      Malicious clients can craft deeply aliased queries to amplify \
                      server-side work (alias-based DoS).",
                     "graphql",
-                ).with_evidence(format!("{resolved}/10 aliases resolved")));
+                )
+                .with_evidence(format!("{resolved}/10 aliases resolved"))
+                .with_remediation(
+                    "Enforce query depth/complexity limits and alias count caps.",
+                ));
             }
         }
     }
@@ -283,7 +307,11 @@ async fn probe_endpoint(
                 "GraphQL IDE (GraphiQL / Playground) is exposed. Attackers can \
                  interactively explore and query the API.",
                 "graphql",
-            ).with_evidence(format!("GET {url} → HTML contains IDE marker")));
+            )
+            .with_evidence(format!("GET {url} → HTML contains IDE marker"))
+            .with_remediation(
+                "Disable GraphiQL/Playground in production or restrict access to admins.",
+            ));
         }
     }
 }

@@ -6,6 +6,7 @@ pub mod api_security;
 pub mod cors;
 pub mod csp;
 pub mod graphql;
+pub mod jwt;
 
 use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::Finding};
 
