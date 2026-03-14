@@ -146,14 +146,7 @@ async fn cors_no_headers_no_finding() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
     let cors_findings: Vec<_> = result
         .findings
@@ -477,7 +470,7 @@ async fn runner_returns_scanned_count() {
 
 mod reporter_tests {
     use super::*;
-    use api_scanner::reports::{Finding, ReportSummary, exit_code};
+    use api_scanner::reports::{exit_code, Finding, ReportSummary};
     use std::io::Read;
     use tempfile::NamedTempFile;
 

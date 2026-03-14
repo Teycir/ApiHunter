@@ -7,8 +7,8 @@ use base64::Engine;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use wiremock::{Mock, MockServer, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
@@ -86,9 +86,7 @@ async fn jwt_weak_secret_detected() {
 
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
-            "token={token}"
-        )))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!("token={token}")))
         .mount(&server)
         .await;
 
@@ -116,9 +114,7 @@ async fn jwt_clean_token_no_findings() {
 
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
-            "token={token}"
-        )))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!("token={token}")))
         .mount(&server)
         .await;
 
