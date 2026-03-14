@@ -112,8 +112,8 @@ impl Scanner for CspScanner {
                             url,
                             "csp/missing",
                             "No CSP header",
-                            Severity::Medium,
-                            "No Content-Security-Policy header detected.",
+                            Severity::Info,
+                            "No Content-Security-Policy header detected. CSP is a defense-in-depth mechanism.",
                             "csp",
                         )
                         .with_remediation(
@@ -131,12 +131,10 @@ impl Scanner for CspScanner {
         // ── Missing required directives ───────────────────────────────────────
         for req in REQUIRED_DIRECTIVES {
             if !directives.contains_key(*req) {
+                // Missing directives are informational - not exploitable alone
                 let severity = match *req {
-                    "default-src" => Severity::Medium,
-                    "script-src" => Severity::Medium,
-                    "object-src" => Severity::Low,
-                    "base-uri" => Severity::Low,
-                    _ => Severity::Info,
+                    "default-src" | "script-src" => Severity::Low, // More important but still not exploitable
+                    _ => Severity::Info, // Other directives are nice-to-have
                 };
                 findings.push(
                     Finding::new(
@@ -144,7 +142,7 @@ impl Scanner for CspScanner {
                         format!("csp/missing-directive/{req}"),
                         format!("CSP missing '{req}'"),
                         severity,
-                        format!("CSP is missing the '{req}' directive."),
+                        format!("CSP is missing the '{req}' directive. Not exploitable without an injection vulnerability."),
                         "csp",
                     )
                     .with_evidence(format!("Content-Security-Policy: {csp_value}"))
@@ -164,13 +162,20 @@ impl Scanner for CspScanner {
 
         for (token, desc) in UNSAFE_SOURCES {
             if script_sources.iter().any(|s| s.eq_ignore_ascii_case(token)) {
+                // CSP weaknesses are not exploitable alone - downgrade to Low/Info
+                let severity = match *token {
+                    "*" => Severity::Medium, // Wildcard is worse - allows any domain
+                    "'unsafe-inline'" | "'unsafe-eval'" => Severity::Low, // Common but needs XSS to exploit
+                    _ => Severity::Info, // Other unsafe sources are informational
+                };
+
                 findings.push(
                     Finding::new(
                         url,
                         format!("csp/unsafe-source/{}", token.trim_matches('\'')),
                         format!("CSP unsafe source: {token}"),
-                        Severity::High,
-                        format!("script-src contains '{token}': {desc}"),
+                        severity,
+                        format!("script-src contains '{token}': {desc} Note: Not exploitable without an injection vulnerability."),
                         "csp",
                     )
                     .with_evidence(format!("Content-Security-Policy: {csp_value}"))
