@@ -29,6 +29,7 @@ Complete guide to ApiHunter documentation and resources.
 | **HOWTO** | [HOWTO.md](../HOWTO.md) | Detailed usage guide and examples |
 | **Changelog** | [Changelog.md](../Changlog.md) | Version history and updates |
 | **License** | [Licence](../Licence) | MIT License information |
+| **Deep Review Checklist** | [deep-review-checklist.md](./deep-review-checklist.md) | Tracked checklist from the latest code review |
 
 ---
 

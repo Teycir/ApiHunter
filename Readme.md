@@ -1,21 +1,45 @@
-# ApiHunter
+<div align="center">
 
-**Tags:** security, scanner, rust, api, async
+```
+   ___    ____  ____   __  __            __           
+  / _ \  / __ \/  _/  / / / /_  ______  / /____  _____
+ / /_\ \/ /_/ // /   / /_/ / / / / __ \/ __/ _ \/ ___/
+/ ___  / ____// /   / __  / /_/ / / / / /_/  __/ /    
+/_/  |_/_/   /___/  /_/ /_/\__,_/_/ /_/\__/\___/_/     
+                                                        
+    [ Async Web Security Scanner | Rust Powered ⚡ ]
+```
 
-An async, modular web security scanner written in Rust.
-Detects misconfigurations in CORS, CSP, GraphQL, and API security posture
-across a set of target endpoints you own or have explicit permission to test.
+![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)
+![Security](https://img.shields.io/badge/security-scanner-red?style=flat)
+![API](https://img.shields.io/badge/API-testing-blue?style=flat)
+![Async](https://img.shields.io/badge/async-tokio-green?style=flat)
+![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)
+
+</div>
+
+---
+
+An async, modular web security scanner written in Rust.  
+Detects misconfigurations in CORS, CSP, GraphQL, and API security posture across target endpoints.
 
 ## Features
 
-- Fully async via `tokio` + `reqwest`
-- Pluggable scanner modules (implement `Scanner` and drop in)
-- WAF evasion, UA rotation, politeness delays, retry logic
-- NDJSON output for pipelines and CI
-- Proxy support and TLS control
-- Exit-code bitmask for scripting (`0x01` findings, `0x02` errors)
+- ⚡ **Fully async** via `tokio` + `reqwest`
+- 🔌 **Pluggable scanner modules** — implement `Scanner` and drop in
+- 🛡️ **WAF evasion** — UA rotation, politeness delays, retry logic
+- 📊 **NDJSON output** for pipelines and CI integration
+- 🔒 **Proxy support** and TLS control
+- 🚦 **Exit-code bitmask** for scripting (`0x01` findings, `0x02` errors)
 
-## Quick start
+## Use Cases
+
+- ✅ Baseline security checks on internal APIs before release
+- 🔄 Regression scans in CI after gateway or WAF changes
+- 📋 Inventory scanning for CORS/CSP/GraphQL exposure in staging
+- 🎯 Triage and prioritization by severity thresholds
+
+## Quick Start
 
 ```bash
 cargo build --release
@@ -49,7 +73,7 @@ cd ApiHunter
 cargo build --release
 ```
 
-## CLI reference
+## CLI Reference
 
 | Flag | Default | Description |
 |---|---|---|
@@ -75,7 +99,7 @@ cargo build --release
 
 *You must provide exactly one of `--urls` or `--stdin`.
 
-## Exit codes
+## Exit Codes
 
 | Code | Meaning |
 |---|---|
