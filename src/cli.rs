@@ -53,6 +53,14 @@ pub struct Cli {
     #[arg(short = 'f', long, default_value = "pretty", value_name = "FORMAT")]
     pub format: CliFormat,
 
+    /// Emit NDJSON findings as they arrive (NDJSON only).
+    #[arg(long)]
+    pub stream: bool,
+
+    /// Baseline NDJSON file; suppress findings already present in baseline.
+    #[arg(long, value_name = "FILE")]
+    pub baseline: Option<PathBuf>,
+
     /// Suppress all stdout output except findings (no summary box).
     #[arg(short = 'q', long)]
     pub quiet: bool,
@@ -114,6 +122,30 @@ pub struct Cli {
     #[arg(long)]
     pub danger_accept_invalid_certs: bool,
 
+    /// Enable active (potentially invasive) checks.
+    #[arg(long)]
+    pub active_checks: bool,
+
+    /// Use per-host HTTP client pools.
+    #[arg(long)]
+    pub per_host_clients: bool,
+
+    /// Enable adaptive concurrency (AIMD).
+    #[arg(long)]
+    pub adaptive_concurrency: bool,
+
+    /// Convenience: add `Authorization: Bearer <token>`.
+    #[arg(long, value_name = "TOKEN")]
+    pub auth_bearer: Option<String>,
+
+    /// Convenience: add `Authorization: Basic <base64(user:pass)>`.
+    #[arg(long, value_name = "USER:PASS")]
+    pub auth_basic: Option<String>,
+
+    /// Load/save cookies from a JSON session file.
+    #[arg(long, value_name = "FILE")]
+    pub session_file: Option<PathBuf>,
+
     // ── Scanner toggles ──────────────────────────────────────────────────────
 
     /// Disable the CORS scanner.
@@ -136,6 +168,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_jwt: bool,
 
+    /// Disable the OpenAPI scanner.
+    #[arg(long)]
+    pub no_openapi: bool,
+
     // ── Reporting threshold ───────────────────────────────────────────────────
 
     /// Minimum severity to include in findings output.
@@ -153,6 +189,7 @@ pub struct Cli {
 pub enum CliFormat {
     Pretty,
     Ndjson,
+    Sarif,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -181,6 +218,7 @@ impl From<CliFormat> for ReportFormat {
         match c {
             CliFormat::Pretty => ReportFormat::Pretty,
             CliFormat::Ndjson => ReportFormat::Ndjson,
+            CliFormat::Sarif => ReportFormat::Sarif,
         }
     }
 }

@@ -40,6 +40,7 @@ use crate::{
         csp::CspScanner,
         graphql::GraphqlScanner,
         jwt::JwtScanner,
+        openapi::OpenApiScanner,
         Scanner,
     },
 };
@@ -66,7 +67,7 @@ pub async fn run(
     urls:        Vec<String>,
     config:      Arc<Config>,
     http_client: Arc<HttpClient>,
-    _reporter:   Arc<Reporter>,
+    reporter:   Arc<Reporter>,
 ) -> RunResult {
     let start = Instant::now();
 
@@ -136,7 +137,7 @@ pub async fn run(
                 }
             };
 
-            scan_url(url, &client, &scanners, &cfg, ftx, etx).await;
+            scan_url(url, &client, &scanners, &cfg, &reporter, ftx, etx).await;
         });
     }
 
@@ -184,6 +185,7 @@ async fn scan_url(
     client:   &HttpClient,
     scanners: &[Arc<dyn Scanner>],
     config:   &Config,
+    reporter: &Reporter,
     ftx:      mpsc::UnboundedSender<Vec<Finding>>,
     etx:      mpsc::UnboundedSender<Vec<CapturedError>>,
 ) {
@@ -209,6 +211,11 @@ async fn scan_url(
                 for finding in &mut f {
                     if finding.url.is_empty() {
                         finding.url = url.clone();
+                    }
+                }
+                if reporter.stream_enabled() {
+                    for finding in &f {
+                        reporter.flush_finding(finding);
                     }
                 }
                 if !f.is_empty() { let _ = ftx.send(f); }
@@ -243,6 +250,9 @@ fn build_scanners(config: &Config) -> Vec<Arc<dyn Scanner>> {
     }
     if config.toggles.jwt {
         scanners.push(Arc::new(JwtScanner::new(config)));
+    }
+    if config.toggles.openapi {
+        scanners.push(Arc::new(OpenApiScanner::new(config)));
     }
 
     if scanners.is_empty() {

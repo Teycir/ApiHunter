@@ -19,11 +19,78 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
+use anyhow::{Context, Result};
 
 use crate::{
     error::CapturedError,
     runner::RunResult,
 };
+
+// ── SARIF output ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct SarifReport {
+    version: String,
+    #[serde(rename = "$schema")]
+    schema: String,
+    runs: Vec<SarifRun>,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifRun {
+    tool: SarifTool,
+    results: Vec<SarifResult>,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifTool {
+    driver: SarifDriver,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifDriver {
+    name: String,
+    version: String,
+    rules: Vec<SarifRule>,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifRule {
+    id: String,
+    name: String,
+    shortDescription: SarifText,
+    fullDescription: SarifText,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    help: Option<SarifText>,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifResult {
+    ruleId: String,
+    level: String,
+    message: SarifText,
+    locations: Vec<SarifLocation>,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifLocation {
+    physicalLocation: SarifPhysicalLocation,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifPhysicalLocation {
+    artifactLocation: SarifArtifactLocation,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifArtifactLocation {
+    uri: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SarifText {
+    text: String,
+}
 
 // ── Severity ───────────────────────────────────────────────────────────────────
 
@@ -172,6 +239,9 @@ pub struct ReportConfig {
 
     /// If `true`, suppress the findings list from stdout (file only).
     pub quiet: bool,
+
+    /// Stream findings as NDJSON while scanning (NDJSON only).
+    pub stream: bool,
 }
 
 impl Default for ReportConfig {
@@ -181,6 +251,7 @@ impl Default for ReportConfig {
             output_path:   None,
             print_summary: true,
             quiet:         false,
+            stream:        false,
         }
     }
 }
@@ -192,6 +263,8 @@ pub enum ReportFormat {
     Pretty,
     /// One `Finding` JSON object per line — suitable for `jq` pipelines.
     Ndjson,
+    /// SARIF 2.1.0 for SAST tooling integration.
+    Sarif,
 }
 
 // ── Full report document ───────────────────────────────────────────────────────
@@ -271,6 +344,10 @@ impl Reporter {
         Ok(Self { cfg, file_writer })
     }
 
+    pub fn stream_enabled(&self) -> bool {
+        self.cfg.stream && self.cfg.format == ReportFormat::Ndjson
+    }
+
     // ── Main entry point ─────────────────────────────────────────────────────
 
     /// Serialise and write a completed run.  Always returns `Ok` — errors are
@@ -280,7 +357,14 @@ impl Reporter {
 
         match self.cfg.format {
             ReportFormat::Pretty => self.write_pretty(&doc),
-            ReportFormat::Ndjson => self.write_ndjson(&doc),
+            ReportFormat::Ndjson => {
+                if self.cfg.stream {
+                    self.write_ndjson_stream_final(&doc);
+                } else {
+                    self.write_ndjson(&doc);
+                }
+            }
+            ReportFormat::Sarif => self.write_sarif(&doc),
         }
 
         if self.cfg.print_summary {
@@ -297,7 +381,7 @@ impl Reporter {
     /// document must be written atomically).
     #[allow(dead_code)]
     pub fn flush_finding(&self, finding: &Finding) {
-        if self.cfg.format != ReportFormat::Ndjson {
+        if self.cfg.format != ReportFormat::Ndjson || !self.cfg.stream {
             return;
         }
 
@@ -314,6 +398,24 @@ impl Reporter {
         }
     }
 
+    /// Emit a streaming header (NDJSON only).
+    pub fn start_stream(&self, meta: &ReportMeta) {
+        if self.cfg.format != ReportFormat::Ndjson || !self.cfg.stream {
+            return;
+        }
+
+        let header = serde_json::json!({
+            "type": "meta",
+            "meta": meta,
+            "stream": true,
+        });
+
+        if let Ok(line) = serde_json::to_string(&header) {
+            self.write_line_to_file(&line);
+            if !self.cfg.quiet { println!("{line}"); }
+        }
+    }
+
     // ── Internal helpers ─────────────────────────────────────────────────────
 
     fn write_pretty(&self, doc: &ReportDocument) {
@@ -327,6 +429,72 @@ impl Reporter {
                 }
             }
             Err(e) => error!("Failed to serialise report: {e}"),
+        }
+    }
+
+    fn write_sarif(&self, doc: &ReportDocument) {
+        let mut rules_map: std::collections::BTreeMap<String, SarifRule> =
+            std::collections::BTreeMap::new();
+        let mut results = Vec::new();
+
+        for f in &doc.findings {
+            rules_map.entry(f.check.clone()).or_insert_with(|| {
+                SarifRule {
+                    id: f.check.clone(),
+                    name: f.title.clone(),
+                    shortDescription: SarifText { text: f.title.clone() },
+                    fullDescription: SarifText { text: f.detail.clone() },
+                    help: f.remediation.as_ref().map(|r| SarifText { text: r.clone() }),
+                }
+            });
+
+            let level = match f.severity {
+                Severity::Critical | Severity::High => "error",
+                Severity::Medium => "warning",
+                Severity::Low | Severity::Info => "note",
+            };
+
+            let message = if let Some(evidence) = &f.evidence {
+                format!("{} — {}", f.detail, evidence)
+            } else {
+                f.detail.clone()
+            };
+
+            results.push(SarifResult {
+                ruleId: f.check.clone(),
+                level: level.to_string(),
+                message: SarifText { text: message },
+                locations: vec![SarifLocation {
+                    physicalLocation: SarifPhysicalLocation {
+                        artifactLocation: SarifArtifactLocation { uri: f.url.clone() },
+                    },
+                }],
+            });
+        }
+
+        let report = SarifReport {
+            version: "2.1.0".to_string(),
+            schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
+            runs: vec![SarifRun {
+                tool: SarifTool {
+                    driver: SarifDriver {
+                        name: "api-scanner".to_string(),
+                        version: doc.meta.scanner_ver.to_string(),
+                        rules: rules_map.into_values().collect(),
+                    },
+                },
+                results,
+            }],
+        };
+
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => {
+                self.write_line_to_file(&json);
+                if !self.cfg.quiet {
+                    println!("{json}");
+                }
+            }
+            Err(e) => error!("Failed to serialise SARIF report: {e}"),
         }
     }
 
@@ -351,6 +519,29 @@ impl Reporter {
                 }
                 Err(e) => error!("Failed to serialise finding: {e}"),
             }
+        }
+
+        for err in &doc.errors {
+            match serde_json::to_string(err) {
+                Ok(line) => {
+                    self.write_line_to_file(&line);
+                    if !self.cfg.quiet { println!("{line}"); }
+                }
+                Err(e) => error!("Failed to serialise error record: {e}"),
+            }
+        }
+    }
+
+    fn write_ndjson_stream_final(&self, doc: &ReportDocument) {
+        let summary = serde_json::json!({
+            "type": "summary",
+            "summary": &doc.summary,
+            "meta": &doc.meta,
+        });
+
+        if let Ok(line) = serde_json::to_string(&summary) {
+            self.write_line_to_file(&line);
+            if !self.cfg.quiet { println!("{line}"); }
         }
 
         for err in &doc.errors {
@@ -495,6 +686,44 @@ pub fn filter_findings<'a>(findings: &'a [Finding], min_severity: &Severity) -> 
     findings
         .iter()
         .filter(|f| f.severity.rank() >= min_severity.rank())
+        .collect()
+}
+
+/// Load a baseline NDJSON file and return a set of `(url, check)` keys.
+pub fn load_baseline_keys(path: &std::path::Path) -> Result<std::collections::HashSet<(String, String)>> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read baseline file: {}", path.display()))?;
+
+    let mut keys = std::collections::HashSet::new();
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let value: serde_json::Value = serde_json::from_str(trimmed)
+            .with_context(|| format!("Invalid JSON on baseline line {}", idx + 1))?;
+
+        let url = value.get("url").and_then(|v| v.as_str());
+        let check = value.get("check").and_then(|v| v.as_str());
+
+        if let (Some(u), Some(c)) = (url, check) {
+            keys.insert((u.to_string(), c.to_string()));
+        }
+    }
+
+    Ok(keys)
+}
+
+/// Filter out findings that already exist in the baseline set.
+pub fn filter_new_findings(
+    findings: Vec<Finding>,
+    baseline: &std::collections::HashSet<(String, String)>,
+) -> Vec<Finding> {
+    findings
+        .into_iter()
+        .filter(|f| !baseline.contains(&(f.url.clone(), f.check.clone())))
         .collect()
 }
 

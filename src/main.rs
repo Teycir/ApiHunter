@@ -19,12 +19,15 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
+use base64::engine::general_purpose::STANDARD as BASE64_STD;
+use base64::Engine;
+use chrono::Utc;
 
 use api_scanner::{
     cli::{default_user_agents, load_urls, Cli},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
-    reports::{self, ReportConfig, Reporter, Severity},
+    reports::{self, ReportConfig, Reporter, ReportFormat, ReportMeta, Severity},
     runner,
 };
 
@@ -83,16 +86,25 @@ async fn run(cli: Cli) -> Result<i32> {
                 cli.user_agents.clone()
             },
         },
-        default_headers: parse_headers(&cli.headers)?,
+        default_headers: build_default_headers(&cli.headers, &cli.auth_bearer, &cli.auth_basic)?,
         cookies:         parse_cookies(&cli.cookies)?,
         proxy:                       cli.proxy.clone(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
+        active_checks:              cli.active_checks,
+        stream_findings:            cli.stream,
+        baseline_path:              cli.baseline.clone(),
+        session_file:               cli.session_file.clone(),
+        auth_bearer:                cli.auth_bearer.clone(),
+        auth_basic:                 cli.auth_basic.clone(),
+        per_host_clients:           cli.per_host_clients,
+        adaptive_concurrency:       cli.adaptive_concurrency,
         toggles: ScannerToggles {
             cors:         !cli.no_cors,
             csp:          !cli.no_csp,
             graphql:      !cli.no_graphql,
             api_security: !cli.no_api_security,
             jwt:          !cli.no_jwt,
+            openapi:      !cli.no_openapi,
         },
     });
 
@@ -103,23 +115,48 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 4. Build Reporter ─────────────────────────────────────────────────────
     let print_summary = cli.summary || !cli.quiet;
-    let report_cfg = ReportConfig {
+    let mut report_cfg = ReportConfig {
         format:        cli.format.into(),
         output_path:   cli.output.clone(),
         print_summary,
         quiet:         cli.quiet,
+        stream:        cli.stream,
     };
+    if report_cfg.stream && report_cfg.format != ReportFormat::Ndjson {
+        warn!("--stream is only supported for NDJSON output; disabling streaming.");
+        report_cfg.stream = false;
+    }
+    if report_cfg.stream && cli.baseline.is_some() {
+        warn!("--baseline is not compatible with --stream; disabling streaming.");
+        report_cfg.stream = false;
+    }
     let reporter = Arc::new(Reporter::new(report_cfg).context("Failed to create reporter")?);
+
+    if reporter.stream_enabled() {
+        reporter.start_stream(&ReportMeta {
+            generated_at: Utc::now(),
+            elapsed_ms: 0,
+            scanned: 0,
+            skipped: 0,
+            scanner_ver: env!("CARGO_PKG_VERSION"),
+        });
+    }
 
     // ── 5. Run scanner ────────────────────────────────────────────────────────
     info!("Starting scan with concurrency={}.", config.concurrency);
-    let run_result = runner::run(raw_urls, config.clone(), http_client, reporter.clone()).await;
+    let run_result = runner::run(
+        raw_urls,
+        config.clone(),
+        Arc::clone(&http_client),
+        reporter.clone(),
+    )
+    .await;
 
     // ── 6. Filter findings by --min-severity ─────────────────────────────────
     let min_sev: Severity = cli.min_severity.into();
     let fail_on: Severity = cli.fail_on.into();
 
-    let filtered_result = {
+    let mut filtered_result = {
         let mut r = run_result;
         r.findings = reports::filter_findings(&r.findings, &min_sev)
             .into_iter()
@@ -128,9 +165,23 @@ async fn run(cli: Cli) -> Result<i32> {
         r
     };
 
+    if let Some(path) = &cli.baseline {
+        let baseline = reports::load_baseline_keys(path)?;
+        filtered_result.findings = reports::filter_new_findings(
+            filtered_result.findings,
+            &baseline,
+        );
+    }
+
     // ── 7. Emit report ────────────────────────────────────────────────────────
     reporter.write_run_result(&filtered_result);
     reporter.finalize();
+
+    if config.session_file.is_some() {
+        if let Err(e) = http_client.save_session().await {
+            warn!("Failed to save session file: {e}");
+        }
+    }
 
     let elapsed = start.elapsed();
     info!("Scan finished in {:.2}s.", elapsed.as_secs_f64());
@@ -166,7 +217,11 @@ fn init_tracing(quiet: bool) {
         .init();
 }
 
-fn parse_headers(raws: &[String]) -> Result<Vec<(String, String)>> {
+fn build_default_headers(
+    raws: &[String],
+    auth_bearer: &Option<String>,
+    auth_basic: &Option<String>,
+) -> Result<Vec<(String, String)>> {
     let mut out = Vec::new();
     for raw in raws {
         let mut parts = raw.splitn(2, ':');
@@ -176,6 +231,17 @@ fn parse_headers(raws: &[String]) -> Result<Vec<(String, String)>> {
             bail!("Invalid header format: '{raw}' (expected NAME:VALUE)");
         }
         out.push((name.to_string(), value.to_string()));
+    }
+
+    let has_auth = out.iter().any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
+
+    if !has_auth {
+        if let Some(token) = auth_bearer {
+            out.push(("Authorization".to_string(), format!("Bearer {token}")));
+        } else if let Some(creds) = auth_basic {
+            let encoded = BASE64_STD.encode(creds.as_bytes());
+            out.push(("Authorization".to_string(), format!("Basic {encoded}")));
+        }
     }
     Ok(out)
 }

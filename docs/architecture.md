@@ -17,8 +17,8 @@ main.rs
        └─ Runner
             ├─ Discovery       → normalise + dedup URLs
             ├─ HttpClient      → politeness / retry / UA / WAF / TLS
-            ├─ Scanner trait   → cors | csp | graphql | api_security | jwt
-            └─ Reporter        → Pretty / NDJSON (stdout or file)
+            ├─ Scanner trait   → cors | csp | graphql | api_security | jwt | openapi
+            └─ Reporter        → Pretty / NDJSON / SARIF (stdout or file)
 ```
 
 ### Key invariants

@@ -59,6 +59,7 @@ fn scanner_toggle_flags() {
         "--no-graphql",
         "--no-api-security",
         "--no-jwt",
+        "--no-openapi",
     ])
     .unwrap();
     assert!(cli.no_cors);
@@ -66,6 +67,7 @@ fn scanner_toggle_flags() {
     assert!(cli.no_graphql);
     assert!(cli.no_api_security);
     assert!(cli.no_jwt);
+    assert!(cli.no_openapi);
 }
 
 #[test]
@@ -217,6 +219,7 @@ fn cli_severity_into_severity() {
 fn cli_format_into_report_format() {
     assert!(matches!(ReportFormat::from(CliFormat::Pretty), ReportFormat::Pretty));
     assert!(matches!(ReportFormat::from(CliFormat::Ndjson), ReportFormat::Ndjson));
+    assert!(matches!(ReportFormat::from(CliFormat::Sarif), ReportFormat::Sarif));
 }
 
 // ── Default user-agents ──────────────────────────────────────────────────────
@@ -293,12 +296,14 @@ fn toggles_all_on_by_default() {
         graphql: !cli.no_graphql,
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
+        openapi: !cli.no_openapi,
     };
     assert!(toggles.cors);
     assert!(toggles.csp);
     assert!(toggles.graphql);
     assert!(toggles.api_security);
     assert!(toggles.jwt);
+    assert!(toggles.openapi);
 }
 
 #[test]
@@ -310,10 +315,12 @@ fn toggles_selectively_disabled() {
         graphql: !cli.no_graphql,
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
+        openapi: !cli.no_openapi,
     };
     assert!(!toggles.cors);
     assert!(toggles.csp);
     assert!(!toggles.graphql);
     assert!(toggles.api_security);
     assert!(toggles.jwt);
+    assert!(toggles.openapi);
 }

@@ -1,6 +1,7 @@
 // src/scanner/cors.rs
 
 use async_trait::async_trait;
+use reqwest::header::HeaderValue;
 
 use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::{Finding, Severity}};
 
@@ -26,7 +27,7 @@ impl Scanner for CorsScanner {
         &self,
         url: &str,
         client: &HttpClient,
-        _config: &Config,
+        config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
@@ -122,6 +123,73 @@ impl Scanner for CorsScanner {
                         ),
                     );
                 }
+
+                // Missing Vary: Origin when reflecting origin can create cache leaks.
+                let vary = resp.header("vary").unwrap_or("");
+                if !vary.to_ascii_lowercase().contains("origin") {
+                    findings.push(
+                        Finding::new(
+                            url,
+                            "cors/missing-vary-origin",
+                            "CORS reflection without Vary: Origin",
+                            Severity::Low,
+                            "Origin is reflected but the response lacks Vary: Origin, which can cause cache poisoning and cross-tenant leaks.",
+                            "cors",
+                        )
+                        .with_evidence(format!(
+                            "Origin: {origin}\nVary: {}",
+                            if vary.is_empty() { "-" } else { vary }
+                        ))
+                        .with_remediation(
+                            "Add `Vary: Origin` to responses that reflect the Origin header.",
+                        ),
+                    );
+                }
+            }
+        }
+
+        // Active preflight method exposure check (opt-in).
+        if config.active_checks {
+            let origin = "https://evil.com";
+            let mut extra = reqwest::header::HeaderMap::new();
+            extra.insert("Origin", HeaderValue::from_static(origin));
+            extra.insert(
+                "Access-Control-Request-Method",
+                HeaderValue::from_static("DELETE"),
+            );
+            extra.insert(
+                "Access-Control-Request-Headers",
+                HeaderValue::from_static("authorization"),
+            );
+
+            match client.options(url, Some(extra)).await {
+                Ok(resp) => {
+                    let acao = resp.header("access-control-allow-origin");
+                    let acam = resp.header("access-control-allow-methods").unwrap_or("").to_ascii_uppercase();
+                    let allowed = acam.contains("DELETE") || acam.contains("*");
+
+                    if allowed && (acao == Some("*") || acao == Some(origin)) {
+                        findings.push(
+                            Finding::new(
+                                url,
+                                "cors/preflight-unsafe-methods",
+                                "CORS preflight allows unsafe methods",
+                                Severity::Medium,
+                                "Preflight response allows unsafe methods for a hostile origin.",
+                                "cors",
+                            )
+                            .with_evidence(format!(
+                                "Origin: {origin}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Methods: {}",
+                                acao.unwrap_or("-"),
+                                if acam.is_empty() { "-" } else { &acam }
+                            ))
+                            .with_remediation(
+                                "Restrict allowed methods in CORS responses and require authentication for dangerous verbs.",
+                            ),
+                        );
+                    }
+                }
+                Err(e) => errors.push(e),
             }
         }
 

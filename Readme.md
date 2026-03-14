@@ -22,10 +22,11 @@ Detects misconfigurations in CORS, CSP, GraphQL, and API security posture across
 - ⚡ **Fully async** via `tokio` + `reqwest`
 - 🔌 **Pluggable scanner modules** — implement `Scanner` and drop in
 - 🛡️ **WAF evasion** — UA rotation, politeness delays, retry logic
-- 📊 **NDJSON output** for pipelines and CI integration
+- 📊 **NDJSON + SARIF output** for pipelines and CI integration
 - 🔒 **Proxy support** and TLS control
 - 🚦 **Exit-code bitmask** for scripting (`0x01` findings, `0x02` errors)
 - 🧾 **JWT checks** — alg=none, weak HS256 secrets, long-lived tokens
+- 📜 **OpenAPI analysis** — security schemes, uploads, deprecated ops
 
 ## Use Cases
 
@@ -75,7 +76,9 @@ cargo build --release
 | `--urls` | required* | Path to newline-delimited URL file |
 | `--stdin` | off | Read newline-delimited URLs from stdin |
 | `--output` | stdout | Write results to a file instead of stdout |
-| `--format` | `pretty` | Output format: `pretty` or `ndjson` |
+| `--format` | `pretty` | Output format: `pretty`, `ndjson`, or `sarif` |
+| `--stream` | off | Stream NDJSON findings as they arrive |
+| `--baseline` | none | Baseline NDJSON for diff-only findings |
 | `--min-severity` | `info` | Filter findings below this level |
 | `--fail-on` | `medium` | Exit non-zero at or above this severity |
 | `--concurrency` | `20` | Max in-flight requests |
@@ -87,13 +90,20 @@ cargo build --release
 | `--user-agents` | none | Comma-separated UA list (implies WAF evasion) |
 | `--headers` | none | Extra request headers (e.g. `Authorization: Bearer ...`) |
 | `--cookies` | none | Comma-separated cookies (e.g. `session=abc,theme=dark`) |
+| `--auth-bearer` | none | Add `Authorization: Bearer <token>` |
+| `--auth-basic` | none | Add HTTP Basic auth (`user:pass`) |
+| `--session-file` | none | Load/save cookies from JSON session file |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
+| `--active-checks` | off | Enable active (potentially invasive) probes |
+| `--per-host-clients` | off | Use per-host HTTP client pools |
+| `--adaptive-concurrency` | off | Adaptive concurrency (AIMD) |
 | `--no-cors` | off | Disable the CORS scanner |
 | `--no-csp` | off | Disable the CSP scanner |
 | `--no-graphql` | off | Disable the GraphQL scanner |
 | `--no-api-security` | off | Disable the API security scanner |
 | `--no-jwt` | off | Disable the JWT scanner |
+| `--no-openapi` | off | Disable the OpenAPI scanner |
 
 *You must provide exactly one of `--urls` or `--stdin`.
 

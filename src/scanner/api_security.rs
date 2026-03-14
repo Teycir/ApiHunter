@@ -14,9 +14,11 @@
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
+use dashmap::DashSet;
 use regex::Regex;
 use std::collections::HashMap;
 use tracing::debug;
+use url::Url;
 
 use crate::{
     config::Config, error::CapturedError, http_client::HttpClient,
@@ -38,6 +40,8 @@ impl ApiSecurityScanner {
 static RE_AWS_ACCESS:  Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
 static RE_AWS_SECRET:  Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap());
 static RE_API_KEY:     Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(api[_\-]?key|apikey)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,64}['"]?"#).unwrap());
+
+static RATE_LIMIT_CHECKED: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 static RE_BEARER:      Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").unwrap());
 static RE_GENERIC_SEC: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"][^'"]{8,}['"]"#).unwrap());
 static RE_PRIVATE_KEY: Lazy<Regex> = Lazy::new(|| Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap());
@@ -258,7 +262,7 @@ impl Scanner for ApiSecurityScanner {
         &self,
         url: &str,
         client: &HttpClient,
-        _config: &Config,
+        config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors   = Vec::new();
@@ -274,6 +278,12 @@ impl Scanner for ApiSecurityScanner {
         check_directory_listing(url, client, &mut findings, &mut errors).await;
         check_security_txt(url, client, &mut findings).await;
         check_response_headers(url, client, &mut findings, &mut errors).await;
+
+        if config.active_checks {
+            check_idor_bola(url, client, &mut findings, &mut errors).await;
+            check_mass_assignment(url, client, &mut findings, &mut errors).await;
+            check_rate_limit(url, client, &mut findings, &mut errors).await;
+        }
 
         (findings, errors)
     }
@@ -948,4 +958,184 @@ fn snippet(s: &str, max_len: usize) -> String {
             .unwrap_or(0);
         format!("{}... ({} bytes total)", &s[..boundary], s.len())
     }
+}
+
+// ── Active checks (opt-in) ────────────────────────────────────────────────────
+
+async fn check_idor_bola(
+    url: &str,
+    client: &HttpClient,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let Some(alt) = bump_numeric_path(url) else { return; };
+
+    let base = match client.get(url).await {
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
+    };
+
+    if base.status >= 400 {
+        return;
+    }
+
+    let alt_resp = match client.get(&alt).await {
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
+    };
+
+    if alt_resp.status >= 400 {
+        return;
+    }
+
+    let base_fp = body_fingerprint(&base.body);
+    let alt_fp = body_fingerprint(&alt_resp.body);
+
+    if base_fp != alt_fp {
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/idor",
+                "Potential IDOR/BOLA",
+                Severity::High,
+                "A modified numeric ID returned a different successful response. This may indicate broken object-level authorization.",
+                "api_security",
+            )
+            .with_evidence(format!("Original: {url}\nModified: {alt}"))
+            .with_remediation(
+                "Enforce object-level authorization checks for every resource access.",
+            ),
+        );
+    }
+}
+
+async fn check_mass_assignment(
+    url: &str,
+    client: &HttpClient,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let lower = url.to_ascii_lowercase();
+    let likely_mutation = ["/users", "/user", "/account", "/profile", "/admin"]
+        .iter()
+        .any(|k| lower.contains(k));
+
+    if !likely_mutation {
+        return;
+    }
+
+    let payload = serde_json::json!({
+        "__ah_probe": "1",
+        "is_admin": true
+    });
+
+    let resp = match client.post_json(url, &payload).await {
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
+    };
+
+    if resp.status >= 400 {
+        return;
+    }
+
+    let ct = resp.headers.get("content-type").map(|s| s.as_str()).unwrap_or("");
+    if !ct.to_ascii_lowercase().contains("json") {
+        return;
+    }
+
+    if resp.body.contains("\"__ah_probe\"") || resp.body.contains("\"is_admin\"") {
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/mass-assignment",
+                "Potential mass-assignment",
+                Severity::Medium,
+                "The response reflects unexpected fields from a crafted JSON payload.",
+                "api_security",
+            )
+            .with_evidence("Payload contained __ah_probe and is_admin")
+            .with_remediation(
+                "Use explicit allowlists for writeable fields and validate request bodies server-side.",
+            ),
+        );
+    }
+}
+
+async fn check_rate_limit(
+    url: &str,
+    client: &HttpClient,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let host = Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_string()));
+    let Some(host) = host else { return; };
+
+    if RATE_LIMIT_CHECKED.contains(&host) {
+        return;
+    }
+    RATE_LIMIT_CHECKED.insert(host.clone());
+
+    let mut rate_limited = 0;
+    let mut ok = 0;
+
+    for _ in 0..20 {
+        match client.get(url).await {
+            Ok(r) => {
+                if r.status == 429 {
+                    rate_limited += 1;
+                } else if r.status < 400 {
+                    ok += 1;
+                }
+            }
+            Err(e) => {
+                errors.push(e);
+            }
+        }
+    }
+
+    if rate_limited == 0 && ok > 0 {
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/no-rate-limit",
+                "No rate limiting detected",
+                Severity::Low,
+                "A short burst of requests did not trigger rate-limiting (HTTP 429).",
+                "api_security",
+            )
+            .with_evidence(format!("Host: {host}, burst=20, 429s=0"))
+            .with_remediation(
+                "Add rate limits on sensitive endpoints and return 429 on excessive requests.",
+            ),
+        );
+    }
+}
+
+fn bump_numeric_path(url: &str) -> Option<String> {
+    let parsed = Url::parse(url).ok()?;
+    let mut segments: Vec<String> = parsed.path_segments()?.map(|s| s.to_string()).collect();
+    if segments.is_empty() {
+        return None;
+    }
+
+    for i in (0..segments.len()).rev() {
+        if let Ok(num) = segments[i].parse::<u64>() {
+            segments[i] = (num + 1).to_string();
+            let new_path = format!("/{}", segments.join("/"));
+            let mut new_url = parsed.clone();
+            new_url.set_path(&new_path);
+            return Some(new_url.to_string());
+        }
+    }
+
+    None
 }

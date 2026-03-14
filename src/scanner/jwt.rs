@@ -42,6 +42,15 @@ static SENSITIVE_CLAIMS: &[&str] = &[
 
 const LONG_LIVED_SECS: i64 = 60 * 60 * 24 * 30; // 30 days
 
+static WEAK_SECRET_LIST: Lazy<Vec<String>> = Lazy::new(|| {
+    include_str!("../../assets/jwt_secrets.txt")
+        .lines()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+});
+
 pub struct JwtScanner;
 
 impl JwtScanner {
@@ -56,7 +65,7 @@ impl Scanner for JwtScanner {
         &self,
         url: &str,
         client: &HttpClient,
-        _config: &Config,
+        config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
@@ -68,6 +77,7 @@ impl Scanner for JwtScanner {
                 return (findings, errors);
             }
         };
+        let baseline_status = resp.status;
 
         let mut seen = HashSet::new();
 
@@ -84,7 +94,7 @@ impl Scanner for JwtScanner {
                 for m in JWT_RE.find_iter(header_value) {
                     let token = m.as_str().to_string();
                     if seen.insert(token.clone()) {
-                        analyze_jwt(url, &token, &mut findings);
+                        analyze_jwt(url, &token, client, config, baseline_status, &mut findings, &mut errors).await;
                     }
                 }
             }
@@ -110,14 +120,21 @@ impl Scanner for JwtScanner {
                 continue;
             }
 
-            analyze_jwt(url, &token, &mut findings);
+            analyze_jwt(url, &token, client, config, baseline_status, &mut findings, &mut errors).await;
         }
 
         (findings, errors)
     }
 }
 
-fn analyze_jwt(url: &str, token: &str, findings: &mut Vec<Finding>) {
+async fn analyze_jwt(
+    url: &str,
+    client: &HttpClient,
+    config: &Config,
+    baseline_status: u16,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return;
@@ -132,6 +149,32 @@ fn analyze_jwt(url: &str, token: &str, findings: &mut Vec<Finding>) {
         .and_then(|h| h.get("alg"))
         .and_then(Value::as_str)
         .unwrap_or("");
+
+    // Suspicious kid patterns (path traversal / URL fetch).
+    if let Some(kid) = header
+        .as_ref()
+        .and_then(|h| h.get("kid"))
+        .and_then(Value::as_str)
+    {
+        if kid.contains("..") || kid.starts_with("http://") || kid.starts_with("https://")
+            || kid.starts_with("file:")
+        {
+            findings.push(
+                Finding::new(
+                    url,
+                    "jwt/suspicious-kid",
+                    "JWT kid header looks suspicious",
+                    Severity::Low,
+                    "The JWT `kid` header contains a path or URL-like value. Some implementations\n                     load key material from filesystem/URLs and may be vulnerable to injection.",
+                    "jwt",
+                )
+                .with_evidence(format!("kid: {kid}"))
+                .with_remediation(
+                    "Treat `kid` as an opaque identifier and disallow path/URL resolution.",
+                ),
+            );
+        }
+    }
 
     if alg.eq_ignore_ascii_case("none") {
         findings.push(
@@ -239,6 +282,20 @@ fn analyze_jwt(url: &str, token: &str, findings: &mut Vec<Finding>) {
             }
         }
     }
+
+    if config.active_checks && alg.eq_ignore_ascii_case("rs256") {
+    if let Some(finding) = attempt_alg_confusion(
+            url,
+            header.as_ref(),
+            parts[1],
+            client,
+            baseline_status,
+        )
+        .await
+        {
+            findings.push(finding);
+        }
+    }
 }
 
 fn decode_segment(seg: &str) -> Option<Vec<u8>> {
@@ -251,20 +308,7 @@ fn decode_json(seg: &str) -> Option<Value> {
 }
 
 fn weak_secret_match(url: &str, header_b64: &str, payload_b64: &str, sig: &[u8]) -> Option<String> {
-    let mut candidates = vec![
-        "secret",
-        "password",
-        "changeme",
-        "admin",
-        "jwt",
-        "token",
-        "test",
-        "example",
-        "default",
-    ]
-    .into_iter()
-    .map(|s| s.to_string())
-    .collect::<Vec<_>>();
+    let mut candidates = WEAK_SECRET_LIST.clone();
 
     if let Ok(parsed) = Url::parse(url) {
         if let Some(host) = parsed.host_str() {
@@ -299,4 +343,68 @@ fn redact_token(token: &str) -> String {
     let head: String = chars[..8].iter().collect();
     let tail: String = chars[chars.len() - 8..].iter().collect();
     format!("{head}…{tail}")
+}
+
+async fn attempt_alg_confusion(
+    url: &str,
+    header: Option<&Value>,
+    payload_b64: &str,
+    client: &HttpClient,
+    baseline_status: u16,
+) -> Option<Finding> {
+    if !(baseline_status == 401 || baseline_status == 403) {
+        return None;
+    }
+
+    let header = header?;
+
+    let secret = if let Some(x5c) = header.get("x5c").and_then(Value::as_array) {
+        x5c.get(0).and_then(Value::as_str).map(|s| s.to_string())
+    } else if let Some(jwk) = header.get("jwk") {
+        serde_json::to_string(jwk).ok()
+    } else {
+        None
+    }?;
+
+    let mut new_header = header.clone();
+    if let Some(obj) = new_header.as_object_mut() {
+        obj.insert("alg".to_string(), Value::String("HS256".to_string()));
+    }
+
+    let header_json = serde_json::to_vec(&new_header).ok()?;
+    let header_b64 = URL_SAFE_NO_PAD.encode(header_json);
+
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
+    mac.update(signing_input.as_bytes());
+    let sig = mac.finalize().into_bytes();
+    let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
+
+    let forged = format!("{header_b64}.{payload_b64}.{sig_b64}");
+    let auth_header = format!("Bearer {forged}");
+
+    let extra = vec![("Authorization".to_string(), auth_header)];
+    let resp = client.get_with_headers(url, &extra).await.ok()?;
+
+    if resp.status < 400 {
+        return Some(
+            Finding::new(
+                url,
+                "jwt/alg-confusion",
+                "JWT RS256 -> HS256 confusion",
+                Severity::Critical,
+                "A forged HS256 token signed with a public key-like secret appears to be accepted.",
+                "jwt",
+            )
+            .with_evidence(format!(
+                "baseline_status: {baseline_status}, forged_status: {}",
+                resp.status
+            ))
+            .with_remediation(
+                "Reject HS256 tokens when using RS256 keys; ensure key type matches algorithm.",
+            ),
+        );
+    }
+
+    None
 }

@@ -8,8 +8,8 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 use api_scanner::reports::{
-    dedup_findings, exit_code, filter_findings, Finding, ReportConfig, ReportFormat, ReportSummary,
-    Reporter, Severity,
+    dedup_findings, exit_code, filter_findings, load_baseline_keys, Finding, ReportConfig,
+    ReportFormat, ReportSummary, Reporter, Severity,
 };
 use api_scanner::runner::RunResult;
 
@@ -136,6 +136,20 @@ fn filter_findings_respects_threshold() {
     assert_eq!(filtered[0].severity, Severity::Critical);
 }
 
+#[test]
+fn baseline_loader_ignores_meta_lines() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path = tmp.path().to_path_buf();
+
+    let content = r#"{"type":"meta","meta":{},"summary":{}}
+{"url":"https://example.com","check":"cors.wildcard"}
+"#;
+    std::fs::write(&path, content).unwrap();
+
+    let keys = load_baseline_keys(&path).unwrap();
+    assert!(keys.contains(&(\"https://example.com\".to_string(), \"cors.wildcard\".to_string())));
+}
+
 // ── Exit code logic ──────────────────────────────────────────────────────────
 
 #[test]
@@ -197,6 +211,7 @@ fn reporter_writes_pretty_json_to_file() {
         output_path: Some(path.clone()),
         print_summary: false,
         quiet: true,
+        stream: false,
     };
 
     let reporter = Reporter::new(cfg).unwrap();
@@ -227,6 +242,7 @@ fn reporter_writes_ndjson_to_file() {
         output_path: Some(path.clone()),
         print_summary: false,
         quiet: true,
+        stream: false,
     };
 
     let reporter = Reporter::new(cfg).unwrap();
@@ -248,6 +264,31 @@ fn reporter_writes_ndjson_to_file() {
 }
 
 #[test]
+fn reporter_writes_sarif_to_file() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path = tmp.path().to_path_buf();
+
+    let cfg = ReportConfig {
+        format: ReportFormat::Sarif,
+        output_path: Some(path.clone()),
+        print_summary: false,
+        quiet: true,
+        stream: false,
+    };
+
+    let reporter = Reporter::new(cfg).unwrap();
+    let result = mock_run_result();
+
+    reporter.write_run_result(&result);
+    reporter.finalize();
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(doc["version"], "2.1.0");
+    assert!(doc["runs"].is_array());
+}
+
+#[test]
 fn flush_finding_appends_in_ndjson_mode() {
     let tmp = NamedTempFile::new().unwrap();
     let path = tmp.path().to_path_buf();
@@ -257,6 +298,7 @@ fn flush_finding_appends_in_ndjson_mode() {
         output_path: Some(path.clone()),
         print_summary: false,
         quiet: true,
+        stream: true,
     };
 
     let reporter = Reporter::new(cfg).unwrap();
@@ -288,6 +330,7 @@ fn flush_finding_is_noop_in_pretty_mode() {
         output_path: Some(path.clone()),
         print_summary: false,
         quiet: true,
+        stream: false,
     };
 
     let reporter = Reporter::new(cfg).unwrap();

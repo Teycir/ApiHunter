@@ -25,6 +25,30 @@ unless `--quiet` is used.
 
 ---
 
+## Stream findings as NDJSON
+
+```bash
+./target/release/api-scanner --urls https://target.example.com --format ndjson --stream
+```
+
+---
+
+## SARIF output (GitHub Code Scanning)
+
+```bash
+./target/release/api-scanner --urls https://target.example.com --format sarif --output results.sarif
+```
+
+---
+
+## Baseline diff mode
+
+```bash
+./target/release/api-scanner --urls https://target.example.com --baseline last.ndjson --format ndjson
+```
+
+---
+
 ## Filter by severity
 
 ```bash
@@ -65,6 +89,36 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
   --urls https://target.example.com \
   --proxy http://127.0.0.1:8080 \
   --danger-accept-invalid-certs
+```
+
+---
+
+## Enable active checks (opt-in)
+
+```bash
+./target/release/api-scanner --urls https://target.example.com --active-checks
+```
+
+---
+
+## Auth helpers and session cookies
+
+```bash
+./target/release/api-scanner --urls https://target.example.com --auth-bearer "$TOKEN"
+./target/release/api-scanner --urls https://target.example.com --auth-basic "user:pass"
+./target/release/api-scanner --urls https://target.example.com --session-file session.json
+```
+
+`session.json` format:
+
+```json
+{
+  "hosts": {
+    "example.com": {
+      "session": "abc123"
+    }
+  }
+}
 ```
 
 ---

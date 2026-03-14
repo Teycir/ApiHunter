@@ -3,7 +3,7 @@ author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
 last_updated: 2026-03-14
-tags: [scanners, cors, csp, graphql, api-security, jwt]
+tags: [scanners, cors, csp, graphql, api-security, jwt, openapi]
 category: Scanner Modules
 ---
 
@@ -63,6 +63,18 @@ Deep inspection of JWTs found in responses.
 
 **Detects:**
 - `alg=none` tokens
-- Weak HS256 secrets (small candidate list)
+- Weak HS256 secrets (curated candidate list)
 - Long-lived or missing `exp` claim
 - Sensitive claims in payload
+
+---
+
+## OpenAPI (`scanner::openapi`)
+
+Analyses OpenAPI / Swagger specs discovered at common paths.
+
+**Detects:**
+- Missing security schemes in the spec
+- Operations without explicit security requirements
+- File upload endpoints
+- Deprecated operations still present in the spec

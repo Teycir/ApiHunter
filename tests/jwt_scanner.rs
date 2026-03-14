@@ -35,12 +35,21 @@ fn test_config() -> Config {
         cookies: vec![],
         proxy: None,
         danger_accept_invalid_certs: false,
+        active_checks: false,
+        stream_findings: false,
+        baseline_path: None,
+        session_file: None,
+        auth_bearer: None,
+        auth_basic: None,
+        per_host_clients: false,
+        adaptive_concurrency: false,
         toggles: ScannerToggles {
             cors: true,
             csp: true,
             graphql: true,
             api_security: true,
             jwt: true,
+            openapi: true,
         },
     }
 }

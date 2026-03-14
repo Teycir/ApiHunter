@@ -31,6 +31,28 @@ pub struct Config {
 
     /// Accept invalid TLS certificates (dangerous).
     pub danger_accept_invalid_certs: bool,
+
+    /// Enable active (potentially invasive) checks.
+    pub active_checks: bool,
+
+    /// Enable streaming NDJSON findings (reports while scan is running).
+    pub stream_findings: bool,
+
+    /// Optional baseline NDJSON file for diffing (suppress known findings).
+    pub baseline_path: Option<std::path::PathBuf>,
+
+    /// Optional session cookie file (JSON) to load/save.
+    pub session_file: Option<std::path::PathBuf>,
+
+    /// Optional auth helpers.
+    pub auth_bearer: Option<String>,
+    pub auth_basic: Option<String>,
+
+    /// Enable per-host HTTP client pools.
+    pub per_host_clients: bool,
+
+    /// Enable adaptive concurrency.
+    pub adaptive_concurrency: bool,
 }
 
 /// Individual scanner toggle flags.
@@ -41,6 +63,7 @@ pub struct ScannerToggles {
     pub graphql: bool,
     pub api_security: bool,
     pub jwt: bool,
+    pub openapi: bool,
 }
 
 /// Network politeness knobs.
