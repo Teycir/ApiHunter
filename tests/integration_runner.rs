@@ -415,14 +415,7 @@ async fn runner_aggregates_findings_across_scanners() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
     let scanners_reported: std::collections::HashSet<&str> =
         result.findings.iter().map(|f| f.scanner.as_str()).collect();
@@ -454,14 +447,7 @@ async fn runner_returns_scanned_count() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(
-        vec![server.uri()],
-        config,
-        client,
-        None,
-        test_reporter(),
-    )
-    .await;
+    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
 
     assert_eq!(result.scanned, 1, "should report 1 URL scanned");
 }
