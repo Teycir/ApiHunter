@@ -1,3 +1,5 @@
 .history
 .qodo
 target
+_test_result.txt
+final_results.json
