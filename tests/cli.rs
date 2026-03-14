@@ -286,8 +286,8 @@ fn max_endpoints_nonzero_preserved() {
 fn waf_enabled_when_user_agents_provided() {
     // run() logic: waf_evasion || !user_agents.is_empty()
     let waf_evasion = false;
-    let user_agents = vec!["CustomBot/1.0".to_string()];
-    let enabled = waf_evasion || !user_agents.is_empty();
+    let user_agents = ["CustomBot/1.0".to_string()];
+    let enabled = waf_evasion || !user_agents.iter().any(|_| true);
     assert!(enabled);
 }
 
@@ -302,9 +302,12 @@ fn waf_disabled_when_neither_flag_nor_agents() {
 #[test]
 fn print_summary_true_when_not_quiet() {
     // print_summary = cli.summary || !cli.quiet
-    assert!(false || !false); // summary=false, quiet=false  → true
-    assert!(true || !true); // summary=true,  quiet=true   → true
-    assert!(!(false || !true)); // summary=false, quiet=true → false
+    let test1 = false || !false; // summary=false, quiet=false  → true
+    let test2 = true || !true;   // summary=true,  quiet=true   → true
+    let test3 = false || !true;  // summary=false, quiet=true   → false
+    assert!(test1);
+    assert!(test2);
+    assert!(!test3);
 }
 
 // ── Scanner-toggle struct mapping ────────────────────────────────────────────

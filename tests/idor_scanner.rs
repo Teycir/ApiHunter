@@ -6,6 +6,9 @@
 mod idor_tests {
     use url::Url;
 
+    /// Type alias for IDOR scan results: (resource_id, status_code, fingerprint)
+    type ScanResult = (u64, u16, Option<(usize, u64)>);
+
     /// Helper: find numeric segment in URL path
     fn find_numeric_segment(url: &str) -> Option<(usize, u64)> {
         let parsed = Url::parse(url).ok()?;
@@ -190,7 +193,7 @@ mod idor_tests {
 
         // All IDs return same fingerprint => enumerable
         let fp = (100, 12345u64);
-        let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
+        let results: Vec<ScanResult> = vec![
             (40, 200, Some(fp)),
             (41, 200, Some(fp)),
             (42, 200, Some(fp)),
@@ -218,7 +221,7 @@ mod idor_tests {
         let base_fp = (100, 12345u64);
 
         // Different content for each ID => not enumerable
-        let results: Vec<(u64, u16, Option<(usize, u64)>)> = vec![
+        let results: Vec<ScanResult> = vec![
             (40, 200, Some((100, 11111u64))),
             (41, 200, Some((100, 22222u64))),
             (42, 200, Some(base_fp)),
