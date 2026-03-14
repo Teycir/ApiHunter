@@ -7,7 +7,7 @@ Practical recipes for common tasks.
 ## Run a basic scan
 
 ```bash
-./webscan --urls https://target.example.com
+./target/release/api-scanner --urls https://target.example.com
 ```
 
 Findings are written as NDJSON to **stdout**; diagnostics to **stderr**.
@@ -17,17 +17,18 @@ Findings are written as NDJSON to **stdout**; diagnostics to **stderr**.
 ## Save results to a file
 
 ```bash
-./webscan --urls https://target.example.com --output-path report.ndjson
+./target/release/api-scanner --urls https://target.example.com --output report.ndjson
 ```
 
-When `--output-path` is set, stdout is silent — only the file is written.
+When `--output` is set, the report is written to the file. Stdout still prints
+unless `--quiet` is used.
 
 ---
 
 ## Filter by severity
 
 ```bash
-./webscan --urls https://target.example.com --min-severity high
+./target/release/api-scanner --urls https://target.example.com --min-severity high
 ```
 
 Accepted values (low → critical): `low` `medium` `high` `critical`
@@ -37,7 +38,7 @@ Accepted values (low → critical): `low` `medium` `high` `critical`
 ## Scan multiple targets
 
 ```bash
-./webscan \
+./target/release/api-scanner \
   --urls https://app.example.com \
   --urls https://api.example.com \
   --concurrency 40
@@ -48,7 +49,7 @@ Accepted values (low → critical): `low` `medium` `high` `critical`
 ## Use in CI
 
 ```bash
-./webscan --urls "$TARGET" --quiet --min-severity medium
+./target/release/api-scanner --urls "$TARGET" --quiet --min-severity medium
 EXIT=$?
 
 if (( EXIT & 1 )); then echo "Findings detected"; fi
@@ -60,10 +61,10 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
 ## Scan through a proxy (Burp, mitmproxy, etc.)
 
 ```bash
-./webscan \
+./target/release/api-scanner \
   --urls https://target.example.com \
   --proxy http://127.0.0.1:8080 \
-  --accept-invalid-certs
+  --danger-accept-invalid-certs
 ```
 
 ---
@@ -75,7 +76,13 @@ if (( EXIT & 2 )); then echo "Scanner errors occurred"; fi
 
 ```rust
 use async_trait::async_trait;
-use crate::{error::CapturedError, http_client::HttpClient, scanner::{Finding, Scanner}};
+use crate::{
+    config::Config,
+    error::CapturedError,
+    http_client::HttpClient,
+    reports::Finding,
+    scanner::Scanner,
+};
 
 pub struct MyCheck;
 
@@ -83,8 +90,9 @@ pub struct MyCheck;
 impl Scanner for MyCheck {
     async fn scan(
         &self,
+        url: &str,
         client: &HttpClient,
-        endpoint: &str,
+        _config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         // your logic here
         (vec![], vec![])
