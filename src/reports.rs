@@ -415,7 +415,7 @@ fn build_document(result: &RunResult) -> ReportDocument {
     }
 }
 
-fn build_summary(result: &RunResult) -> ReportSummary {
+pub fn build_summary(result: &RunResult) -> ReportSummary {
     let mut s = ReportSummary {
         total:  result.findings.len(),
         errors: result.errors.len(),

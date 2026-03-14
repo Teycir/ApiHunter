@@ -1,14 +1,8 @@
 <div align="center">
 
-```
-   ___    ____  ____   __  __            __           
-  / _ \  / __ \/  _/  / / / /_  ______  / /____  _____
- / /_\ \/ /_/ // /   / /_/ / / / / __ \/ __/ _ \/ ___/
-/ ___  / ____// /   / __  / /_/ / / / / /_/  __/ /    
-/_/  |_/_/   /___/  /_/ /_/\__,_/_/ /_/\__/\___/_/     
-                                                        
-    [ Async Web Security Scanner | Rust Powered ⚡ ]
-```
+# 🎯 ApiHunter
+
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&duration=3000&pause=1000&color=F75C7E&center=true&vCenter=true&width=600&lines=Async+Web+Security+Scanner;Rust+Powered+%E2%9A%A1;CORS+%7C+CSP+%7C+GraphQL+%7C+API;Modular+%26+Blazingly+Fast" alt="Typing SVG" />
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)
 ![Security](https://img.shields.io/badge/security-scanner-red?style=flat)

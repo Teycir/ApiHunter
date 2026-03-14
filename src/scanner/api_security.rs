@@ -414,6 +414,13 @@ async fn check_http_methods(
     findings: &mut Vec<Finding>,
     errors:   &mut Vec<CapturedError>,
 ) {
+    let base = url.trim_end_matches('/');
+    let spa_catchall = detect_spa_catchall(base, client).await.is_some();
+
+    if spa_catchall {
+        debug!(url = %url, "SPA catch-all detected; skipping method probing");
+    }
+
     // First try OPTIONS — it may advertise allowed methods directly.
     let allowed_from_options = match client.options(url, None).await {
         Ok(resp) => {
@@ -450,6 +457,8 @@ async fn check_http_methods(
 
         let actually_allowed = if advertised {
             true
+        } else if spa_catchall {
+            false
         } else {
             match client.method_probe(method, url).await {
                 Ok(r)  => r.status < 405,

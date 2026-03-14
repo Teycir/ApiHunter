@@ -130,29 +130,16 @@ pub async fn run(
     let mut findings: Vec<Finding>       = Vec::new();
     let mut errors:   Vec<CapturedError> = Vec::new();
 
-    loop {
-        tokio::select! {
-            biased;
-
-            Some(batch) = finding_rx.recv() => {
-                findings.extend(batch);
-            }
-            Some(batch) = error_rx.recv() => {
-                errors.extend(batch);
-            }
-            result = join_set.join_next() => {
-                match result {
-                    Some(Ok(())) => {}
-                    Some(Err(e)) => error!("Worker task panicked: {e}"),
-                    None         => break,
-                }
-            }
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(()) => {}
+            Err(e) => error!("Worker task panicked: {e}"),
         }
     }
 
-    // Drain any remaining channel messages after join_set is empty
-    while let Ok(batch) = finding_rx.try_recv() { findings.extend(batch); }
-    while let Ok(batch) = error_rx.try_recv()   { errors.extend(batch);   }
+    // Drain any remaining channel messages after workers exit.
+    while let Some(batch) = finding_rx.recv().await { findings.extend(batch); }
+    while let Some(batch) = error_rx.recv().await   { errors.extend(batch);   }
 
     // ── 6. Post-process ───────────────────────────────────────────────────────
     dedup_findings(&mut findings);

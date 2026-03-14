@@ -65,7 +65,7 @@ impl CapturedError {
             timestamp: chrono::Utc::now().to_rfc3339(),
             context: context.into(),
             url,
-            error_type: std::any::type_name::<dyn std::error::Error>().to_string(),
+            error_type: std::any::type_name_of_val(err).to_string(),
             message: err.to_string(),
         }
     }

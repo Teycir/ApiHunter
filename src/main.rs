@@ -133,23 +133,7 @@ async fn run(cli: Cli) -> Result<i32> {
     info!("Scan finished in {:.2}s.", elapsed.as_secs_f64());
 
     // ── 8. Compute and return exit code ───────────────────────────────────────
-    // build_summary is private, but exit_code works on the full RunResult;
-    // we build a lightweight summary inline.
-    let summary = {
-        let mut s = reports::ReportSummary::default();
-        s.total = filtered_result.findings.len();
-        s.errors = filtered_result.errors.len();
-        for f in &filtered_result.findings {
-            match f.severity {
-                Severity::Critical => s.critical += 1,
-                Severity::High     => s.high     += 1,
-                Severity::Medium   => s.medium   += 1,
-                Severity::Low      => s.low      += 1,
-                Severity::Info     => s.info     += 1,
-            }
-        }
-        s
-    };
+    let summary = reports::build_summary(&filtered_result);
     let code = reports::exit_code(&summary, &fail_on);
 
     if code & 1 != 0 {

@@ -49,6 +49,7 @@ pub struct HttpClient {
     inner: Client,
     waf_enabled: bool,
     delay_ms: u64,
+    retries: u32,
 }
 
 impl HttpClient {
@@ -60,10 +61,6 @@ impl HttpClient {
             .deflate(true)
             .redirect(reqwest::redirect::Policy::limited(5))
             .tcp_keepalive(Duration::from_secs(30));
-
-        if config.waf_evasion.enabled {
-            builder = builder.default_headers(WafEvasion::evasion_headers());
-        }
 
         if let Some(proxy_url) = &config.proxy {
             let proxy = reqwest::Proxy::all(proxy_url)
@@ -79,6 +76,7 @@ impl HttpClient {
             inner,
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
+            retries: config.politeness.retries,
         })
     }
 
@@ -88,6 +86,67 @@ impl HttpClient {
 
     /// Send a request, applying WAF evasion delays + rotating headers.
     pub async fn request(
+        &self,
+        method: Method,
+        url: &str,
+        extra_headers: Option<HeaderMap>,
+        body: Option<serde_json::Value>,
+    ) -> Result<HttpResponse, CapturedError> {
+        let attempts = self.retries + 1;
+        let mut last_err: Option<CapturedError> = None;
+
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                let backoff = retry_backoff(attempt);
+                tokio::time::sleep(backoff).await;
+            }
+
+            match self
+                .send_once(
+                    method.clone(),
+                    url,
+                    extra_headers.as_ref().cloned(),
+                    body.as_ref().cloned(),
+                )
+                .await
+            {
+                Ok(resp) => {
+                    if should_retry_status(resp.status) && attempt + 1 < attempts {
+                        debug!(
+                            "[{method} {url}] retrying due to status {} (attempt {}/{})",
+                            resp.status,
+                            attempt + 1,
+                            attempts
+                        );
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    debug!(
+                        "[{method} {url}] attempt {}/{} failed: {}",
+                        attempt + 1,
+                        attempts,
+                        e
+                    );
+                    last_err = Some(e);
+                    if attempt + 1 == attempts {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            CapturedError::from_str(
+                "http::send",
+                Some(url.to_string()),
+                "request failed after retries",
+            )
+        }))
+    }
+
+    async fn send_once(
         &self,
         method: Method,
         url: &str,
@@ -229,4 +288,13 @@ impl HttpClient {
             url: final_url,
         })
     }
+}
+
+fn should_retry_status(status: u16) -> bool {
+    status == 429 || (500..600).contains(&status)
+}
+
+fn retry_backoff(attempt: u32) -> Duration {
+    let exp = 1u64.saturating_shl(attempt.min(6));
+    Duration::from_millis(200 * exp)
 }
