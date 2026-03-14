@@ -191,6 +191,7 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 4. Build Reporter ─────────────────────────────────────────────────────
     let print_summary = cli.summary || !cli.quiet;
+
     let mut report_cfg = ReportConfig {
         format: cli.format.into(),
         output_path: cli.output.clone(),
