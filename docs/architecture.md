@@ -1,4 +1,15 @@
+---
+author: teycir ben soltane
+email: teycir@pxdmail.net
+website: teycirbensoltane.tn
+last_updated: 2026-03-14
+tags: [architecture, design, modules, async-runtime]
+category: Technical Documentation
+---
+
 # Architecture
+
+## System Overview
 
 ```
 main.rs

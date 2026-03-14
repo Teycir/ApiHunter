@@ -1,4 +1,13 @@
-# 🔍 webscan
+---
+author: teycir ben soltane
+email: teycir@pxdmail.net
+website: teycirbensoltane.tn
+last_updated: 2026-03-14
+tags: [security, scanner, rust, api, async]
+category: Getting Started
+---
+
+# 🔍 ApiHunter (webscan)
 
 An async, modular web security scanner written in Rust.  
 Detects misconfigurations in CORS, CSP, GraphQL, and API security posture
@@ -25,6 +34,16 @@ cargo build --release
 ```
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
+
+## 📚 Documentation
+
+Complete documentation is available in the `docs/` directory:
+
+- **[📖 Documentation Index](docs/INDEX.md)** — Complete navigation and overview of all guides
+- **[🏗️ Architecture](docs/architecture.md)** — System design and data flow
+- **[⚙️ Configuration](docs/configuration.md)** — All CLI parameters and options
+- **[🔍 Scanners](docs/scanners.md)** — Detailed scanner module capabilities
+- **[📋 HOWTO](HOWTO.md)** — Detailed usage guide and examples
 
 ## Installation
 
@@ -59,6 +78,12 @@ cargo build --release
 | `1` | One or more findings produced |
 | `2` | One or more scanners captured errors |
 | `3` | Both findings and errors |
+
+## About
+
+**Author:** teycir ben soltane  
+**Email:** teycir@pxdmail.net  
+**Website:** teycirbensoltane.tn
 
 ## License
 

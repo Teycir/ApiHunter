@@ -1,4 +1,15 @@
-# Scanner modules
+---
+author: teycir ben soltane
+email: teycir@pxdmail.net
+website: teycirbensoltane.tn
+last_updated: 2026-03-14
+tags: [scanners, cors, csp, graphql, api-security]
+category: Scanner Modules
+---
+
+# Scanner Modules
+
+This document describes all built-in scanner modules and their detection capabilities.
 
 ## CORS (`scanner::cors`)
 

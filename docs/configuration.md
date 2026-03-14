@@ -1,4 +1,13 @@
-# Configuration reference
+---
+author: teycir ben soltane
+email: teycir@pxdmail.net
+website: teycirbensoltane.tn
+last_updated: 2026-03-14
+tags: [configuration, cli, settings, parameters]
+category: Configuration Guide
+---
+
+# Configuration Reference
 
 All fields live in `Config` (populated by `clap`).  
 Durations are in milliseconds unless noted.
