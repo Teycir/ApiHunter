@@ -90,7 +90,7 @@ async fn run(cli: Cli) -> Result<i32> {
     }
 
     print_banner(&cli, filtered_urls.len());
-    eprintln!("Starting discovery phase...");
+    eprintln!("Started discovering endpoints, working...");
 
     // ── 2. Build Config ──────────────────────────────────────────────────────
     let max_endpoints = if cli.max_endpoints == 0 {

@@ -88,10 +88,12 @@ cargo build --release
 | `--min-severity` | `info` | Filter findings below this level |
 | `--fail-on` | `medium` | Exit non-zero at or above this severity |
 | `--concurrency` | `20` | Max in-flight requests |
-| `--max-endpoints` | `0` | Limit scanned URLs (0 = unlimited) |
-| `--delay-ms` | `100` | Minimum delay between requests per host |
-| `--retries` | `3` | Retry attempts on transient failure |
-| `--timeout-secs` | `30` | Per-request timeout in seconds |
+| `--max-endpoints` | `50` | Limit scanned endpoints per site (0 = unlimited) |
+| `--delay-ms` | `150` | Minimum delay between requests per host |
+| `--retries` | `1` | Retry attempts on transient failure |
+| `--timeout-secs` | `8` | Per-request timeout in seconds |
+| `--no-filter` | off | Skip pre-filtering of inaccessible URLs |
+| `--filter-timeout` | `3` | Timeout for accessibility pre-check (seconds) |
 | `--waf-evasion` | off | Enable WAF evasion heuristics |
 | `--user-agents` | none | Comma-separated UA list (implies WAF evasion) |
 | `--headers` | none | Extra request headers (e.g. `Authorization: Bearer ...`) |
