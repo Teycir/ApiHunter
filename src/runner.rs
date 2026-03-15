@@ -29,6 +29,7 @@ use crate::{
     },
     error::CapturedError,
     http_client::HttpClient,
+    progress_tracker::{ProgressConfig, ProgressTracker},
     reports::{Finding, Reporter},
     scanner::{
         api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
@@ -100,9 +101,15 @@ pub async fn run(
     let scanners = build_scanners(&config, http_client_b.clone());
 
     // Progress tracking
-    let progress = Arc::new(tokio::sync::Mutex::new(0usize));
-    let total_urls = scanned;
-    let scan_start = Instant::now();
+    let tracker = Arc::new(ProgressTracker::with_config(ProgressConfig {
+        total: scanned,
+        tty_update_frequency: 5,
+        non_tty_update_frequency: 1,
+        show_elapsed: true,
+        show_eta: true,
+        show_rate: true,
+        prefix: "Scanning: ".to_string(),
+    }));
 
     // mpsc channels — workers send back results; main task collects
     let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
@@ -110,6 +117,11 @@ pub async fn run(
 
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
+
+    info!(
+        "Scan started at: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
 
     for url in work_list {
         let sem = Arc::clone(&semaphore);
@@ -119,7 +131,7 @@ pub async fn run(
         let etx = error_tx.clone();
         let cfg = Arc::clone(&config);
         let rpt = Arc::clone(&reporter);
-        let prog = Arc::clone(&progress);
+        let progress_handle = tracker.handle();
 
         join_set.spawn(async move {
             let _permit = match sem.acquire().await {
@@ -130,38 +142,51 @@ pub async fn run(
                 }
             };
 
-            scan_url(url, &client, &scanners, &cfg, &rpt, ftx, etx).await;
+            let (findings, _errors) = scan_url_with_results(
+                url.clone(),
+                &client,
+                &scanners,
+                &cfg,
+                &rpt,
+                ftx.clone(),
+                etx.clone(),
+            )
+            .await;
 
-            // Update progress
-            let mut p = prog.lock().await;
-            *p += 1;
-            let completed = *p;
-            drop(p);
+            // Build summary message
+            let mut msg = url.clone();
+            if !findings.is_empty() {
+                let critical = findings
+                    .iter()
+                    .filter(|f| matches!(f.severity, crate::reports::Severity::Critical))
+                    .count();
+                let high = findings
+                    .iter()
+                    .filter(|f| matches!(f.severity, crate::reports::Severity::High))
+                    .count();
+                let medium = findings
+                    .iter()
+                    .filter(|f| matches!(f.severity, crate::reports::Severity::Medium))
+                    .count();
 
-            // Print progress every 5 URLs
-            if completed % 5 == 0 || completed == total_urls {
-                let elapsed = scan_start.elapsed().as_secs_f64();
-                let rate = completed as f64 / elapsed;
-                let remaining = total_urls - completed;
-                let eta_secs = if rate > 0.0 {
-                    (remaining as f64 / rate) as u64
-                } else {
-                    0
-                };
-                let eta_mins = eta_secs / 60;
-
-                eprint!(
-                    "\r📊 {} / {} URLs scanned ({:.1}%) • {:.1}/s | ETA: {}m{}s   ",
-                    completed,
-                    total_urls,
-                    (completed as f64 / total_urls as f64) * 100.0,
-                    rate,
-                    eta_mins,
-                    eta_secs % 60
-                );
-                use std::io::Write;
-                std::io::stderr().flush().ok();
+                msg.push_str(&format!(" | 🔍 {} findings", findings.len()));
+                if critical > 0 {
+                    msg.push_str(&format!(" (🔴 {}C", critical));
+                }
+                if high > 0 {
+                    msg.push_str(&format!(" 🟠 {}H", high));
+                }
+                if medium > 0 {
+                    msg.push_str(&format!(" 🟡 {}M", medium));
+                }
+                if critical > 0 || high > 0 || medium > 0 {
+                    msg.push(')');
+                }
+            } else {
+                msg.push_str(" | ✅ Clean");
             }
+
+            progress_handle.increment(Some(&msg)).await;
         });
     }
 
@@ -174,25 +199,27 @@ pub async fn run(
     let mut errors: Vec<CapturedError> = Vec::new();
     errors.append(&mut discovery_errors);
 
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(()) => {}
-            Err(e) => error!("Worker task panicked: {e}"),
+    loop {
+        tokio::select! {
+            Some(result) = join_set.join_next() => {
+                match result {
+                    Ok(()) => {}
+                    Err(e) => error!("Worker task panicked: {e}"),
+                }
+            }
+            Some(batch) = finding_rx.recv() => {
+                findings.extend(batch);
+            }
+            Some(batch) = error_rx.recv() => {
+                errors.extend(batch);
+            }
+            else => break,
         }
     }
 
-    // Drain any remaining channel messages after workers exit.
-    while let Some(batch) = finding_rx.recv().await {
-        findings.extend(batch);
-    }
-    while let Some(batch) = error_rx.recv().await {
-        errors.extend(batch);
-    }
-
-    // Clear progress line
-    eprintln!("\r                                                                                ");
-
     // ── 8. Post-process ───────────────────────────────────────────────────────
+    tracker.finish().await;
+
     dedup_findings(&mut findings);
     sort_findings(&mut findings);
 
@@ -204,6 +231,10 @@ pub async fn run(
         skipped,
         elapsed_ms = elapsed.as_millis(),
         "Run complete"
+    );
+    info!(
+        "Scan finished at: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     );
 
     RunResult {
@@ -217,7 +248,7 @@ pub async fn run(
 
 // ── Per-URL scan ───────────────────────────────────────────────────────────────
 
-async fn scan_url(
+async fn scan_url_with_results(
     url: String,
     client: &HttpClient,
     scanners: &[Arc<dyn Scanner>],
@@ -225,10 +256,12 @@ async fn scan_url(
     reporter: &Reporter,
     ftx: mpsc::UnboundedSender<Vec<Finding>>,
     etx: mpsc::UnboundedSender<Vec<CapturedError>>,
-) {
+) -> (Vec<Finding>, Vec<CapturedError>) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 
     let mut scanner_set: JoinSet<(Vec<Finding>, Vec<CapturedError>)> = JoinSet::new();
+    let mut all_findings = Vec::new();
+    let mut all_errors = Vec::new();
 
     for scanner in scanners {
         let s = Arc::clone(scanner);
@@ -252,6 +285,8 @@ async fn scan_url(
                         reporter.flush_finding(finding);
                     }
                 }
+                all_findings.extend(f.clone());
+                all_errors.extend(e.clone());
                 if !f.is_empty() {
                     let _ = ftx.send(f);
                 }
@@ -261,10 +296,13 @@ async fn scan_url(
             }
             Err(join_err) => {
                 let ce = CapturedError::internal(format!("Scanner panic on {url}: {join_err}"));
+                all_errors.push(ce.clone());
                 let _ = etx.send(vec![ce]);
             }
         }
     }
+
+    (all_findings, all_errors)
 }
 
 // ── Scanner registry ───────────────────────────────────────────────────────────
@@ -365,7 +403,14 @@ async fn run_discovery_per_site(
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
 
-    for seed in seeds {
+    let total_seeds = seeds.len();
+    for (idx, seed) in seeds.iter().enumerate() {
+        info!(
+            "[Discovery] Processing seed {}/{}: {}",
+            idx + 1,
+            total_seeds,
+            seed
+        );
         let parsed = match Url::parse(seed) {
             Ok(u) => u,
             Err(_) => continue,
