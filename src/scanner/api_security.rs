@@ -623,25 +623,99 @@ async fn check_secrets_in_response(
         }
     };
 
-    // Skip checking large minified JavaScript files - too many false positives
-    // But still check smaller JS files and all other content types
+    // Guard 1: Skip non-200 responses
+    if resp.status != 200 {
+        return;
+    }
+
+    // Guard 2: Skip error responses (403, 404 messages in body)
+    let body_lower = resp.body.to_ascii_lowercase();
+    if body_lower.contains("403 forbidden") 
+        || body_lower.contains("404 not found")
+        || body_lower.contains("the requested resource is not found")
+        || (body_lower.contains("error") && body_lower.contains("status") && resp.body.len() < 500) {
+        return;
+    }
+
     let ct = resp
         .headers
         .get("content-type")
         .map(|s| s.as_str())
         .unwrap_or("");
+    
+    // Guard 3: Distinguish frontend HTML from backend API responses
+    let is_html = is_html_content_type(ct);
     let is_js = ct.contains("javascript") || ct.contains("ecmascript");
     let looks_minified = is_js && resp.body.len() > 50000 && !resp.body.contains("\n\n");
 
+    // Guard 4: Check if this is a frontend page (HTML with typical web app markers)
+    let is_frontend_page = is_html && (
+        body_lower.contains("<!doctype html>") ||
+        body_lower.contains("<html") ||
+        body_lower.contains("<head>") ||
+        body_lower.contains("<body")
+    );
+
     for chk in SECRET_CHECKS {
-        // Only skip generic patterns on very large minified JS (>50KB)
-        // This keeps recall high while reducing noise from webpack bundles
+        // Skip generic patterns on minified JS
         if looks_minified && matches!(chk.name, "Generic API Key" | "Generic Secret") {
             continue;
         }
 
         if let Some(m) = chk.re.find(&resp.body) {
             let matched = m.as_str();
+            
+            // Guard 5: For Google API keys, check if they're in frontend HTML
+            // Frontend keys are typically domain-restricted and less critical
+            if chk.name == "Google API Key" && is_frontend_page {
+                // Check if key is in <script> tag or meta tag (frontend usage)
+                let context_start = m.start().saturating_sub(100);
+                let context_end = (m.end() + 100).min(resp.body.len());
+                let context = &resp.body[context_start..context_end];
+                let context_lower = context.to_ascii_lowercase();
+                
+                if context_lower.contains("<script") 
+                    || context_lower.contains("<meta") 
+                    || context_lower.contains("data-") {
+                    // Frontend key - downgrade severity
+                    findings.push(
+                        Finding::new(
+                            url,
+                            format!("api_security/secret-in-response/{}", slug(chk.name)),
+                            format!("Possible {} in frontend", chk.name),
+                            Severity::Low,
+                            format!("Possible {} found in frontend HTML. Frontend API keys are typically domain-restricted.", chk.name),
+                            "api_security",
+                        )
+                        .with_evidence(format!(
+                            "Pattern: {}\nMatch (redacted): {}\nContext: Frontend HTML\nURL: {url}",
+                            chk.name,
+                            redact(matched)
+                        ))
+                        .with_remediation(
+                            "Verify this key has proper domain restrictions in your API provider console.",
+                        ),
+                    );
+                    continue;
+                }
+            }
+
+            // Guard 6: For Generic API Key, skip if it's just documentation text
+            if chk.name == "Generic API Key" && is_frontend_page {
+                let context_start = m.start().saturating_sub(50);
+                let context_end = (m.end() + 50).min(resp.body.len());
+                let context = &resp.body[context_start..context_end];
+                let context_lower = context.to_ascii_lowercase();
+                
+                // Skip if it looks like documentation/placeholder
+                if context_lower.contains("example") 
+                    || context_lower.contains("your_api_key")
+                    || context_lower.contains("placeholder")
+                    || context_lower.contains("documentation") {
+                    continue;
+                }
+            }
+
             let redacted = redact(matched);
 
             findings.push(
