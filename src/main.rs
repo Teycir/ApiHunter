@@ -135,6 +135,7 @@ async fn run(cli: Cli) -> Result<i32> {
         unauth_strip_headers: build_unauth_strip_headers(cli.unauth_strip_headers.as_deref()),
         per_host_clients: cli.per_host_clients,
         adaptive_concurrency: cli.adaptive_concurrency,
+        quiet: cli.quiet,
         toggles: ScannerToggles {
             cors: !cli.no_cors,
             csp: !cli.no_csp,
@@ -227,6 +228,7 @@ async fn run(cli: Cli) -> Result<i32> {
         Arc::clone(&http_client),
         http_client_b,
         reporter.clone(),
+        cli.quiet,
     )
     .await;
 

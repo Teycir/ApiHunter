@@ -46,6 +46,7 @@ fn test_config() -> Config {
             jwt: false,
             openapi: false,
         },
+        quiet: false,
     }
 }
 

@@ -46,6 +46,8 @@ pub struct ProgressConfig {
     pub show_rate: bool,
     /// Custom prefix for progress messages
     pub prefix: String,
+    /// Whether to show detailed messages (URLs, findings, etc.)
+    pub show_details: bool,
 }
 
 impl Default for ProgressConfig {
@@ -58,6 +60,7 @@ impl Default for ProgressConfig {
             show_eta: true,
             show_rate: true,
             prefix: String::new(),
+            show_details: true,
         }
     }
 }
@@ -167,8 +170,10 @@ impl ProgressTracker {
                 output.push_str(&format!(" | Elapsed: {}s", elapsed));
             }
 
-            if let Some(msg) = message {
-                output.push_str(&format!(" | {}", msg));
+            if self.config.show_details {
+                if let Some(msg) = message {
+                    output.push_str(&format!(" | {}", msg));
+                }
             }
 
             output.push_str("   "); // Clear any leftover characters
@@ -187,8 +192,10 @@ impl ProgressTracker {
                 output.push_str(&format!(" | Elapsed: {}s", elapsed));
             }
 
-            if let Some(msg) = message {
-                output.push_str(&format!(" | {}", msg));
+            if self.config.show_details {
+                if let Some(msg) = message {
+                    output.push_str(&format!(" | {}", msg));
+                }
             }
 
             eprintln!("{}", output);
@@ -275,8 +282,10 @@ impl ProgressHandle {
                 output.push_str(&format!(" | Elapsed: {}s", elapsed));
             }
 
-            if let Some(msg) = message {
-                output.push_str(&format!(" | {}", msg));
+            if self.config.show_details {
+                if let Some(msg) = message {
+                    output.push_str(&format!(" | {}", msg));
+                }
             }
 
             output.push_str("   ");
@@ -294,8 +303,10 @@ impl ProgressHandle {
                 output.push_str(&format!(" | Elapsed: {}s", elapsed));
             }
 
-            if let Some(msg) = message {
-                output.push_str(&format!(" | {}", msg));
+            if self.config.show_details {
+                if let Some(msg) = message {
+                    output.push_str(&format!(" | {}", msg));
+                }
             }
 
             eprintln!("{}", output);

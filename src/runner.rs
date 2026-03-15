@@ -61,6 +61,7 @@ pub async fn run(
     http_client: Arc<HttpClient>,
     http_client_b: Option<Arc<HttpClient>>,
     reporter: Arc<Reporter>,
+    _quiet: bool,
 ) -> RunResult {
     let start = Instant::now();
 
@@ -103,12 +104,13 @@ pub async fn run(
     // Progress tracking
     let tracker = Arc::new(ProgressTracker::with_config(ProgressConfig {
         total: scanned,
-        tty_update_frequency: 5,
+        tty_update_frequency: 1,
         non_tty_update_frequency: 1,
-        show_elapsed: true,
-        show_eta: true,
-        show_rate: true,
-        prefix: "Scanning: ".to_string(),
+        show_elapsed: false,
+        show_eta: false,
+        show_rate: false,
+        prefix: "".to_string(),
+        show_details: false,
     }));
 
     // mpsc channels — workers send back results; main task collects
@@ -118,9 +120,10 @@ pub async fn run(
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
 
-    info!(
-        "Scan started at: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    eprintln!(
+        "Scan started: {} | Targets: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        scanned
     );
 
     for url in work_list {
@@ -153,7 +156,7 @@ pub async fn run(
             )
             .await;
 
-            // Build summary message
+            // Build summary message for detailed logging
             let mut msg = url.clone();
             if !findings.is_empty() {
                 let critical = findings
@@ -186,6 +189,7 @@ pub async fn run(
                 msg.push_str(" | ✅ Clean");
             }
 
+            // Progress increment (details suppressed by show_details=false)
             progress_handle.increment(Some(&msg)).await;
         });
     }
@@ -232,9 +236,12 @@ pub async fn run(
         elapsed_ms = elapsed.as_millis(),
         "Run complete"
     );
-    info!(
-        "Scan finished at: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    eprintln!(
+        "Scan finished: {} | Findings: {} | Scanned: {} | Elapsed: {:.2}s",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        findings.len(),
+        scanned,
+        elapsed.as_secs_f64()
     );
 
     RunResult {

@@ -56,6 +56,7 @@ fn test_config() -> Config {
             jwt: true,
             openapi: true,
         },
+        quiet: false,
     }
 }
 
@@ -102,7 +103,7 @@ async fn cors_wildcard_origin_detected() {
     let client = Arc::new(HttpClient::new(&config).unwrap());
     let reporter = test_reporter();
 
-    let result = runner::run(vec![server.uri()], config, client, None, reporter).await;
+    let result = runner::run(vec![server.uri()], config, client, None, reporter, false).await;
 
     let cors_findings: Vec<_> = result
         .findings
@@ -139,7 +140,15 @@ async fn cors_no_headers_no_finding() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     let cors_findings: Vec<_> = result
         .findings
@@ -177,7 +186,15 @@ async fn csp_missing_header_detected() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     let has_csp_missing = result
         .findings
@@ -212,7 +229,15 @@ async fn csp_unsafe_inline_detected() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     let has_unsafe = result
         .findings
@@ -253,7 +278,15 @@ async fn api_security_spa_catchall_suppresses_false_positive() {
     let config = Arc::new(cfg);
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     // SPA catch-all guard should suppress all debug-endpoint false positives.
     let debug_findings: Vec<_> = result
@@ -316,7 +349,15 @@ async fn api_security_real_env_file_detected() {
     let config = Arc::new(cfg);
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     let env_finding = result.findings.iter().any(|f| f.check.contains(".env"));
 
@@ -340,6 +381,7 @@ async fn runner_handles_connection_error_gracefully() {
         client,
         None,
         test_reporter(),
+        false,
     )
     .await;
 
@@ -375,7 +417,15 @@ async fn runner_aggregates_findings_across_scanners() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     let scanners_reported: std::collections::HashSet<&str> =
         result.findings.iter().map(|f| f.scanner.as_str()).collect();
@@ -407,7 +457,15 @@ async fn runner_returns_scanned_count() {
     let config = Arc::new(test_config());
     let client = Arc::new(HttpClient::new(&config).unwrap());
 
-    let result = runner::run(vec![server.uri()], config, client, None, test_reporter()).await;
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
 
     assert_eq!(result.scanned, 1, "should report 1 URL scanned");
 }

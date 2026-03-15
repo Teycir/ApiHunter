@@ -62,6 +62,9 @@ pub struct Config {
 
     /// Enable adaptive concurrency.
     pub adaptive_concurrency: bool,
+
+    /// Suppress verbose progress output.
+    pub quiet: bool,
 }
 
 /// Individual scanner toggle flags.
