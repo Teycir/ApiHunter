@@ -25,7 +25,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth, auto_report,
-    cli::{default_user_agents, load_urls, Cli, CliFormat},
+    cli::{default_user_agents, load_urls, Cli},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
@@ -65,19 +65,14 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
-        info!(
-            "Pre-filtering inaccessible URLs (timeout={}s)...",
-            cli.filter_timeout
-        );
+        eprintln!("Filtering {} URLs...", raw_urls.len());
         let (accessible, inaccessible) =
             filter_accessible_urls(&raw_urls, cli.filter_timeout).await;
-        if !inaccessible.is_empty() {
-            info!(
-                "Filtered out {} inaccessible URL(s), {} remaining.",
-                inaccessible.len(),
-                accessible.len()
-            );
-        }
+        eprintln!(
+            "Filtering complete: {} accessible, {} inaccessible",
+            accessible.len(),
+            inaccessible.len()
+        );
         (accessible, inaccessible)
     } else {
         (raw_urls, Vec::new())
@@ -95,7 +90,7 @@ async fn run(cli: Cli) -> Result<i32> {
     }
 
     print_banner(&cli, filtered_urls.len());
-    info!("Loaded {} URL(s) for scanning.", filtered_urls.len());
+    eprintln!("Starting discovery phase...");
 
     // ── 2. Build Config ──────────────────────────────────────────────────────
     let max_endpoints = if cli.max_endpoints == 0 {
@@ -221,7 +216,6 @@ async fn run(cli: Cli) -> Result<i32> {
     }
 
     // ── 5. Run scanner ────────────────────────────────────────────────────────
-    info!("Starting scan with concurrency={}.", config.concurrency);
     let run_result = runner::run(
         filtered_urls,
         config.clone(),
@@ -265,20 +259,19 @@ async fn run(cli: Cli) -> Result<i32> {
         None => "Info".to_string(),
     };
     if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc, &min_sev_str) {
-        warn!("Failed to auto-save report: {e}");
+        eprintln!("Warning: Failed to auto-save report: {e}");
     }
 
     if config.session_file.is_some() {
         if let Err(e) = http_client.save_session().await {
-            warn!("Failed to save session file: {e}");
+            eprintln!("Warning: Failed to save session file: {e}");
         }
     }
 
-    let elapsed = start.elapsed();
-    info!("Scan finished in {:.2}s.", elapsed.as_secs_f64());
+    let _elapsed = start.elapsed();
 
     // Display inaccessible URLs if any were filtered
-    if !inaccessible_urls.is_empty() && !cli.quiet {
+    if !inaccessible_urls.is_empty() {
         eprintln!("\n┌──────────────────────────────┐");
         eprintln!("│  INACCESSIBLE URLs ({:>2})  │", inaccessible_urls.len());
         eprintln!("├──────────────────────────────┤");
@@ -293,8 +286,8 @@ async fn run(cli: Cli) -> Result<i32> {
     let code = reports::exit_code(&summary, &fail_on);
 
     if code & 1 != 0 {
-        warn!(
-            "Findings at or above '{}' threshold detected (exit 1).",
+        eprintln!(
+            "Warning: Findings at or above '{}' threshold detected (exit 1).",
             fail_on
         );
     }
@@ -304,8 +297,8 @@ async fn run(cli: Cli) -> Result<i32> {
 
 // ── Tracing initialisation ────────────────────────────────────────────────────
 
-fn init_tracing(quiet: bool) {
-    let default_level = if quiet { "warn" } else { "info" };
+fn init_tracing(_quiet: bool) {
+    let default_level = "error";
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
@@ -318,31 +311,9 @@ fn init_tracing(quiet: bool) {
         .init();
 }
 
-fn print_banner(cli: &Cli, url_count: usize) {
-    if cli.quiet {
-        return;
-    }
-
+fn print_banner(_cli: &Cli, url_count: usize) {
     let version = env!("CARGO_PKG_VERSION");
-    let format = match cli.format {
-        CliFormat::Pretty => "pretty",
-        CliFormat::Ndjson => "ndjson",
-        CliFormat::Sarif => "sarif",
-    };
-    let output = cli
-        .output
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "stdout".to_string());
-
-    eprintln!("     _    ____  _   _            _           ");
-    eprintln!("    / \\\\  |  _ \\\\| | | | ___  _ __| |_ ___ _ __");
-    eprintln!("   / _ \\\\ | |_) | |_| |/ _ \\\\| '__| __/ _ \\\\ '__|");
-    eprintln!("  / ___ \\\\|  __/|  _  | (_) | |  | ||  __/ |   ");
-    eprintln!(" /_/   \\\\_\\\\_|   |_| |_|\\\\___/|_|   \\\\__\\\\___|_|   ");
-    eprintln!("         ApiHunter v{version}  |  targets: {url_count}");
-    eprintln!("         format: {format}  |  output: {output}");
-    eprintln!();
+    eprintln!("ApiHunter v{} | Targets: {}", version, url_count);
 }
 
 fn build_default_headers(
@@ -411,9 +382,6 @@ async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<Stri
         .build()
         .expect("Failed to build reqwest client");
 
-    let total = urls.len();
-    let mut checked = 0;
-
     let results: Vec<(String, bool)> = stream::iter(urls)
         .map(|url| {
             let client = client.clone();
@@ -432,12 +400,6 @@ async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<Stri
             }
         })
         .buffer_unordered(20)
-        .inspect(|_| {
-            checked += 1;
-            if checked % 10 == 0 || checked == total {
-                info!("Accessibility check: {}/{} URLs tested", checked, total);
-            }
-        })
         .collect()
         .await;
 

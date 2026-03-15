@@ -18,7 +18,7 @@ use tokio::{
     sync::{mpsc, Semaphore},
     task::JoinSet,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 use url::Url;
 
 use crate::{
@@ -67,17 +67,14 @@ pub async fn run(
 
     // ── 1. Normalise + deduplicate ────────────────────────────────────────────
     let (unique_seeds, skipped_dedup) = dedup(urls);
-    info!(
-        total = unique_seeds.len() + skipped_dedup,
-        unique = unique_seeds.len(),
-        skipped = skipped_dedup,
-        "URL list normalised"
-    );
 
     // ── 2. Discovery phase with per-site cap ────────────────────────────────
     let (discovered, mut discovery_errors) =
         run_discovery_per_site(&unique_seeds, &config, &http_client).await;
-    info!(discovered = discovered.len(), "Discovery complete");
+    eprintln!(
+        "Discovery complete: {} total endpoints",
+        discovered.len() + unique_seeds.len()
+    );
 
     let mut merged = unique_seeds;
     merged.extend(discovered);
@@ -89,7 +86,6 @@ pub async fn run(
     let skipped = skipped_dedup + skipped_merged + skipped_cap;
 
     if scanned == 0 {
-        warn!("No URLs to scan — returning empty result");
         return RunResult {
             elapsed: start.elapsed(),
             skipped,
@@ -228,14 +224,6 @@ pub async fn run(
     sort_findings(&mut findings);
 
     let elapsed = start.elapsed();
-    info!(
-        findings = findings.len(),
-        errors = errors.len(),
-        scanned,
-        skipped,
-        elapsed_ms = elapsed.as_millis(),
-        "Run complete"
-    );
     eprintln!(
         "Scan finished: {} | Findings: {} | Scanned: {} | Elapsed: {:.2}s",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -343,9 +331,7 @@ fn build_scanners(
     }
 
     if scanners.is_empty() {
-        warn!("All scanners are disabled — no findings will be produced");
-    } else {
-        info!(enabled = scanners.len(), "Scanners loaded");
+        eprintln!("Warning: All scanners disabled");
     }
 
     scanners
@@ -410,14 +396,7 @@ async fn run_discovery_per_site(
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
 
-    let total_seeds = seeds.len();
-    for (idx, seed) in seeds.iter().enumerate() {
-        info!(
-            "[Discovery] Processing seed {}/{}: {}",
-            idx + 1,
-            total_seeds,
-            seed
-        );
+    for seed in seeds.iter() {
         let parsed = match Url::parse(seed) {
             Ok(u) => u,
             Err(_) => continue,
