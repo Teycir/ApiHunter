@@ -242,6 +242,23 @@ fn is_json_body(body: &str) -> bool {
 
     match serde_json::from_str::<serde_json::Value>(trimmed) {
         Ok(v) => {
+            // Check if this is an array with error objects
+            if let Some(arr) = v.as_array() {
+                if let Some(first) = arr.first() {
+                    if let Some(obj) = first.as_object() {
+                        // Pattern: [{"Status":"404","Message":"..."}]
+                        if let Some(status) = obj.get("Status").and_then(|s| s.as_str()) {
+                            if status == "404"
+                                || status == "403"
+                                || status.parse::<u16>().map(|c| c >= 400).unwrap_or(false)
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Check if this is just an error response
             if let Some(obj) = v.as_object() {
                 // Common error response patterns
@@ -348,8 +365,65 @@ fn is_xml_config(body: &str) -> bool {
     trimmed.starts_with("<?xml") || trimmed.starts_with("<configuration")
 }
 
+/// Returns `true` when JSON body looks like actual config data (not just any JSON).
+/// Rejects Android assetlinks, OAuth metadata, and other non-config JSON.
+fn is_config_json(body: &str) -> bool {
+    let trimmed = body.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return false;
+    }
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(v) => {
+            // Reject Android assetlinks arrays
+            if let Some(arr) = v.as_array() {
+                if let Some(first) = arr.first().and_then(|f| f.as_object()) {
+                    if first.contains_key("relation") || first.contains_key("target") {
+                        return false;
+                    }
+                    if let Some(status) = first.get("Status").and_then(|s| s.as_str()) {
+                        if status.parse::<u16>().map(|c| c >= 400).unwrap_or(false) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if let Some(obj) = v.as_object() {
+                // Must contain config-like keys
+                let config_keys = [
+                    "database",
+                    "host",
+                    "port",
+                    "password",
+                    "secret",
+                    "key",
+                    "token",
+                    "url",
+                    "endpoint",
+                    "debug",
+                    "environment",
+                    "version",
+                    "config",
+                    "setting",
+                ];
+                let has_config = obj.keys().any(|k| {
+                    let kl = k.to_ascii_lowercase();
+                    config_keys.iter().any(|ck| kl.contains(ck))
+                });
+                // Reject pure error responses
+                let has_error = obj.contains_key("errors")
+                    && obj.get("data").map(|d| d.is_null()).unwrap_or(false);
+                if has_error {
+                    return false;
+                }
+                return has_config;
+            }
+            false
+        }
+        Err(_) => false,
+    }
+}
+
 /// Returns `true` when the body does NOT look like an HTML document.
-/// Used for paths where just a 200 + non-HTML is suspicious enough.
 fn any_non_html(body: &str) -> bool {
     let trimmed = body.trim().to_ascii_lowercase();
     !trimmed.starts_with("<!doctype")
@@ -393,7 +467,7 @@ static DEBUG_ENDPOINTS: &[DebugEndpoint] = &[
     DebugEndpoint {
         path: "/config.json",
         expected_ct: &["application/json"],
-        body_validators: &[is_json_body],
+        body_validators: &[is_config_json],
     },
     DebugEndpoint {
         path: "/config.yaml",
@@ -537,7 +611,7 @@ static DEBUG_ENDPOINTS: &[DebugEndpoint] = &[
     DebugEndpoint {
         path: "/admin/config",
         expected_ct: &["application/json"],
-        body_validators: &[is_json_body],
+        body_validators: &[is_config_json],
     },
 ];
 
@@ -701,57 +775,53 @@ async fn check_secrets_in_response(
         if let Some(m) = chk.re.find(&resp.body) {
             let matched = m.as_str();
 
-            // Guard 5: For Google API keys, check if they're in frontend HTML
-            // Frontend keys are typically domain-restricted and less critical
+            // Guard 5: For Google API keys found in frontend HTML pages,
+            // always downgrade to LOW — Google Maps/frontend keys are domain-restricted
+            // and never represent backend secret exposure.
             if chk.name == "Google API Key" && is_frontend_page {
-                // Check if key is in <script> tag or meta tag (frontend usage)
-                let context_start = m.start().saturating_sub(100);
-                let context_end = (m.end() + 100).min(resp.body.len());
-                let context = &resp.body[context_start..context_end];
-                let context_lower = context.to_ascii_lowercase();
-
-                if context_lower.contains("<script")
-                    || context_lower.contains("<meta")
-                    || context_lower.contains("data-")
-                {
-                    // Frontend key - downgrade severity
-                    findings.push(
-                        Finding::new(
-                            url,
-                            format!("api_security/secret-in-response/{}", slug(chk.name)),
-                            format!("Possible {} in frontend", chk.name),
-                            Severity::Low,
-                            format!("Possible {} found in frontend HTML. Frontend API keys are typically domain-restricted.", chk.name),
-                            "api_security",
-                        )
-                        .with_evidence(format!(
-                            "Pattern: {}\nMatch (redacted): {}\nContext: Frontend HTML\nURL: {url}",
-                            chk.name,
-                            redact(matched)
-                        ))
-                        .with_remediation(
-                            "Verify this key has proper domain restrictions in your API provider console.",
-                        ),
-                    );
-                    continue;
-                }
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("api_security/secret-in-response/{}", slug(chk.name)),
+                        format!("Possible {} in frontend", chk.name),
+                        Severity::Low,
+                        format!("Possible {} found in frontend HTML. Frontend API keys are typically domain-restricted.", chk.name),
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Pattern: {}\nMatch (redacted): {}\nContext: Frontend HTML\nURL: {url}",
+                        chk.name,
+                        redact(matched)
+                    ))
+                    .with_remediation(
+                        "Verify this key has proper domain restrictions in your API provider console.",
+                    ),
+                );
+                continue;
             }
 
-            // Guard 6: For Generic API Key, skip if it's just documentation text
+            // Guard 6: For Generic API Key in frontend HTML, always downgrade to LOW
+            // Frontend pages embed Firebase/analytics keys that are not backend secrets
             if chk.name == "Generic API Key" && is_frontend_page {
-                let context_start = m.start().saturating_sub(50);
-                let context_end = (m.end() + 50).min(resp.body.len());
-                let context = &resp.body[context_start..context_end];
-                let context_lower = context.to_ascii_lowercase();
-
-                // Skip if it looks like documentation/placeholder
-                if context_lower.contains("example")
-                    || context_lower.contains("your_api_key")
-                    || context_lower.contains("placeholder")
-                    || context_lower.contains("documentation")
-                {
-                    continue;
-                }
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("api_security/secret-in-response/{}", slug(chk.name)),
+                        format!("Possible {} in frontend", chk.name),
+                        Severity::Low,
+                        format!("Possible {} found in frontend HTML. Likely a client-side key.", chk.name),
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Pattern: {}\nMatch (redacted): {}\nContext: Frontend HTML\nURL: {url}",
+                        chk.name,
+                        redact(matched)
+                    ))
+                    .with_remediation(
+                        "Verify this key is intended for client-side use and has appropriate restrictions.",
+                    ),
+                );
+                continue;
             }
 
             let redacted = redact(matched);
