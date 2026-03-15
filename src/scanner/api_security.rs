@@ -233,10 +233,46 @@ fn is_dotenv(body: &str) -> bool {
 }
 
 /// Returns `true` when the body parses as JSON and is not wrapped in HTML.
+/// Also checks that it's not just an error response.
 fn is_json_body(body: &str) -> bool {
     let trimmed = body.trim();
-    (trimmed.starts_with('{') || trimmed.starts_with('['))
-        && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return false;
+    }
+
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(v) => {
+            // Check if this is just an error response
+            if let Some(obj) = v.as_object() {
+                // Common error response patterns
+                let has_error = obj.contains_key("error")
+                    || obj.contains_key("errors")
+                    || obj.contains_key("message")
+                        && obj
+                            .get("message")
+                            .and_then(|m| m.as_str())
+                            .map(|s| s.to_lowercase().contains("error"))
+                            .unwrap_or(false);
+
+                let has_status = obj
+                    .get("status")
+                    .and_then(|s| s.as_u64())
+                    .map(|code| code >= 400)
+                    .unwrap_or(false)
+                    || obj
+                        .get("statusCode")
+                        .and_then(|s| s.as_u64())
+                        .map(|code| code >= 400)
+                        .unwrap_or(false);
+                // If it's just an error response with no other meaningful data, reject it
+                if has_error && (has_status || obj.len() <= 3) {
+                    return false;
+                }
+            }
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 /// Returns `true` when the body looks like YAML config (has key: value lines).

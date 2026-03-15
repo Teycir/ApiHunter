@@ -17,6 +17,42 @@ diagnostics to **stderr**.
 
 ---
 
+## Scan scripts
+
+Helper scripts live in `ScanScripts/` and accept either a URL file or `--stdin`.
+
+```bash
+./ScanScripts/defaultscan.sh ./targets/targets.txt
+cat ./targets/targets.txt | ./ScanScripts/defaultscan.sh --stdin
+```
+
+```bash
+./ScanScripts/quickscan.sh ./targets/targets.txt
+./ScanScripts/deepscan.sh ./targets/targets.txt
+```
+
+```bash
+./ScanScripts/baselinescan.sh ./targets/targets.txt
+./ScanScripts/diffscan.sh ./targets/targets.txt baseline.ndjson
+```
+
+```bash
+./ScanScripts/inaccessiblescan.sh ./targets/inaccessible.txt
+./ScanScripts/authscan.sh ./targets/targets.txt --auth-flow ./flows/auth.json
+```
+
+```bash
+./ScanScripts/sarifscan.sh ./targets/targets.txt
+./ScanScripts/scan-and-report.sh ./targets/targets.txt
+```
+
+```bash
+./ScanScripts/split-by-host.sh ./targets/targets.txt --out-dir split-targets
+./ScanScripts/split-by-host.sh ./targets/targets.txt --scan-cmd ./ScanScripts/quickscan.sh --jobs 4
+```
+
+---
+
 ## Save results to a file
 
 ```bash
@@ -277,9 +313,9 @@ gh code-scanning upload-sarif results.sarif \
 **Problem:** Many endpoints fail with timeout errors.
 
 **Solution:**
-- Increase `--timeout-secs` (default 30)
+- Increase `--timeout-secs` (default 8)
 - Decrease `--concurrency` (default 20)
-- Add `--delay-ms` to slow down per-host requests
+- Add `--delay-ms` to slow down per-host requests (default 150)
 
 ```bash
 ./target/release/api-scanner \

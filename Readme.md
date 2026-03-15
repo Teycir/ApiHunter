@@ -52,6 +52,21 @@ cat ./targets/targets.txt | ./target/release/api-scanner --stdin --min-severity 
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
 
+## Scan Scripts
+
+Helper scripts live in `ScanScripts/`:
+
+- `ScanScripts/defaultscan.sh` — run with CLI defaults.
+- `ScanScripts/deepscan.sh` — deeper scan profile (active checks, retries, unlimited endpoints).
+- `ScanScripts/quickscan.sh` — fast, low-impact baseline.
+- `ScanScripts/baselinescan.sh` — generate `baseline.ndjson` for diffing.
+- `ScanScripts/diffscan.sh` — run against a baseline and output only new findings.
+- `ScanScripts/inaccessiblescan.sh` — re-scan previously inaccessible URLs with slower settings.
+- `ScanScripts/authscan.sh` — scan using `--auth-flow` (supports IDOR checks).
+- `ScanScripts/sarifscan.sh` — produce SARIF by default.
+- `ScanScripts/split-by-host.sh` — split URL list per host (optional parallel scans).
+- `ScanScripts/scan-and-report.sh` — run a scan and print the latest auto-saved report.
+
 ## Documentation
 
 Complete documentation is available in `docs/`. Start with:
