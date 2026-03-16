@@ -20,7 +20,33 @@ impl CorsScanner {
     }
 }
 
-static PROBE_ORIGINS: &[&str] = &["https://evil.com", "null", "https://attacker.example.com"];
+static REGEX_BYPASS_SUFFIXES: &[&str] = &[".evil.com", "%60.evil.com"];
+static REGEX_BYPASS_PREFIXES: &[&str] = &["evil", "attacker"];
+
+fn extract_domain_from_url(url: &str) -> Option<String> {
+    url.split("://")
+        .nth(1)?
+        .split('/')
+        .next()
+        .map(|s| s.to_string())
+}
+
+fn generate_probe_origins(url: &str) -> Vec<String> {
+    let mut origins = vec!["null".to_string(), "https://evil.com".to_string()];
+
+    if let Some(domain) = extract_domain_from_url(url) {
+        let scheme = if url.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
+        origins.push(format!("{}://{}", scheme, domain));
+        origins.push(format!("{}://{}.evil.com", scheme, domain));
+        origins.push(format!("{}://evil{}", scheme, domain));
+    }
+
+    origins
+}
 
 #[async_trait]
 impl Scanner for CorsScanner {
@@ -33,7 +59,19 @@ impl Scanner for CorsScanner {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
 
-        for origin in PROBE_ORIGINS {
+        let probe_origins = generate_probe_origins(url);
+        let target_origin = extract_domain_from_url(url)
+            .map(|domain| {
+                let scheme = if url.starts_with("https://") {
+                    "https"
+                } else {
+                    "http"
+                };
+                format!("{}://{}", scheme, domain)
+            })
+            .unwrap_or_default();
+
+        for origin in &probe_origins {
             let extra = [
                 ("Origin".to_string(), origin.to_string()),
                 (
@@ -53,27 +91,120 @@ impl Scanner for CorsScanner {
             let acao = resp.header("access-control-allow-origin");
             let acac = resp.header("access-control-allow-credentials");
 
-            // ── Wildcard ──────────────────────────────────────────────────────
-            if acao == Some("*") {
+            // ── Wildcard with credentials (browser blocks, skip) ──────────────
+            if acao == Some("*") && acac == Some("true") {
+                continue;
+            }
+
+            // ── Wildcard without credentials (low severity) ────────────────────
+            if acao == Some("*") && acac != Some("true") {
                 findings.push(
                     Finding::new(
                         url,
-                        "cors/wildcard",
-                        "Wildcard CORS",
-                        Severity::Medium,
-                        "ACAO header is '*', allowing any origin.",
+                        "cors/wildcard-no-credentials",
+                        "Wildcard CORS without credentials",
+                        Severity::Low,
+                        "ACAO header is '*' but credentials not allowed. Only exploitable if sensitive data exposed without auth.",
                         "cors",
                     )
-                    .with_evidence("Access-Control-Allow-Origin: *")
+                    .with_evidence(format!(
+                        "Access-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: {}",
+                        acac.unwrap_or("-")
+                    ))
                     .with_remediation(
-                        "Set Access-Control-Allow-Origin to specific trusted origins; avoid '*' on sensitive endpoints.",
+                        "If endpoint handles sensitive data, restrict CORS to specific trusted origins.",
                     ),
                 );
                 break;
             }
 
+            // ── Test regex bypasses if origin reflected ───────────────────────
+            if let Some(reflected) = acao {
+                if reflected == origin.as_str() && origin != "null"
+                    && (origin.starts_with("http://") || origin.starts_with("https://"))
+                {
+                    for suffix in REGEX_BYPASS_SUFFIXES {
+                            let bypass = format!("{}{}", reflected, suffix);
+                            let bypass_extra = [
+                                ("Origin".to_string(), bypass.clone()),
+                                (
+                                    "Access-Control-Request-Method".to_string(),
+                                    "GET".to_string(),
+                                ),
+                            ];
+                            if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
+                                if r.header("access-control-allow-origin") == Some(&bypass)
+                                    && r.header("access-control-allow-credentials") == Some("true")
+                                {
+                                    findings.push(
+                                        Finding::new(
+                                            url,
+                                            "cors/regex-bypass-suffix",
+                                            "CORS regex bypass (suffix)",
+                                            Severity::High,
+                                            format!("Origin validation uses weak regex — attacker can bypass by appending: {}", bypass),
+                                            "cors",
+                                        )
+                                        .with_evidence(format!(
+                                            "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
+                                            bypass, bypass
+                                        ))
+                                        .with_remediation(
+                                            "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
+                                        ),
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+
+                        let (scheme, rest) = match reflected.split_once("://") {
+                            Some((s, r)) => (s, r),
+                            None => continue,
+                        };
+                        for prefix in REGEX_BYPASS_PREFIXES {
+                            let bypass = format!("{}://{}{}", scheme, prefix, rest);
+                            let bypass_extra = [
+                                ("Origin".to_string(), bypass.clone()),
+                                (
+                                    "Access-Control-Request-Method".to_string(),
+                                    "GET".to_string(),
+                                ),
+                            ];
+                            if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
+                                if r.header("access-control-allow-origin") == Some(&bypass)
+                                    && r.header("access-control-allow-credentials") == Some("true")
+                                {
+                                    findings.push(
+                                        Finding::new(
+                                            url,
+                                            "cors/regex-bypass-prefix",
+                                            "CORS regex bypass (prefix)",
+                                            Severity::High,
+                                            format!("Origin validation uses weak regex — attacker can bypass by prepending: {}", bypass),
+                                            "cors",
+                                        )
+                                        .with_evidence(format!(
+                                            "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
+                                            bypass, bypass
+                                        ))
+                                        .with_remediation(
+                                            "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
+                                        ),
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                }
+            }
+
             // ── Origin reflected ──────────────────────────────────────────────
-            if acao == Some(origin) {
+            if acao == Some(origin.as_str()) {
+                // Skip same-origin echoes; they are not exploitable via CORS.
+                if !target_origin.is_empty() && *origin == target_origin {
+                    continue;
+                }
                 if *origin == "null" {
                     findings.push(
                         Finding::new(

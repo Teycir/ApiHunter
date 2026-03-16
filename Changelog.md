@@ -15,10 +15,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI integration tests: exit-code bitmask, `--quiet`, `--summary`,
   `--output-path` vs stdout, `--min-severity` filtering
 - NDJSON reporter: concurrent writes, idempotent `finalize`, atomic lines
+- CORS: Dynamic origin generation based on target URL domain
+- CORS: Regex bypass testing (suffix/prefix attacks) when origins are reflected
 
 ### Changed
 - Runner now deduplicates and canonicalizes endpoints before dispatch
 - Scanner errors captured as `CapturedError`; panics recovered via `JoinSet`
+- CORS: Removed hardcoded `PROBE_ORIGINS` array in favor of dynamic generation
+- CORS: Skip `Access-Control-Allow-Origin: *` with credentials (browsers block it)
+- CORS: Downgrade `Access-Control-Allow-Origin: *` without credentials to Low severity
+- CORS: Only flag High severity when regex bypass succeeds with credentials enabled
 
 ---
 

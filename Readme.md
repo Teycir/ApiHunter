@@ -285,8 +285,24 @@ A:
 - **Active** (`--active-checks`): Send crafted requests to test behavior (IDOR, mass-assignment, rate-limiting)
 
 **Q: How should I interpret `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`?**  
-A: Browsers block credentialed requests in this configuration, so it is not exploitable with credentials. Treat it as low-risk unless the endpoint exposes sensitive data without credentials. Prioritize origin reflection or regex weaknesses because those can enable credentialed CORS exploitation.
-Common test origins: `https://allowed.com.evil.com`, `https://allowed.com@evil.com`, `https://evil.com?allowed.com`, `https://evil.com#allowed.com`, `https://allowed.com.evil`, `https://allowed.com..evil.com`.
+A: Browsers block credentialed requests in this configuration, so it is not exploitable with credentials. ApiHunter automatically skips this check and only flags `Access-Control-Allow-Origin: *` without credentials as Low severity. Prioritize origin reflection or regex weaknesses because those can enable credentialed CORS exploitation.
+Common test origins (current scanner): `https://<target>`, `https://<target>.evil.com`, `https://evil<target>`, `https://attacker<target>`, and suffix variants like `https://<target>%60.evil.com`.
+
+**Q: How does CORS testing work?**  
+A: ApiHunter uses dynamic origin generation based on the target URL:
+1. Extracts the domain from the target URL (e.g., `api.company.com` from `https://api.company.com/endpoint`)
+2. Tests with multiple origins:
+   - `null` origin (file:// context)
+   - Generic attacker origin (`https://evil.com`)
+   - Target origin matching the URL (`https://api.company.com`)
+   - Suffix bypass attempts (`https://api.company.com.evil.com`)
+   - Prefix bypass attempts (`https://evilapi.company.com`, `https://attackerapi.company.com`)
+3. When origin is reflected (excluding same-origin echoes), tests for regex bypasses:
+   - Suffix attacks: `https://api.company.com.evil.com`, `https://api.company.com%60.evil.com`
+   - Prefix attacks: `https://evilapi.company.com`, `https://attackerapi.company.com`
+4. Only flags High severity when bypass succeeds with `Access-Control-Allow-Credentials: true`
+
+This approach discovers actual whitelisted domains and tests for common regex implementation flaws.
 
 **Q: How does IDOR/BOLA detection work?**  
 A: Three-tier approach:

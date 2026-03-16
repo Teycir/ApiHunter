@@ -12,16 +12,19 @@
 //! ## Usage
 //!
 //! ```rust
-//! use progress_tracker::ProgressTracker;
+//! use api_scanner::progress_tracker::ProgressTracker;
 //!
-//! let tracker = ProgressTracker::new(100); // 100 total items
+//! #[tokio::main]
+//! async fn main() {
+//!     let tracker = ProgressTracker::new(100); // 100 total items
 //!
-//! for i in 0..100 {
-//!     // Do work...
-//!     tracker.increment("Processing item");
+//!     for _ in 0..100 {
+//!         // Do work...
+//!         tracker.increment(Some("Processing item")).await;
+//!     }
+//!
+//!     tracker.finish().await;
 //! }
-//!
-//! tracker.finish();
 //! ```
 
 use std::io::{IsTerminal, Write};
