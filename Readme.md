@@ -284,6 +284,10 @@ A:
 - **Passive** (default): Analyze responses without modifying requests (CORS, CSP, secrets, headers)
 - **Active** (`--active-checks`): Send crafted requests to test behavior (IDOR, mass-assignment, rate-limiting)
 
+**Q: How should I interpret `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`?**  
+A: Browsers block credentialed requests in this configuration, so it is not exploitable with credentials. Treat it as low-risk unless the endpoint exposes sensitive data without credentials. Prioritize origin reflection or regex weaknesses because those can enable credentialed CORS exploitation.
+Common test origins: `https://allowed.com.evil.com`, `https://allowed.com@evil.com`, `https://evil.com?allowed.com`, `https://evil.com#allowed.com`, `https://allowed.com.evil`, `https://allowed.com..evil.com`.
+
 **Q: How does IDOR/BOLA detection work?**  
 A: Three-tier approach:
 1. **Unauthenticated**: Fetch the URL without credentials — if it returns the same data, auth isn't enforced
