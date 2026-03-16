@@ -120,23 +120,24 @@ impl Scanner for CorsScanner {
 
             // ── Test regex bypasses if origin reflected ───────────────────────
             if let Some(reflected) = acao {
-                if reflected == origin.as_str() && origin != "null"
+                if reflected == origin.as_str()
+                    && origin != "null"
                     && (origin.starts_with("http://") || origin.starts_with("https://"))
                 {
                     for suffix in REGEX_BYPASS_SUFFIXES {
-                            let bypass = format!("{}{}", reflected, suffix);
-                            let bypass_extra = [
-                                ("Origin".to_string(), bypass.clone()),
-                                (
-                                    "Access-Control-Request-Method".to_string(),
-                                    "GET".to_string(),
-                                ),
-                            ];
-                            if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
-                                if r.header("access-control-allow-origin") == Some(&bypass)
-                                    && r.header("access-control-allow-credentials") == Some("true")
-                                {
-                                    findings.push(
+                        let bypass = format!("{}{}", reflected, suffix);
+                        let bypass_extra = [
+                            ("Origin".to_string(), bypass.clone()),
+                            (
+                                "Access-Control-Request-Method".to_string(),
+                                "GET".to_string(),
+                            ),
+                        ];
+                        if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
+                            if r.header("access-control-allow-origin") == Some(&bypass)
+                                && r.header("access-control-allow-credentials") == Some("true")
+                            {
+                                findings.push(
                                         Finding::new(
                                             url,
                                             "cors/regex-bypass-suffix",
@@ -153,29 +154,29 @@ impl Scanner for CorsScanner {
                                             "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
                                         ),
                                     );
-                                    break;
-                                }
+                                break;
                             }
                         }
+                    }
 
-                        let (scheme, rest) = match reflected.split_once("://") {
-                            Some((s, r)) => (s, r),
-                            None => continue,
-                        };
-                        for prefix in REGEX_BYPASS_PREFIXES {
-                            let bypass = format!("{}://{}{}", scheme, prefix, rest);
-                            let bypass_extra = [
-                                ("Origin".to_string(), bypass.clone()),
-                                (
-                                    "Access-Control-Request-Method".to_string(),
-                                    "GET".to_string(),
-                                ),
-                            ];
-                            if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
-                                if r.header("access-control-allow-origin") == Some(&bypass)
-                                    && r.header("access-control-allow-credentials") == Some("true")
-                                {
-                                    findings.push(
+                    let (scheme, rest) = match reflected.split_once("://") {
+                        Some((s, r)) => (s, r),
+                        None => continue,
+                    };
+                    for prefix in REGEX_BYPASS_PREFIXES {
+                        let bypass = format!("{}://{}{}", scheme, prefix, rest);
+                        let bypass_extra = [
+                            ("Origin".to_string(), bypass.clone()),
+                            (
+                                "Access-Control-Request-Method".to_string(),
+                                "GET".to_string(),
+                            ),
+                        ];
+                        if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
+                            if r.header("access-control-allow-origin") == Some(&bypass)
+                                && r.header("access-control-allow-credentials") == Some("true")
+                            {
+                                findings.push(
                                         Finding::new(
                                             url,
                                             "cors/regex-bypass-prefix",
@@ -192,10 +193,10 @@ impl Scanner for CorsScanner {
                                             "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
                                         ),
                                     );
-                                    break;
-                                }
+                                break;
                             }
                         }
+                    }
                 }
             }
 
