@@ -47,7 +47,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 | **API-First Design** | ✅ Built for APIs | ❌ General web | ⚠️ Hybrid | ⚠️ Hybrid | ❌ Fuzzing focus |
 | **False Positive Filtering** | ✅ SPA detection, body validation, referer checks | ⚠️ Template-dependent | ⚠️ Many FPs | ✅ Good | N/A |
 | **CORS/CSP Analysis** | ✅ Deep policy parsing | ⚠️ Basic templates | ✅ Good | ✅ Good | ❌ |
-| **GraphQL Introspection** | ✅ Full schema analysis | ⚠️ Basic detection | ⚠️ Limited | ✅ Via extensions | ❌ |
+| **GraphQL Introspection** | ✅ Schema exposure + sensitive field checks | ⚠️ Basic detection | ⚠️ Limited | ✅ Via extensions | ❌ |
 | **OpenAPI/Swagger** | ✅ Security scheme analysis | ❌ | ✅ Import only | ✅ Import + scan | ❌ |
 | **JWT Analysis** | ✅ alg=none, weak secrets, expiry | ⚠️ Via templates | ⚠️ Limited | ✅ Via extensions | ❌ |
 | **IDOR/BOLA Detection** | ✅ 3-tier (unauth/range/cross-user) | ⚠️ Manual templates | ⚠️ Limited | ✅ Manual testing | ❌ |
@@ -129,7 +129,7 @@ Complete documentation is available in `docs/`. Start with:
 
 ## Installation
 
-Requires Rust ≥ 1.76 (stable).
+Requires Rust stable (tested on 1.76+).
 
 ```bash
 git clone https://github.com/Teycir/ApiHunter
@@ -245,7 +245,7 @@ A: Yes, use scanner flags: `--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-se
 
 **Q: What output formats are supported?**  
 A: Three formats:
-- `pretty` (default): Human-readable colored output
+- `pretty` (default): Pretty-printed JSON
 - `ndjson`: Newline-delimited JSON for streaming/parsing
 - `sarif`: SARIF 2.1.0 for GitHub Code Scanning, GitLab, etc.
 
@@ -297,17 +297,17 @@ A: Yes, it scans for:
 - GitHub tokens (ghp_*)
 - Slack tokens (xox*)
 - Stripe keys (sk_live_*)
-- JWT tokens, database URLs, private keys
+- Bearer tokens, database URLs, private keys
 - Generic API keys and secrets (with context-aware validation)
 
 **Q: What GraphQL checks are performed?**  
 A: 
 - Introspection enabled (schema exposure)
-- Mutation analysis (write operations)
-- Deprecated fields
-- Sensitive field names (password, token, secret)
-- Query depth/complexity limits
-- Batch query support
+- Sensitive type/field names
+- Field-name suggestions leakage
+- Query batching support
+- Alias amplification probe (DoS signal)
+- GraphiQL/Playground exposure
 
 **Q: What OpenAPI/Swagger checks are performed?**  
 A: 
@@ -315,7 +315,6 @@ A:
 - File upload endpoints
 - Deprecated operations
 - Missing security definitions
-- HTTP-only schemes (should be HTTPS)
 
 ### Authentication & Sessions
 
@@ -434,7 +433,7 @@ A: Use `--min-severity`:
 ```
 
 **Q: Can I auto-save reports?**  
-A: Yes, reports are auto-saved to `reports/` with timestamps. Use `ScanScripts/scan-and-report.sh` to automatically print the latest report after scanning.
+A: Yes, reports are auto-saved to `~/Documents/ApiHunterReports/<timestamp>/`. Use `ScanScripts/scan-and-report.sh` to automatically print the latest report after scanning.
 
 ### Contributing
 
