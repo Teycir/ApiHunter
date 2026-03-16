@@ -59,6 +59,7 @@ static RE_BEARER: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.=]{20,}").expect("Invalid BEARER regex"));
 static RE_GENERIC_SEC: Lazy<Regex> = Lazy::new(|| {
     // Keep minimum at 12 chars with quotes to catch real secrets
+    // Require at least one alphanumeric to avoid matching empty/whitespace values
     Regex::new(r#"(?i)(secret|passwd|password)\s*[:=]\s*['"]([^'"]{12,})['"]"#)
         .expect("Invalid GENERIC_SEC regex")
 });
@@ -309,10 +310,12 @@ fn is_properties_body(body: &str) -> bool {
 /// Returns `true` for Symfony profiler output.
 fn is_profiler_page(body: &str) -> bool {
     // Symfony profiler has distinctive markers
-    (body.contains("sf-toolbar") || body.contains("symfony-profiler"))
-        && (body.contains("profiler") || body.contains("_profiler"))
+    body.contains("sf-toolbar")
+        || body.contains("symfony-profiler")
         || body.contains("Symfony Profiler")
         || body.contains("data-symfony-profiler")
+        || body.contains("class=\"sf-")
+        || body.contains("id=\"sfwdt")
 }
 
 /// Returns `true` for phpinfo() output.
@@ -692,29 +695,40 @@ fn body_fingerprint(body: &str) -> (usize, u64) {
 /// Detect SPA catch-all: send a request to a random path that should not exist.
 /// If the server returns 200 with HTML (by Content-Type or body inspection),
 /// it's very likely a SPA with catch-all routing.
+///
+/// We test multiple canary paths to handle SPAs that treat paths differently
+/// based on prefix (e.g., paths starting with _ vs __ vs random).
 async fn detect_spa_catchall(base: &str, client: &HttpClient) -> Option<(usize, u64)> {
-    let canary = format!("{base}/__canary_404_check_xz9q7");
-    match client.get(&canary).await {
-        Ok(resp) if resp.status == 200 => {
-            let ct = resp
-                .headers
-                .get("content-type")
-                .map(|s| s.as_str())
-                .unwrap_or("");
-            // Detect SPA: either HTML Content-Type OR body actually contains HTML
-            let body_is_html = !any_non_html(&resp.body);
-            if is_html_content_type(ct) || body_is_html {
-                debug!(
-                    url = base,
-                    "SPA catch-all detected (canary returned 200+HTML)"
-                );
-                Some(body_fingerprint(&resp.body))
-            } else {
-                None
+    // Test multiple canary patterns to catch different SPA routing behaviors
+    let canaries = [
+        format!("{base}/__canary_404_check_xz9q7"),
+        format!("{base}/_canary_test_404"),
+        format!("{base}/xyzabc123notfound"),
+    ];
+
+    for canary in &canaries {
+        match client.get(canary).await {
+            Ok(resp) if resp.status == 200 => {
+                let ct = resp
+                    .headers
+                    .get("content-type")
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                // Detect SPA: either HTML Content-Type OR body actually contains HTML
+                let body_is_html = !any_non_html(&resp.body);
+                if is_html_content_type(ct) || body_is_html {
+                    debug!(
+                        url = base,
+                        canary = %canary,
+                        "SPA catch-all detected (canary returned 200+HTML)"
+                    );
+                    return Some(body_fingerprint(&resp.body));
+                }
             }
+            _ => continue,
         }
-        _ => None,
     }
+    None
 }
 
 // ── 1. Secrets in response body ───────────────────────────────────────────────
@@ -774,6 +788,23 @@ async fn check_secrets_in_response(
 
         if let Some(m) = chk.re.find(&resp.body) {
             let matched = m.as_str();
+
+            // Additional validation for Generic Secret to avoid false positives
+            if chk.name == "Generic Secret" {
+                // Extract the value part (after the colon/equals)
+                let value_part = matched.rsplit(&[':', '='][..]).next().unwrap_or("");
+                let cleaned = value_part.trim().trim_matches(&['"', '\''][..]);
+
+                // Skip if value is empty, whitespace-only, or looks like a placeholder
+                if cleaned.is_empty()
+                    || cleaned.chars().all(|c| c.is_whitespace())
+                    || cleaned.to_lowercase().contains("password")
+                    || cleaned.to_lowercase().contains("secret")
+                    || cleaned.len() < 12
+                {
+                    continue;
+                }
+            }
 
             // Guard 5: For Google API keys found in frontend HTML pages,
             // always downgrade to LOW — Google Maps/frontend keys are domain-restricted
@@ -1040,12 +1071,27 @@ async fn check_debug_endpoints(
         //    matches the fingerprint (regardless of Content-Type), skip it. ───
         if let Some(spa_fp) = &spa_fingerprint {
             let resp_fp = body_fingerprint(&resp.body);
-            // Same length ±10% and same prefix hash → SPA shell
+            // Same length ±20% and same prefix hash → SPA shell
+            // Increased tolerance to catch SPAs that inject slightly different content
             let len_ratio = resp_fp.0 as f64 / spa_fp.0.max(1) as f64;
-            if (0.85..=1.15).contains(&len_ratio) && resp_fp.1 == spa_fp.1 {
+            if (0.80..=1.20).contains(&len_ratio) && resp_fp.1 == spa_fp.1 {
                 debug!(
                     url = %probe,
                     "Skipping — matches SPA catch-all fingerprint"
+                );
+                continue;
+            }
+
+            // Additional check: if both are HTML and similar size, likely same SPA shell
+            let ct = resp
+                .headers
+                .get("content-type")
+                .map(|s| s.as_str())
+                .unwrap_or("");
+            if is_html_content_type(ct) && (0.70..=1.30).contains(&len_ratio) {
+                debug!(
+                    url = %probe,
+                    "Skipping — HTML response with similar size to SPA shell"
                 );
                 continue;
             }
