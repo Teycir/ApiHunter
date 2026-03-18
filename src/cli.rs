@@ -161,6 +161,19 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub session_file: Option<PathBuf>,
 
+    /// Session file format (`auto`, `native`, `excalibur`).
+    #[arg(long, default_value = "auto", value_name = "FORMAT")]
+    pub session_file_format: CliSessionFileFormat,
+
+    /// Shorthand for Excalibur cookie export JSON.
+    /// Equivalent to: `--session-file <FILE> --session-file-format excalibur`.
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = ["session_file", "session_file_format"]
+    )]
+    pub cookies_json: Option<PathBuf>,
+
     // ── Scanner toggles ──────────────────────────────────────────────────────
     /// Disable the CORS scanner.
     #[arg(long)]
@@ -212,6 +225,13 @@ pub enum CliSeverity {
     Medium,
     Low,
     Info,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliSessionFileFormat {
+    Auto,
+    Native,
+    Excalibur,
 }
 
 impl From<CliSeverity> for Severity {

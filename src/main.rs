@@ -25,8 +25,8 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth, auto_report,
-    cli::{default_user_agents, load_urls, Cli},
-    config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
+    cli::{default_user_agents, load_urls, Cli, CliSessionFileFormat},
+    config::{Config, PolitenessConfig, ScannerToggles, SessionFileFormat, WafEvasionConfig},
     http_client::HttpClient,
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner,
@@ -99,6 +99,19 @@ async fn run(cli: Cli) -> Result<i32> {
         cli.max_endpoints
     };
 
+    let (session_file, session_file_format) = if let Some(path) = cli.cookies_json.clone() {
+        (Some(path), SessionFileFormat::Excalibur)
+    } else {
+        (
+            cli.session_file.clone(),
+            match cli.session_file_format {
+                CliSessionFileFormat::Auto => SessionFileFormat::Auto,
+                CliSessionFileFormat::Native => SessionFileFormat::Native,
+                CliSessionFileFormat::Excalibur => SessionFileFormat::Excalibur,
+            },
+        )
+    };
+
     let config = Arc::new(Config {
         max_endpoints,
         concurrency: cli.concurrency,
@@ -122,7 +135,8 @@ async fn run(cli: Cli) -> Result<i32> {
         active_checks: cli.active_checks,
         stream_findings: cli.stream,
         baseline_path: cli.baseline.clone(),
-        session_file: cli.session_file.clone(),
+        session_file,
+        session_file_format,
         auth_bearer: cli.auth_bearer.clone(),
         auth_basic: cli.auth_basic.clone(),
         auth_flow: cli.auth_flow.clone(),

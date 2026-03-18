@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use api_scanner::{
-    config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
+    config::{Config, PolitenessConfig, ScannerToggles, SessionFileFormat, WafEvasionConfig},
     http_client::HttpClient,
 };
 use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
@@ -31,6 +31,7 @@ fn test_config() -> Config {
         stream_findings: false,
         baseline_path: None,
         session_file: None,
+        session_file_format: SessionFileFormat::Auto,
         auth_bearer: None,
         auth_basic: None,
         auth_flow: None,

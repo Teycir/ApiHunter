@@ -7,7 +7,9 @@ use std::{collections::HashSet, io::Write};
 use clap::Parser;
 use tempfile::NamedTempFile;
 
-use api_scanner::cli::{default_user_agents, load_urls, Cli, CliFormat, CliSeverity};
+use api_scanner::cli::{
+    default_user_agents, load_urls, Cli, CliFormat, CliSessionFileFormat, CliSeverity,
+};
 use api_scanner::config::ScannerToggles;
 use api_scanner::reports::{ReportFormat, Severity};
 
@@ -136,6 +138,61 @@ fn headers_and_cookies_flags() {
 
     assert_eq!(cli.headers, vec!["Authorization: Bearer abc", "X-Test: 1"]);
     assert_eq!(cli.cookies, vec!["session=abc", "theme=dark"]);
+}
+
+#[test]
+fn session_file_format_defaults_to_auto() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
+    assert!(matches!(
+        cli.session_file_format,
+        CliSessionFileFormat::Auto
+    ));
+}
+
+#[test]
+fn session_file_format_accepts_excalibur() {
+    let cli =
+        Cli::try_parse_from(["scanner", "--stdin", "--session-file-format", "excalibur"]).unwrap();
+    assert!(matches!(
+        cli.session_file_format,
+        CliSessionFileFormat::Excalibur
+    ));
+}
+
+#[test]
+fn cookies_json_alias_parses() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--cookies-json", "/tmp/cookies.json"])
+        .unwrap();
+    assert_eq!(
+        cli.cookies_json,
+        Some(std::path::PathBuf::from("/tmp/cookies.json"))
+    );
+}
+
+#[test]
+fn cookies_json_conflicts_with_session_file() {
+    let result = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--cookies-json",
+        "/tmp/cookies.json",
+        "--session-file",
+        "/tmp/session.json",
+    ]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn cookies_json_conflicts_with_session_file_format() {
+    let result = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--cookies-json",
+        "/tmp/cookies.json",
+        "--session-file-format",
+        "native",
+    ]);
+    assert!(result.is_err());
 }
 
 #[test]

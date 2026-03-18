@@ -36,6 +36,7 @@ Durations are in milliseconds unless noted.
 | `auth_flow_b` | `Option<PathBuf>` | `None` | Second auth flow for cross-user IDOR checks |
 | `unauth_strip_headers` | `Vec<String>` | default list | Header names stripped for unauthenticated probes |
 | `session_file` | `Option<PathBuf>` | `None` | Load/save cookies to JSON session file |
+| `session_file_format` | `SessionFileFormat` | `Auto` | Session file parser (`auto`, `native`, `excalibur`) |
 | `proxy` | `Option<String>` | `None` | Proxy URL |
 | `danger_accept_invalid_certs` | `bool` | `false` | Skip TLS verification |
 | `active_checks` | `bool` | `false` | Enable active (potentially invasive) probes |
@@ -46,12 +47,27 @@ Durations are in milliseconds unless noted.
 
 *You must provide exactly one of `--urls` or `--stdin`.
 
-Session file format (JSON):
+CLI shorthand: `--cookies-json <FILE>` is equivalent to
+`--session-file <FILE> --session-file-format excalibur`.
+
+Native session file format (JSON):
 
 ```json
 {
   "hosts": {
     "example.com": {
+      "session": "abc123"
+    }
+  }
+}
+```
+
+Excalibur cookies format (JSON):
+
+```json
+{
+  "cookies": {
+    ".example.com": {
       "session": "abc123"
     }
   }

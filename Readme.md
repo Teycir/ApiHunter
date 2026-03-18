@@ -168,6 +168,8 @@ cargo build --release
 | `--auth-flow-b` | none | Second auth flow for cross-user IDOR checks |
 | `--unauth-strip-headers` | default list | Extra header names to strip for unauth probes |
 | `--session-file` | none | Load/save cookies from JSON session file |
+| `--session-file-format` | `auto` | Session file parser: `auto`, `native`, `excalibur` |
+| `--cookies-json` | none | Shorthand for Excalibur cookies JSON (`--session-file ... --session-file-format excalibur`) |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
 | `--active-checks` | off | Enable active (potentially invasive) probes |
@@ -339,16 +341,32 @@ A:
 ### Authentication & Sessions
 
 **Q: How do I scan with cookies?**  
-A: Three options:
+A: Five options:
 ```bash
 # Option 1: Direct cookies
 ./api-scanner --urls targets.txt --cookies "session=abc123,token=xyz"
 
-# Option 2: Session file (JSON)
+# Option 2: Native session file (JSON)
 ./api-scanner --urls targets.txt --session-file session.json
 
-# Option 3: Auth flow (login first)
+# Option 3: Excalibur cookies export (shorthand)
+./api-scanner --urls targets.txt --cookies-json cookies.json
+
+# Option 4: Excalibur cookies export (explicit)
+./api-scanner --urls targets.txt --session-file cookies.json --session-file-format excalibur
+
+# Option 5: Auth flow (login first)
 ./api-scanner --urls targets.txt --auth-flow login.json
+```
+
+Native session file shape:
+```json
+{"hosts":{"example.com":{"session":"abc123"}}}
+```
+
+Excalibur file shape:
+```json
+{"cookies":{".example.com":{"session":"abc123"}}}
 ```
 
 **Q: What's an auth flow file?**  

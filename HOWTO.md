@@ -148,14 +148,31 @@ printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --a
 printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-bearer "$TOKEN"
 printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-basic "user:pass"
 printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file session.json
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --cookies-json cookies.json
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file cookies.json --session-file-format excalibur
 ```
 
-`session.json` format:
+`--session-file-format` supports: `auto` (default), `native`, `excalibur`.
+`--cookies-json` is shorthand for `--session-file <FILE> --session-file-format excalibur`.
+
+Native `session.json` format:
 
 ```json
 {
   "hosts": {
     "example.com": {
+      "session": "abc123"
+    }
+  }
+}
+```
+
+Excalibur `cookies.json` format:
+
+```json
+{
+  "cookies": {
+    ".example.com": {
       "session": "abc123"
     }
   }
