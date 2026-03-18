@@ -4,7 +4,7 @@
 // and convenience methods for the scanner modules.
 
 use crate::{
-    config::{Config, SessionFileFormat},
+    config::Config,
     error::{CapturedError, ScannerError, ScannerResult},
     waf::WafEvasion,
 };
@@ -164,11 +164,6 @@ struct SessionFile {
     hosts: HashMap<String, HashMap<String, String>>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct ExcaliburSessionFile {
-    cookies: HashMap<String, HashMap<String, String>>,
-}
-
 type SessionStore = HashMap<String, HashMap<String, String>>;
 
 impl HttpClient {
@@ -227,7 +222,7 @@ impl HttpClient {
 
         let session_store = if let Some(path) = &config.session_file {
             if path.exists() {
-                match load_session_file(path, config.session_file_format) {
+                match load_session_file(path) {
                     Ok(store) => Some(Arc::new(Mutex::new(store))),
                     Err(e) => {
                         return Err(ScannerError::Config(format!(
@@ -803,87 +798,10 @@ fn build_client(cfg: &ClientConfig) -> ScannerResult<Client> {
         .map_err(|e| ScannerError::Config(format!("Client build failed: {e}")))
 }
 
-fn load_session_file(
-    path: &PathBuf,
-    format: SessionFileFormat,
-) -> Result<SessionStore, ScannerError> {
+fn load_session_file(path: &PathBuf) -> Result<SessionStore, ScannerError> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| ScannerError::Config(format!("Session read failed: {e}")))?;
-    let json: serde_json::Value = serde_json::from_str(&content)
+    let doc: SessionFile = serde_json::from_str(&content)
         .map_err(|e| ScannerError::Config(format!("Session parse failed: {e}")))?;
-
-    match detect_or_enforce_session_format(&json, format)? {
-        SessionFileFormat::Native => parse_native_session_file(&json),
-        SessionFileFormat::Excalibur => parse_excalibur_session_file(&json),
-        SessionFileFormat::Auto => Err(ScannerError::Config(
-            "Internal error: unresolved session format".to_string(),
-        )),
-    }
-}
-
-fn detect_or_enforce_session_format(
-    json: &serde_json::Value,
-    format: SessionFileFormat,
-) -> Result<SessionFileFormat, ScannerError> {
-    if format != SessionFileFormat::Auto {
-        return Ok(format);
-    }
-
-    let Some(obj) = json.as_object() else {
-        return Err(ScannerError::Config(
-            "Session parse failed: root must be a JSON object".to_string(),
-        ));
-    };
-
-    if obj.contains_key("hosts") {
-        return Ok(SessionFileFormat::Native);
-    }
-    if obj.contains_key("cookies") {
-        return Ok(SessionFileFormat::Excalibur);
-    }
-
-    Err(ScannerError::Config(
-        "Session parse failed: expected top-level 'hosts' (native) or 'cookies' (excalibur)"
-            .to_string(),
-    ))
-}
-
-fn parse_native_session_file(json: &serde_json::Value) -> Result<SessionStore, ScannerError> {
-    let doc: SessionFile = serde_json::from_value(json.clone())
-        .map_err(|e| ScannerError::Config(format!("Session parse failed (native): {e}")))?;
     Ok(doc.hosts)
-}
-
-fn parse_excalibur_session_file(json: &serde_json::Value) -> Result<SessionStore, ScannerError> {
-    let doc: ExcaliburSessionFile = serde_json::from_value(json.clone())
-        .map_err(|e| ScannerError::Config(format!("Session parse failed (excalibur): {e}")))?;
-
-    let mut out: SessionStore = HashMap::new();
-
-    let mut domains: Vec<(String, HashMap<String, String>)> = doc.cookies.into_iter().collect();
-    domains.sort_by(|a, b| a.0.cmp(&b.0));
-
-    for (raw_domain, cookies) in domains {
-        let normalized = normalize_excalibur_domain(&raw_domain);
-        if normalized.is_empty() {
-            continue;
-        }
-        let entry = out.entry(normalized).or_default();
-
-        let mut pairs: Vec<(String, String)> = cookies.into_iter().collect();
-        pairs.sort_by(|a, b| a.0.cmp(&b.0));
-        for (name, value) in pairs {
-            let name = name.trim();
-            if name.is_empty() {
-                continue;
-            }
-            entry.insert(name.to_string(), value);
-        }
-    }
-
-    Ok(out)
-}
-
-fn normalize_excalibur_domain(domain: &str) -> String {
-    domain.trim().trim_start_matches('.').to_ascii_lowercase()
 }

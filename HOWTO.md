@@ -115,11 +115,9 @@ EOF
 
 ```bash
 ./target/release/api-scanner --har ./session.har
-./target/release/api-scanner --har ./session.har --har-api-only
 ```
 
-HAR import reads `log.entries[].request.url` and uses those URLs as scan seeds.
-`--har-api-only` focuses the seed list on likely API/business endpoints and excludes static/CDN noise.
+HAR import reads `log.entries[].request.url` and automatically keeps likely API/business endpoints while excluding static/CDN noise.
 
 ---
 
@@ -159,32 +157,16 @@ printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --a
 ```bash
 printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-bearer "$TOKEN"
 printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --auth-basic "user:pass"
-printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file session.json
-printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --cookies-json cookies.json
-printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file cookies.json --session-file-format excalibur
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --session-file excalibur-session-...-cookies.json
+./target/release/api-scanner --har ./session.har --session-file ./excalibur-session-...-cookies.json
 ```
 
-`--session-file-format` supports: `auto` (default), `native`, `excalibur`.
-`--cookies-json` is shorthand for `--session-file <FILE> --session-file-format excalibur`.
-
-Native `session.json` format:
+ApiHunter accepts one session JSON schema (Excalibur output from your HAR folder):
 
 ```json
 {
   "hosts": {
     "example.com": {
-      "session": "abc123"
-    }
-  }
-}
-```
-
-Excalibur `cookies.json` format:
-
-```json
-{
-  "cookies": {
-    ".example.com": {
       "session": "abc123"
     }
   }

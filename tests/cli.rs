@@ -7,9 +7,7 @@ use std::{collections::HashSet, io::Write};
 use clap::Parser;
 use tempfile::NamedTempFile;
 
-use api_scanner::cli::{
-    default_user_agents, load_urls, Cli, CliFormat, CliSessionFileFormat, CliSeverity,
-};
+use api_scanner::cli::{default_user_agents, load_urls, Cli, CliFormat, CliSeverity};
 use api_scanner::config::ScannerToggles;
 use api_scanner::reports::{ReportFormat, Severity};
 
@@ -35,19 +33,6 @@ fn parses_har_arg() {
     assert_eq!(cli.har, Some(std::path::PathBuf::from("/tmp/session.har")));
     assert!(cli.urls.is_none());
     assert!(!cli.stdin);
-}
-
-#[test]
-fn har_api_only_requires_har() {
-    let result = Cli::try_parse_from(["scanner", "--stdin", "--har-api-only"]);
-    assert!(result.is_err());
-}
-
-#[test]
-fn parses_har_api_only_flag() {
-    let cli =
-        Cli::try_parse_from(["scanner", "--har", "/tmp/session.har", "--har-api-only"]).unwrap();
-    assert!(cli.har_api_only);
 }
 
 #[test]
@@ -172,57 +157,24 @@ fn headers_and_cookies_flags() {
 }
 
 #[test]
-fn session_file_format_defaults_to_auto() {
-    let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
-    assert!(matches!(
-        cli.session_file_format,
-        CliSessionFileFormat::Auto
-    ));
-}
-
-#[test]
-fn session_file_format_accepts_excalibur() {
+fn session_file_parses() {
     let cli =
-        Cli::try_parse_from(["scanner", "--stdin", "--session-file-format", "excalibur"]).unwrap();
-    assert!(matches!(
-        cli.session_file_format,
-        CliSessionFileFormat::Excalibur
-    ));
-}
-
-#[test]
-fn cookies_json_alias_parses() {
-    let cli =
-        Cli::try_parse_from(["scanner", "--stdin", "--cookies-json", "/tmp/cookies.json"]).unwrap();
+        Cli::try_parse_from(["scanner", "--stdin", "--session-file", "/tmp/session.json"]).unwrap();
     assert_eq!(
-        cli.cookies_json,
-        Some(std::path::PathBuf::from("/tmp/cookies.json"))
+        cli.session_file,
+        Some(std::path::PathBuf::from("/tmp/session.json"))
     );
 }
 
 #[test]
-fn cookies_json_conflicts_with_session_file() {
-    let result = Cli::try_parse_from([
-        "scanner",
-        "--stdin",
-        "--cookies-json",
-        "/tmp/cookies.json",
-        "--session-file",
-        "/tmp/session.json",
-    ]);
+fn rejects_legacy_cookies_json_flag() {
+    let result = Cli::try_parse_from(["scanner", "--stdin", "--cookies-json", "/tmp/cookies.json"]);
     assert!(result.is_err());
 }
 
 #[test]
-fn cookies_json_conflicts_with_session_file_format() {
-    let result = Cli::try_parse_from([
-        "scanner",
-        "--stdin",
-        "--cookies-json",
-        "/tmp/cookies.json",
-        "--session-file-format",
-        "native",
-    ]);
+fn rejects_legacy_session_file_format_flag() {
+    let result = Cli::try_parse_from(["scanner", "--stdin", "--session-file-format", "excalibur"]);
     assert!(result.is_err());
 }
 
@@ -311,17 +263,11 @@ fn load_urls_from_har_extracts_http_urls() {
     let cli = Cli::try_parse_from(["scanner", "--har", f.path().to_str().unwrap()]).unwrap();
     let urls = load_urls(&cli).unwrap();
 
-    assert_eq!(
-        urls,
-        vec![
-            "https://api.example.com/v1/users",
-            "http://example.com/health"
-        ]
-    );
+    assert_eq!(urls, vec!["https://api.example.com/v1/users"]);
 }
 
 #[test]
-fn load_urls_from_har_api_only_filters_static_noise() {
+fn load_urls_from_har_enforces_api_filtering() {
     let mut f = NamedTempFile::new().unwrap();
     write!(
         f,
@@ -340,13 +286,7 @@ fn load_urls_from_har_api_only_filters_static_noise() {
     )
     .unwrap();
 
-    let cli = Cli::try_parse_from([
-        "scanner",
-        "--har",
-        f.path().to_str().unwrap(),
-        "--har-api-only",
-    ])
-    .unwrap();
+    let cli = Cli::try_parse_from(["scanner", "--har", f.path().to_str().unwrap()]).unwrap();
     let urls = load_urls(&cli).unwrap();
 
     assert_eq!(

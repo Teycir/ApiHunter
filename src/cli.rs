@@ -47,10 +47,6 @@ pub struct Cli {
     #[arg(long, value_name = "FILE", group = "input")]
     pub har: Option<PathBuf>,
 
-    /// When used with `--har`, keep likely API endpoints and drop static/CDN noise.
-    #[arg(long, requires = "har", conflicts_with_all = ["urls", "stdin"])]
-    pub har_api_only: bool,
-
     /// Skip pre-filtering of inaccessible URLs (enabled by default).
     #[arg(long)]
     pub no_filter: bool,
@@ -170,19 +166,6 @@ pub struct Cli {
     #[arg(long, value_name = "FILE")]
     pub session_file: Option<PathBuf>,
 
-    /// Session file format (`auto`, `native`, `excalibur`).
-    #[arg(long, default_value = "auto", value_name = "FORMAT")]
-    pub session_file_format: CliSessionFileFormat,
-
-    /// Shorthand for Excalibur cookie export JSON.
-    /// Equivalent to: `--session-file <FILE> --session-file-format excalibur`.
-    #[arg(
-        long,
-        value_name = "FILE",
-        conflicts_with_all = ["session_file", "session_file_format"]
-    )]
-    pub cookies_json: Option<PathBuf>,
-
     // ── Scanner toggles ──────────────────────────────────────────────────────
     /// Disable the CORS scanner.
     #[arg(long)]
@@ -234,13 +217,6 @@ pub enum CliSeverity {
     Medium,
     Low,
     Info,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum CliSessionFileFormat {
-    Auto,
-    Native,
-    Excalibur,
 }
 
 impl From<CliSeverity> for Severity {
@@ -297,7 +273,7 @@ pub fn load_urls(cli: &Cli) -> Result<Vec<String>> {
             .with_context(|| format!("Cannot read URL file: {}", path.display()))?;
         content.lines().map(str::to_owned).collect()
     } else if let Some(ref path) = cli.har {
-        load_urls_from_har(path, cli.har_api_only)?
+        load_urls_from_har(path)?
     } else {
         // --stdin
         let stdin = io::stdin();
@@ -317,7 +293,7 @@ pub fn load_urls(cli: &Cli) -> Result<Vec<String>> {
     Ok(urls)
 }
 
-fn load_urls_from_har(path: &PathBuf, api_only: bool) -> Result<Vec<String>> {
+fn load_urls_from_har(path: &PathBuf) -> Result<Vec<String>> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Cannot read HAR file: {}", path.display()))?;
     let har: HarFile = serde_json::from_str(&content)
@@ -332,7 +308,7 @@ fn load_urls_from_har(path: &PathBuf, api_only: bool) -> Result<Vec<String>> {
             if !(url.starts_with("http://") || url.starts_with("https://")) {
                 return None;
             }
-            if api_only && !is_likely_api_url(&url, &entry.request.method) {
+            if !is_likely_api_url(&url, &entry.request.method) {
                 return None;
             }
             Some(url)

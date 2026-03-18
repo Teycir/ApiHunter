@@ -143,8 +143,7 @@ cargo build --release
 |---|---|---|
 | `--urls` | required* | Path to newline-delimited URL file |
 | `--stdin` | off | Read newline-delimited URLs from stdin |
-| `--har` | off | Import request URLs from HAR (`log.entries[].request.url`) |
-| `--har-api-only` | off | With `--har`, keep likely API URLs and drop static/CDN noise |
+| `--har` | off | Import likely API request URLs from HAR (`log.entries[].request.url`) |
 | `--output` | stdout | Write results to a file instead of stdout |
 | `--format` | `pretty` | Output format: `pretty`, `ndjson`, or `sarif` |
 | `--stream` | off | Stream NDJSON findings as they arrive |
@@ -169,9 +168,7 @@ cargo build --release
 | `--auth-flow` | none | JSON auth flow file (pre-scan login) |
 | `--auth-flow-b` | none | Second auth flow for cross-user IDOR checks |
 | `--unauth-strip-headers` | default list | Extra header names to strip for unauth probes |
-| `--session-file` | none | Load/save cookies from JSON session file |
-| `--session-file-format` | `auto` | Session file parser: `auto`, `native`, `excalibur` |
-| `--cookies-json` | none | Shorthand for Excalibur cookies JSON (`--session-file ... --session-file-format excalibur`) |
+| `--session-file` | none | Load/save cookies from Excalibur session JSON (`{"hosts": {...}}`) |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
 | `--active-checks` | off | Enable active (potentially invasive) probes |
@@ -343,33 +340,28 @@ A:
 ### Authentication & Sessions
 
 **Q: How do I scan with cookies?**  
-A: Five options:
+A: Three options:
 ```bash
 # Option 1: Direct cookies
 ./api-scanner --urls targets.txt --cookies "session=abc123,token=xyz"
 
-# Option 2: Native session file (JSON)
-./api-scanner --urls targets.txt --session-file session.json
+# Option 2: Excalibur session export JSON (from your HAR folder)
+./api-scanner --urls targets.txt --session-file excalibur-session-...-cookies.json
 
-# Option 3: Excalibur cookies export (shorthand)
-./api-scanner --urls targets.txt --cookies-json cookies.json
-
-# Option 4: Excalibur cookies export (explicit)
-./api-scanner --urls targets.txt --session-file cookies.json --session-file-format excalibur
-
-# Option 5: Auth flow (login first)
+# Option 3: Auth flow (login first)
 ./api-scanner --urls targets.txt --auth-flow login.json
 ```
 
-Native session file shape:
+For Excalibur exports, pair both files directly:
+```bash
+./api-scanner --har session.har --session-file excalibur-session-...-cookies.json
+```
+
+Accepted session file shape (only):
 ```json
 {"hosts":{"example.com":{"session":"abc123"}}}
 ```
-
-Excalibur file shape:
-```json
-{"cookies":{".example.com":{"session":"abc123"}}}
-```
+ApiHunter accepts only this session JSON schema with `--session-file`.
 
 **Q: What's an auth flow file?**  
 A: JSON file defining a pre-scan login sequence:

@@ -35,8 +35,7 @@ Durations are in milliseconds unless noted.
 | `auth_flow` | `Option<PathBuf>` | `None` | JSON auth flow file (see `docs/auth-flow.md`) |
 | `auth_flow_b` | `Option<PathBuf>` | `None` | Second auth flow for cross-user IDOR checks |
 | `unauth_strip_headers` | `Vec<String>` | default list | Header names stripped for unauthenticated probes |
-| `session_file` | `Option<PathBuf>` | `None` | Load/save cookies to JSON session file |
-| `session_file_format` | `SessionFileFormat` | `Auto` | Session file parser (`auto`, `native`, `excalibur`) |
+| `session_file` | `Option<PathBuf>` | `None` | Load/save cookies from Excalibur session JSON (`{"hosts": {...}}`) |
 | `proxy` | `Option<String>` | `None` | Proxy URL |
 | `danger_accept_invalid_certs` | `bool` | `false` | Skip TLS verification |
 | `active_checks` | `bool` | `false` | Enable active (potentially invasive) probes |
@@ -46,13 +45,10 @@ Durations are in milliseconds unless noted.
 | `no_openapi` | `bool` | `false` | Disable OpenAPI scanner |
 
 *You must provide exactly one of `--urls`, `--stdin`, or `--har`.
+HAR parsing is API-focused by default: static/CDN entries are filtered out automatically.
+For Excalibur workflows, use `--har <session.har>` with `--session-file <excalibur-session-...-cookies.json>`.
 
-When using `--har`, add `--har-api-only` to focus on likely API endpoints and reduce static/CDN noise.
-
-CLI shorthand: `--cookies-json <FILE>` is equivalent to
-`--session-file <FILE> --session-file-format excalibur`.
-
-Native session file format (JSON):
+Accepted session file format (JSON, only):
 
 ```json
 {
@@ -64,14 +60,4 @@ Native session file format (JSON):
 }
 ```
 
-Excalibur cookies format (JSON):
-
-```json
-{
-  "cookies": {
-    ".example.com": {
-      "session": "abc123"
-    }
-  }
-}
-```
+This is the only accepted session schema for `--session-file`.

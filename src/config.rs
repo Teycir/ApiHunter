@@ -44,9 +44,6 @@ pub struct Config {
     /// Optional session cookie file (JSON) to load/save.
     pub session_file: Option<std::path::PathBuf>,
 
-    /// Session file format parser strategy.
-    pub session_file_format: SessionFileFormat,
-
     /// Optional auth helpers.
     pub auth_bearer: Option<String>,
     pub auth_basic: Option<String>,
@@ -68,17 +65,6 @@ pub struct Config {
 
     /// Suppress verbose progress output.
     pub quiet: bool,
-}
-
-/// Session file format selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionFileFormat {
-    /// Try to detect supported schema automatically.
-    Auto,
-    /// Native ApiHunter format: {"hosts": {...}}.
-    Native,
-    /// Excalibur/browser export format: {"cookies": {...}}.
-    Excalibur,
 }
 
 /// Individual scanner toggle flags.

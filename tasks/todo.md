@@ -1,17 +1,18 @@
-# Task: HAR API Filtering + Discovery Dedup
+# Task: Single Session Format
 
 ## Plan
-- [x] Add HAR API-focused filtering option to exclude static/CDN URLs.
-- [x] Implement host-level dedup in discovery so each site is discovered once.
-- [x] Add tests for HAR filtering behavior and discovery grouping logic.
-- [x] Update docs for new HAR filtering controls and usage.
-- [x] Run `cargo test` and verify behavior with your HAR sample.
+- [x] Remove `--cookies-json` and `--session-file-format` CLI options.
+- [x] Enforce a single session schema: native `{\"hosts\": {...}}` via `--session-file`.
+- [x] Update tests (CLI + session file behavior) to match the one-format policy.
+- [x] Update docs to document only one session input format and one flag.
+- [x] Run `cargo fmt && cargo test`.
 
 ## Review
-- Added `--har-api-only` filtering for HAR imports (API/business-focused, static/CDN suppression).
-- Discovery now groups seeds by site base and runs per-site discovery once.
-- Added CLI tests for HAR filtering controls and an integration test asserting one `/robots.txt` hit for multiple seeds on the same site.
-- Updated docs (`Readme.md`, `HOWTO.md`, `docs/configuration.md`) for `--har-api-only`.
-- Validation:
-- `cargo test` passed (full suite green).
-- HAR sample comparison (`--no-filter --max-endpoints 1`, timed 8s): baseline `Targets: 239` vs `--har-api-only` `Targets: 48`.
+- Removed multi-format session parsing and CLI aliases; session input is now `--session-file` only.
+- Standardized docs around one accepted JSON schema: `{\"hosts\": {\"<host>\": {\"cookie\": \"value\"}}}`.
+- Updated test suite for the new policy:
+  - CLI tests now assert legacy flags are rejected.
+  - Session format tests now validate accepted `hosts` schema and reject legacy `cookies` schema.
+- Verification:
+  - `cargo fmt` passed.
+  - `cargo test` passed (all unit/integration/doc tests green).

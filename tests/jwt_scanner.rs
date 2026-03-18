@@ -11,7 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
-    config::{Config, PolitenessConfig, ScannerToggles, SessionFileFormat, WafEvasionConfig},
+    config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
     scanner::jwt::JwtScanner,
     scanner::Scanner,
@@ -39,7 +39,6 @@ fn test_config() -> Config {
         stream_findings: false,
         baseline_path: None,
         session_file: None,
-        session_file_format: SessionFileFormat::Auto,
         auth_bearer: None,
         auth_basic: None,
         auth_flow: None,
