@@ -45,7 +45,9 @@ Durations are in milliseconds unless noted.
 | `no_jwt` | `bool` | `false` | Disable JWT scanner |
 | `no_openapi` | `bool` | `false` | Disable OpenAPI scanner |
 
-*You must provide exactly one of `--urls` or `--stdin`.
+*You must provide exactly one of `--urls`, `--stdin`, or `--har`.
+
+When using `--har`, add `--har-api-only` to focus on likely API endpoints and reduce static/CDN noise.
 
 CLI shorthand: `--cookies-json <FILE>` is equivalent to
 `--session-file <FILE> --session-file-format excalibur`.

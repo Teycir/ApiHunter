@@ -143,6 +143,8 @@ cargo build --release
 |---|---|---|
 | `--urls` | required* | Path to newline-delimited URL file |
 | `--stdin` | off | Read newline-delimited URLs from stdin |
+| `--har` | off | Import request URLs from HAR (`log.entries[].request.url`) |
+| `--har-api-only` | off | With `--har`, keep likely API URLs and drop static/CDN noise |
 | `--output` | stdout | Write results to a file instead of stdout |
 | `--format` | `pretty` | Output format: `pretty`, `ndjson`, or `sarif` |
 | `--stream` | off | Stream NDJSON findings as they arrive |
@@ -182,7 +184,7 @@ cargo build --release
 | `--no-jwt` | off | Disable the JWT scanner |
 | `--no-openapi` | off | Disable the OpenAPI scanner |
 
-*You must provide exactly one of `--urls` or `--stdin`.
+*You must provide exactly one of `--urls`, `--stdin`, or `--har`.
 
 ## Exit Codes
 

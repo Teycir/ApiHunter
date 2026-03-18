@@ -30,8 +30,29 @@ fn parses_stdin_flag() {
 }
 
 #[test]
+fn parses_har_arg() {
+    let cli = Cli::try_parse_from(["scanner", "--har", "/tmp/session.har"]).unwrap();
+    assert_eq!(cli.har, Some(std::path::PathBuf::from("/tmp/session.har")));
+    assert!(cli.urls.is_none());
+    assert!(!cli.stdin);
+}
+
+#[test]
+fn har_api_only_requires_har() {
+    let result = Cli::try_parse_from(["scanner", "--stdin", "--har-api-only"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_har_api_only_flag() {
+    let cli =
+        Cli::try_parse_from(["scanner", "--har", "/tmp/session.har", "--har-api-only"]).unwrap();
+    assert!(cli.har_api_only);
+}
+
+#[test]
 fn rejects_no_input_source() {
-    // Must provide --urls or --stdin
+    // Must provide --urls, --stdin, or --har
     let result = Cli::try_parse_from(["scanner"]);
     assert!(result.is_err());
 }
@@ -40,6 +61,16 @@ fn rejects_no_input_source() {
 fn rejects_both_input_sources() {
     let result = Cli::try_parse_from(["scanner", "--urls", "/tmp/urls.txt", "--stdin"]);
     assert!(result.is_err());
+}
+
+#[test]
+fn rejects_har_with_other_input_sources() {
+    let with_urls =
+        Cli::try_parse_from(["scanner", "--har", "/tmp/a.har", "--urls", "/tmp/urls.txt"]);
+    assert!(with_urls.is_err());
+
+    let with_stdin = Cli::try_parse_from(["scanner", "--har", "/tmp/a.har", "--stdin"]);
+    assert!(with_stdin.is_err());
 }
 
 #[test]
@@ -161,8 +192,8 @@ fn session_file_format_accepts_excalibur() {
 
 #[test]
 fn cookies_json_alias_parses() {
-    let cli = Cli::try_parse_from(["scanner", "--stdin", "--cookies-json", "/tmp/cookies.json"])
-        .unwrap();
+    let cli =
+        Cli::try_parse_from(["scanner", "--stdin", "--cookies-json", "/tmp/cookies.json"]).unwrap();
     assert_eq!(
         cli.cookies_json,
         Some(std::path::PathBuf::from("/tmp/cookies.json"))
@@ -258,6 +289,74 @@ fn load_urls_only_comments_and_blanks_returns_empty() {
     let cli = Cli::try_parse_from(["scanner", "--urls", f.path().to_str().unwrap()]).unwrap();
     let urls = load_urls(&cli).unwrap();
     assert!(urls.is_empty());
+}
+
+#[test]
+fn load_urls_from_har_extracts_http_urls() {
+    let mut f = NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{{
+  "log": {{
+    "entries": [
+      {{ "request": {{ "url": "https://api.example.com/v1/users" }} }},
+      {{ "request": {{ "url": "http://example.com/health" }} }},
+      {{ "request": {{ "url": "ws://example.com/socket" }} }}
+    ]
+  }}
+}}"#
+    )
+    .unwrap();
+
+    let cli = Cli::try_parse_from(["scanner", "--har", f.path().to_str().unwrap()]).unwrap();
+    let urls = load_urls(&cli).unwrap();
+
+    assert_eq!(
+        urls,
+        vec![
+            "https://api.example.com/v1/users",
+            "http://example.com/health"
+        ]
+    );
+}
+
+#[test]
+fn load_urls_from_har_api_only_filters_static_noise() {
+    let mut f = NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{{
+  "log": {{
+    "entries": [
+      {{ "request": {{ "method": "GET", "url": "https://a0.awsstatic.com/app.js" }} }},
+      {{ "request": {{ "method": "GET", "url": "https://example.com/assets/main.css" }} }},
+      {{ "request": {{ "method": "GET", "url": "https://api.example.com/v1/users" }} }},
+      {{ "request": {{ "method": "GET", "url": "https://example.com/graphql?query={{me{{id}}}}" }} }},
+      {{ "request": {{ "method": "POST", "url": "https://example.com/profile" }} }},
+      {{ "request": {{ "method": "GET", "url": "https://example.com/home" }} }}
+    ]
+  }}
+}}"#
+    )
+    .unwrap();
+
+    let cli = Cli::try_parse_from([
+        "scanner",
+        "--har",
+        f.path().to_str().unwrap(),
+        "--har-api-only",
+    ])
+    .unwrap();
+    let urls = load_urls(&cli).unwrap();
+
+    assert_eq!(
+        urls,
+        vec![
+            "https://api.example.com/v1/users",
+            "https://example.com/graphql?query={me{id}}",
+            "https://example.com/profile",
+        ]
+    );
 }
 
 // ── Severity / format conversions ────────────────────────────────────────────

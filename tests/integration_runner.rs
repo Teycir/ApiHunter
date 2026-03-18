@@ -471,6 +471,47 @@ async fn runner_returns_scanned_count() {
     assert_eq!(result.scanned, 1, "should report 1 URL scanned");
 }
 
+#[tokio::test]
+async fn discovery_runs_once_per_site_not_per_seed() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/plain")
+                .set_body_string("User-agent: *\nDisallow:\n"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.max_endpoints = 1;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let url_a = format!("{}/alpha", server.uri());
+    let url_b = format!("{}/beta", server.uri());
+
+    let _ = runner::run(
+        vec![url_a, url_b],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+}
+
 // ─── Reporter unit-level tests ────────────────────────────────────────────────
 
 mod reporter_tests {

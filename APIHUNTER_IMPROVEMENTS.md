@@ -378,7 +378,7 @@ Adding native support for this shape removes conversion friction in real workflo
 
 ### Phase 1 — Fast Wins (Week 1)
 - [ ] Add Docker image (`Dockerfile` + CI publish to GHCR).
-- [ ] Add HAR endpoint import (`--har`) into runner input pipeline.
+- [x] Add HAR endpoint import (`--har`) into runner input pipeline.
 - [x] Add Excalibur cookie import path (`--session-file-format excalibur`) using `cookies -> domain -> name/value` structure.
 - [x] Update docs with both supported cookie/session JSON formats and examples.
 

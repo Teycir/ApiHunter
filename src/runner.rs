@@ -9,7 +9,7 @@
 //!   6. Return a [`RunResult`] ready for the reporter.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -396,23 +396,12 @@ async fn run_discovery_per_site(
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
 
-    for seed in seeds.iter() {
-        let parsed = match Url::parse(seed) {
-            Ok(u) => u,
-            Err(_) => continue,
-        };
+    let sites = group_seeds_by_site(seeds);
 
-        let host = match parsed.host_str() {
-            Some(h) => h.to_string(),
+    for (base, (host, site_seeds)) in sites {
+        let js_seed = match site_seeds.first() {
+            Some(s) => s.as_str(),
             None => continue,
-        };
-
-        let base = {
-            let mut b = format!("{}://{}", parsed.scheme(), host);
-            if let Some(port) = parsed.port() {
-                b.push_str(&format!(":{port}"));
-            }
-            b
         };
 
         let mut site_discovered: HashSet<String> = HashSet::new();
@@ -432,7 +421,7 @@ async fn run_discovery_per_site(
         errors.extend(errs);
         insert_paths(&base, paths, &mut site_discovered);
 
-        let (paths, errs) = JsDiscovery::new(client, seed, &host, MAX_SCRIPTS)
+        let (paths, errs) = JsDiscovery::new(client, js_seed, &host, MAX_SCRIPTS)
             .run()
             .await;
         errors.extend(errs);
@@ -472,6 +461,37 @@ async fn run_discovery_per_site(
 
     let urls = all_discovered.into_iter().collect();
     (urls, all_errors)
+}
+
+fn group_seeds_by_site(seeds: &[String]) -> BTreeMap<String, (String, Vec<String>)> {
+    let mut sites: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
+
+    for seed in seeds {
+        let parsed = match Url::parse(seed) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+
+        let host = match parsed.host_str() {
+            Some(h) => h.to_string(),
+            None => continue,
+        };
+
+        let base = {
+            let mut b = format!("{}://{}", parsed.scheme(), host);
+            if let Some(port) = parsed.port() {
+                b.push_str(&format!(":{port}"));
+            }
+            b
+        };
+
+        sites
+            .entry(base)
+            .and_modify(|(_, list)| list.push(seed.clone()))
+            .or_insert_with(|| (host, vec![seed.clone()]));
+    }
+
+    sites
 }
 
 fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {

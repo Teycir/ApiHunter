@@ -111,6 +111,18 @@ EOF
 
 ---
 
+## Import endpoints from HAR
+
+```bash
+./target/release/api-scanner --har ./session.har
+./target/release/api-scanner --har ./session.har --har-api-only
+```
+
+HAR import reads `log.entries[].request.url` and uses those URLs as scan seeds.
+`--har-api-only` focuses the seed list on likely API/business endpoints and excludes static/CDN noise.
+
+---
+
 ## Use in CI
 
 ```bash

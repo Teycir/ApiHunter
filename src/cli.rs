@@ -10,6 +10,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{ArgGroup, Parser, ValueEnum};
+use url::Url;
 
 use crate::reports::{ReportFormat, Severity};
 
@@ -25,11 +26,11 @@ use crate::reports::{ReportFormat, Severity};
     version,
     about,
     long_about = None,
-    // Require exactly one of --urls or --stdin
+    // Require exactly one of --urls, --stdin, or --har
     group(
         ArgGroup::new("input")
             .required(true)
-            .args(["urls", "stdin"])
+            .args(["urls", "stdin", "har"])
     )
 )]
 pub struct Cli {
@@ -41,6 +42,14 @@ pub struct Cli {
     /// Read newline-delimited URLs from stdin instead of a file.
     #[arg(long, group = "input")]
     pub stdin: bool,
+
+    /// Path to a HAR file; imports `log.entries[].request.url` as scan seeds.
+    #[arg(long, value_name = "FILE", group = "input")]
+    pub har: Option<PathBuf>,
+
+    /// When used with `--har`, keep likely API endpoints and drop static/CDN noise.
+    #[arg(long, requires = "har", conflicts_with_all = ["urls", "stdin"])]
+    pub har_api_only: bool,
 
     /// Skip pre-filtering of inaccessible URLs (enabled by default).
     #[arg(long)]
@@ -258,13 +267,37 @@ impl From<CliFormat> for ReportFormat {
 
 // ── URL loader ────────────────────────────────────────────────────────────────
 
-/// Read newline-delimited URLs from a file or stdin.
+#[derive(Debug, serde::Deserialize)]
+struct HarFile {
+    log: HarLog,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HarLog {
+    entries: Vec<HarEntry>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HarEntry {
+    request: HarRequest,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HarRequest {
+    url: String,
+    #[serde(default)]
+    method: String,
+}
+
+/// Read URLs from a file, stdin, or HAR input.
 /// Blank lines and lines starting with `#` are ignored.
 pub fn load_urls(cli: &Cli) -> Result<Vec<String>> {
     let lines: Vec<String> = if let Some(ref path) = cli.urls {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Cannot read URL file: {}", path.display()))?;
         content.lines().map(str::to_owned).collect()
+    } else if let Some(ref path) = cli.har {
+        load_urls_from_har(path, cli.har_api_only)?
     } else {
         // --stdin
         let stdin = io::stdin();
@@ -282,6 +315,87 @@ pub fn load_urls(cli: &Cli) -> Result<Vec<String>> {
         .collect();
 
     Ok(urls)
+}
+
+fn load_urls_from_har(path: &PathBuf, api_only: bool) -> Result<Vec<String>> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Cannot read HAR file: {}", path.display()))?;
+    let har: HarFile = serde_json::from_str(&content)
+        .with_context(|| format!("Cannot parse HAR file: {}", path.display()))?;
+
+    Ok(har
+        .log
+        .entries
+        .into_iter()
+        .filter_map(|entry| {
+            let url = entry.request.url.trim().to_string();
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                return None;
+            }
+            if api_only && !is_likely_api_url(&url, &entry.request.method) {
+                return None;
+            }
+            Some(url)
+        })
+        .collect())
+}
+
+fn is_likely_api_url(raw_url: &str, method: &str) -> bool {
+    let parsed = match Url::parse(raw_url) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
+    let path = parsed.path().to_ascii_lowercase();
+    let query = parsed.query().unwrap_or("").to_ascii_lowercase();
+    let method = method.to_ascii_uppercase();
+
+    if is_likely_static_host(&host) || is_static_asset_path(&path) {
+        return false;
+    }
+
+    // Non-read methods in HAR are usually API/business operations.
+    if !matches!(method.as_str(), "" | "GET" | "HEAD" | "OPTIONS") {
+        return true;
+    }
+
+    if host.starts_with("api.") || host.contains(".api.") {
+        return true;
+    }
+
+    let needle_haystack = format!("{path}?{query}");
+    const KEYWORDS: &[&str] = &[
+        "/api", "graphql", "openapi", "swagger", "oauth", "oidc", "auth", "token", "session",
+        "login", "logout", "signin", "identity", "/v1", "/v2", "/v3", "/rpc",
+    ];
+
+    KEYWORDS.iter().any(|k| needle_haystack.contains(k))
+}
+
+fn is_likely_static_host(host: &str) -> bool {
+    if host.ends_with("awsstatic.com")
+        || host.ends_with("cloudfront.net")
+        || host.contains("fonts.")
+        || host.contains("analytics")
+    {
+        return true;
+    }
+
+    host.starts_with("cdn.")
+        || host.contains(".cdn.")
+        || host.starts_with("static.")
+        || host.contains(".static.")
+        || host.starts_with("assets.")
+        || host.contains(".assets.")
+}
+
+fn is_static_asset_path(path: &str) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        ".js", ".css", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2",
+        ".ttf", ".eot", ".webp", ".avif", ".mp4", ".webm", ".mp3", ".wav", ".pdf", ".zip",
+    ];
+    EXTENSIONS.iter().any(|ext| path.ends_with(ext))
 }
 
 // ── Default user-agents ───────────────────────────────────────────────────────
