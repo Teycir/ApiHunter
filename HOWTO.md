@@ -17,6 +17,22 @@ diagnostics to **stderr**.
 
 ---
 
+## Run with Docker
+
+```bash
+docker build -t apihunter:local .
+docker run --rm apihunter:local --help
+```
+
+```bash
+docker run --rm -v "$PWD:/work" apihunter:local \
+  --urls /work/targets.txt \
+  --format ndjson \
+  --output /work/results.ndjson
+```
+
+---
+
 ## Scan scripts
 
 Helper scripts live in `ScanScripts/` and accept either a URL file or `--stdin`.

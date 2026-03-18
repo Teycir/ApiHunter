@@ -137,6 +137,22 @@ cd ApiHunter
 cargo build --release
 ```
 
+### Docker
+
+```bash
+docker build -t apihunter:local .
+docker run --rm apihunter:local --help
+```
+
+Run a scan from files in your current directory:
+
+```bash
+docker run --rm -v "$PWD:/work" apihunter:local \
+  --urls /work/targets/targets.txt \
+  --format ndjson \
+  --output /work/results.ndjson
+```
+
 ## CLI Reference
 
 | Flag | Default | Description |

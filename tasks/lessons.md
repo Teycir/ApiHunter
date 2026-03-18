@@ -4,3 +4,4 @@
 - User preference: keep session/cookie input format singular and explicit; avoid multiple equivalent flags.
 - Rule: when a user asks for one format, remove alternate CLI aliases and parser modes instead of documenting all variants.
 - Rule: keep README/HOWTO/config docs synchronized immediately after CLI surface changes to prevent usage confusion.
+- Rule: when external tooling (like Docker daemon) is temporarily unavailable, retry promptly once user confirms readiness and continue validation without delay.
