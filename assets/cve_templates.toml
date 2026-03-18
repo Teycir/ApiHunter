@@ -1,0 +1,53 @@
+# ApiHunter CVE template catalog (translated from Nuclei-style API checks).
+# These templates are intentionally low-impact: read-only probes only.
+
+[[templates]]
+id = "CVE-2022-22947"
+check = "cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed"
+title = "Spring Cloud Gateway actuator routes exposed"
+severity = "high"
+detail = "Potential exposure associated with Spring Cloud Gateway actuator route manipulation CVEs."
+remediation = "Restrict /actuator/gateway endpoints, enforce authN/authZ, and disable unnecessary actuator exposure."
+source = "nuclei:http/cves/2022/CVE-2022-22947.yaml"
+method = "GET"
+path = "/actuator/gateway/routes"
+status_any_of = [200]
+body_contains_any = ["route", "routes", "predicate", "filters"]
+body_contains_all = []
+match_headers = []
+context_path_contains_any = ["/api", "/actuator", "/gateway", "/admin", "/users"]
+
+[[templates]]
+id = "CVE-2021-29442"
+check = "cve/cve-2021-29442/nacos-auth-bypass-signal"
+title = "Nacos user listing endpoint accessible"
+severity = "high"
+detail = "Potential signal related to historical Nacos authentication-bypass exposures."
+remediation = "Upgrade Nacos, enforce auth on management APIs, and block unauthenticated access to /nacos/v1/auth/*."
+source = "nuclei:http/cves/2021/CVE-2021-29442.yaml"
+method = "GET"
+path = "/nacos/v1/auth/users?pageNo=1&pageSize=1"
+status_any_of = [200]
+body_contains_any = ["username", "users", "totalCount", "pageItems"]
+body_contains_all = []
+match_headers = []
+context_path_contains_any = ["/api", "/nacos", "/admin", "/auth", "/users"]
+
+[[templates]]
+id = "CVE-2020-13945"
+check = "cve/cve-2020-13945/apisix-default-admin-key"
+title = "Apache APISIX admin API accepts known default key"
+severity = "high"
+detail = "Potential signal tied to APISIX admin API exposure with a known default API key."
+remediation = "Rotate admin keys, disable defaults, restrict /apisix/admin to trusted networks, and require strong auth controls."
+source = "nuclei:http/cves/2020/CVE-2020-13945.yaml"
+method = "GET"
+path = "/apisix/admin/routes"
+status_any_of = [200]
+body_contains_any = ["route", "routes", "upstream", "node", "value"]
+body_contains_all = []
+headers = [
+  { name = "X-API-KEY", value = "edd1c9f034335f136f87ad84b625c8f1" }
+]
+match_headers = []
+context_path_contains_any = ["/api", "/apisix", "/admin", "/gateway", "/routes"]

@@ -53,7 +53,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 | **IDOR/BOLA Detection** | ✅ 3-tier (unauth/range/cross-user) | ⚠️ Manual templates | ⚠️ Limited | ✅ Manual testing | ❌ |
 | **Secret Detection** | ✅ Context-aware (frontend vs backend) | ⚠️ Regex-based | ⚠️ Basic | ⚠️ Basic | ❌ |
 | **Active Checks** | ✅ Opt-in (IDOR, mass-assignment, rate-limit) | ✅ Template-based | ✅ Active scan | ✅ Active scan | ✅ Fuzzing |
-| **WAF Evasion** | ✅ **Stealth-first**: UA rotation, delays, retries, adaptive timing | ⚠️ Basic (often blocked) | ⚠️ Limited (often blocked) | ✅ Good | ⚠️ Basic (often blocked) |
+| **WAF Evasion** | ✅ UA rotation, delays, retries, adaptive timing | ⚠️ Basic | ⚠️ Limited | ✅ Good | ⚠️ Basic |
 | **CI/CD Integration** | ✅ NDJSON, SARIF, exit codes | ✅ JSON, SARIF | ⚠️ XML reports | ⚠️ XML/JSON | ✅ JSON |
 | **Baseline Diffing** | ✅ Built-in | ❌ External tools | ❌ | ❌ | ❌ |
 | **Auth Flows** | ✅ JSON-based pre-scan login | ⚠️ Header injection | ✅ Session mgmt | ✅ Session mgmt | ⚠️ Header injection |
@@ -67,7 +67,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 ### Key Differentiators
 
 **ApiHunter excels at:**
-- **Stealth & WAF evasion**: Built from the ground up to avoid detection. While Nuclei, ZAP, and other tools frequently get blocked by WAFs and rate limiters, ApiHunter uses intelligent UA rotation, adaptive delays, retry logic, and politeness controls to stay under the radar. Perfect for scanning production APIs without triggering alerts.
+- **Politeness & rate control**: Built-in UA rotation, adaptive concurrency (AIMD), per-host delays, and retry logic with exponential backoff. Suitable for cooperative testing in staging/internal environments where you want to avoid overwhelming targets.
 - **API-specific security**: Deep CORS/CSP parsing, GraphQL schema analysis, OpenAPI security validation
 - **False positive reduction**: SPA catch-all detection, body content validation, context-aware secret detection
 - **CI/CD workflows**: Baseline diffing, streaming output, severity-based exit codes, SARIF support
@@ -136,12 +136,14 @@ Complete documentation is available in `docs/`. Start with:
 - ✅ **Roadmap Item 3:** Multi-stage Docker image with runtime assets and usage docs.
 - ✅ **WebSocket scanner:** active-checks module for upgrade + origin validation probing.
 - ✅ **Mass Assignment scanner:** dedicated active-checks module for reflected sensitive field injection.
+- ✅ **OAuth2/OIDC scanner:** active-checks module for redirect URI, PKCE metadata, and legacy flow hardening checks.
+- ✅ **Rate Limit scanner:** active-checks module for burst-throttling and IP-header bypass checks.
+- ✅ **CVE template module:** translated Nuclei-style API CVE templates executed through a TOML-compatible catalog.
 
 ### Next Priorities
 
-- 🔜 **OAuth2/OIDC scanner:** `redirect_uri`, PKCE/state validation, and token-flow hardening checks.
-- 🔜 **Rate Limit scanner:** API4-style resource-consumption and bypass checks.
-- 🔜 **CVE template module:** API-contextual CVE probing informed by discovered API/OpenAPI context.
+- 🔜 **Template expansion:** grow `assets/cve_templates.toml` coverage with additional vetted API CVE probes.
+- 🔜 **Template tooling:** add import/translation helpers for Nuclei API templates into ApiHunter TOML format.
 
 ### What To Do Next After Quick Start
 

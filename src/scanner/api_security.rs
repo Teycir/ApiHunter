@@ -13,7 +13,6 @@
 //     patterns (e.g. actuator returns JSON, .env contains KEY=VAL).
 
 use async_trait::async_trait;
-use dashmap::DashSet;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{collections::HashMap, sync::Arc};
@@ -30,16 +29,12 @@ use crate::{
 use super::Scanner;
 
 pub struct ApiSecurityScanner {
-    checked_hosts: Arc<DashSet<String>>,
     client_b: Option<Arc<HttpClient>>,
 }
 
 impl ApiSecurityScanner {
     pub fn new(_config: &Config, client_b: Option<Arc<HttpClient>>) -> Self {
-        Self {
-            checked_hosts: Arc::new(DashSet::new()),
-            client_b,
-        }
+        Self { client_b }
     }
 }
 
@@ -656,7 +651,6 @@ impl Scanner for ApiSecurityScanner {
                 &mut errors,
             )
             .await;
-            check_rate_limit(url, client, &self.checked_hosts, &mut findings, &mut errors).await;
         }
 
         (findings, errors)
@@ -1769,59 +1763,4 @@ fn replace_numeric_segment(url: &str, seg: &NumericSegment, new_id: u64) -> Stri
     let mut new_url = parsed.clone();
     new_url.set_path(&new_path);
     new_url.to_string()
-}
-
-async fn check_rate_limit(
-    url: &str,
-    client: &HttpClient,
-    checked_hosts: &Arc<DashSet<String>>,
-    findings: &mut Vec<Finding>,
-    errors: &mut Vec<CapturedError>,
-) {
-    let host = Url::parse(url)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| h.to_string()));
-    let Some(host) = host else {
-        return;
-    };
-
-    if checked_hosts.contains(&host) {
-        return;
-    }
-    checked_hosts.insert(host.clone());
-
-    let mut rate_limited = 0;
-    let mut ok = 0;
-
-    for _ in 0..20 {
-        match client.get(url).await {
-            Ok(r) => {
-                if r.status == 429 {
-                    rate_limited += 1;
-                } else if r.status < 400 {
-                    ok += 1;
-                }
-            }
-            Err(e) => {
-                errors.push(e);
-            }
-        }
-    }
-
-    if rate_limited == 0 && ok > 0 {
-        findings.push(
-            Finding::new(
-                url,
-                "api_security/no-rate-limit",
-                "No rate limiting detected",
-                Severity::Low,
-                "A short burst of requests did not trigger rate-limiting (HTTP 429).",
-                "api_security",
-            )
-            .with_evidence(format!("Host: {host}, burst=20, 429s=0"))
-            .with_remediation(
-                "Add rate limits on sensitive endpoints and return 429 on excessive requests.",
-            ),
-        );
-    }
 }

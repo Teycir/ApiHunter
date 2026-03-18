@@ -5,10 +5,13 @@
 pub mod api_security;
 pub mod cors;
 pub mod csp;
+pub mod cve_templates;
 pub mod graphql;
 pub mod jwt;
 pub mod mass_assignment;
+pub mod oauth_oidc;
 pub mod openapi;
+pub mod rate_limit;
 pub mod websocket;
 
 use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::Finding};

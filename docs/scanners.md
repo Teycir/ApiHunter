@@ -2,8 +2,8 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-18
-tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, mass-assignment, websocket, active-checks]
+last_updated: 2026-03-19
+tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, mass-assignment, oauth, oidc, rate-limit, cve, templates, websocket, active-checks]
 category: Scanner Modules
 ---
 
@@ -100,6 +100,58 @@ This scanner currently runs only when `--active-checks` is enabled.
 
 ---
 
+## OAuth2 / OIDC (`scanner::oauth_oidc`)
+
+Active-checks scanner for OAuth authorization endpoint and OIDC metadata hardening signals.
+
+This scanner currently runs only when `--active-checks` is enabled.
+
+**Detects:**
+- `oauth/redirect-uri-not-validated` when authorize endpoints redirect to attacker-controlled callbacks
+- `oauth/state-not-returned` when supplied `state` is not round-tripped in authorization redirects
+- `oauth/pkce-metadata-missing` when OIDC metadata omits PKCE method declarations
+- `oauth/pkce-s256-not-supported` when metadata does not advertise `S256`
+- `oauth/pkce-plain-supported` when weak PKCE `plain` is enabled
+- `oauth/implicit-flow-enabled` when `response_types_supported` includes token-bearing implicit/hybrid flows
+- `oauth/ropc-grant-enabled` when password grant is advertised
+
+---
+
+## Rate Limit (`scanner::rate_limit`)
+
+Active-checks scanner for API4-style throttling and basic bypass signals.
+
+This scanner currently runs only when `--active-checks` is enabled.
+
+**Detects:**
+- `rate_limit/not-detected` when burst probes do not trigger 429 and rate-limit headers are absent
+- `rate_limit/missing-retry-after` when 429 responses omit Retry-After guidance
+- `rate_limit/ip-header-bypass` when spoofed client IP headers appear to bypass active throttling
+
+---
+
+## CVE Templates (`scanner::cve_templates`)
+
+Active-checks scanner powered by a TOML template catalog translated from Nuclei-style API CVE checks.
+
+This scanner currently runs only when `--active-checks` is enabled.
+
+Template catalog location:
+- `assets/cve_templates.toml`
+
+Current translated checks include:
+- `cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed`
+- `cve/cve-2021-29442/nacos-auth-bypass-signal`
+- `cve/cve-2020-13945/apisix-default-admin-key`
+
+**Detects:**
+- CVE-specific exposure signals based on:
+  - HTTP status constraints
+  - response body indicators
+  - required request headers (for example known-default API keys)
+
+---
+
 ## WebSocket (`scanner::websocket`)
 
 Initial active-checks scaffold for WebSocket surface discovery.
@@ -124,7 +176,6 @@ These should only be used in controlled environments or with explicit permission
 ### API Security Active Checks
 - **Verb tampering** — attempts `TRACE`, `PATCH`, `HEAD` (if not already detected passively)
 - **BOLA/IDOR probing** — numeric ID swap tests on detected endpoints
-- **Rate-limit detection** — controlled burst probes to detect 429 (Too Many Requests) thresholds
 
 ### JWT Active Checks
 - **Algorithm confusion** — attempts RS256 → HS256 substitution attacks
@@ -133,6 +184,18 @@ These should only be used in controlled environments or with explicit permission
 ### GraphQL Active Checks
 - **Complexity/depth bombs** — sophisticated query structures to test depth limits
 - **Query cost analysis** — attempts to measure GraphQL cost limiting
+
+### OAuth/OIDC Active Checks
+- **Authorization redirect probing** — tests redirect URI handling and state round-trip behavior
+- **OIDC discovery analysis** — evaluates metadata for PKCE and legacy/unsafe flow exposure
+
+### Rate-Limit Active Checks
+- **Burst throttling probe** — controlled bursts to test 429 enforcement and rate-limit signaling
+- **Header-based bypass probe** — tests whether client IP headers can evade throttling decisions
+
+### CVE Template Active Checks
+- **Template-driven CVE probes** — translated low-impact API CVE checks executed against host-contextual paths
+- **Catalog extensibility** — add or tune templates via `assets/cve_templates.toml` without changing scanner code
 
 ⚠️ **Warning:** Active checks generate significantly higher request volume and may:
 - Trigger WAF/IDS alerts and rate limiting

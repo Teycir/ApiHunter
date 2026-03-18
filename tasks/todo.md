@@ -351,3 +351,130 @@
     - evidence included newly elevated fields after confirm GET: `is_admin, permissions, role`
 - Cleanup:
   - lab server process stopped after validation.
+
+---
+
+# Task: OAuth2/OIDC Scanner (Roadmap Priority 1, Phase 13)
+
+## Plan
+- [x] Implement a dedicated OAuth2/OIDC scanner module for active checks.
+- [x] Add authorize endpoint redirect-uri/state probes.
+- [x] Add OIDC metadata hardening checks (PKCE/implicit/password-grant).
+- [x] Register the scanner in runner active-check registry.
+- [x] Add focused tests and run full validation.
+- [x] Update scanner docs and roadmap status in README.
+
+## Review
+- Added scanner module: `src/scanner/oauth_oidc.rs`
+  - Active-check gated (`--active-checks` required).
+  - Authorize probe:
+    - `oauth/redirect-uri-not-validated`
+    - `oauth/state-not-returned`
+  - OIDC metadata checks:
+    - `oauth/pkce-metadata-missing`
+    - `oauth/pkce-s256-not-supported`
+    - `oauth/pkce-plain-supported`
+    - `oauth/implicit-flow-enabled`
+    - `oauth/ropc-grant-enabled`
+  - Uses a dedicated no-redirect probe client for authorize checks so `Location` can be analyzed safely.
+- Wiring:
+  - `src/scanner/mod.rs`: registered `oauth_oidc` module.
+  - `src/runner.rs`: added `OAuthOidcScanner` to active-check scanner list.
+- Tests:
+  - Added `tests/oauth_oidc_scanner.rs` covering:
+    - redirect URI acceptance detection,
+    - metadata checks for PKCE/implicit/password grant,
+    - no-op behavior when active checks are disabled.
+- Docs:
+  - `docs/scanners.md`: added OAuth2/OIDC section + active-checks subsection.
+  - `Readme.md`: marked OAuth2/OIDC scanner as recently completed and removed it from next-priority backlog.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test oauth_oidc_scanner` passed (`3/3`).
+  - `cargo test` passed (full suite green).
+  - Live run:
+    - `./target/debug/api-scanner --urls /tmp/oauth_real_targets.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/oauth_real.ndjson --summary`
+    - scanned: `3`, findings: `4` (`oauth/implicit-flow-enabled`, `oauth/pkce-plain-supported`, `oauth/pkce-metadata-missing`), errors: `0`.
+
+---
+
+# Task: Rate Limit Scanner (Roadmap Priority 2, Phase 14)
+
+## Plan
+- [x] Add a dedicated active-check `rate_limit` scanner module.
+- [x] Move rate-limit probing out of `api_security` to avoid duplicate/overlapping findings.
+- [x] Register scanner in runner active-checks list.
+- [x] Add focused tests for no-limit and header-bypass behavior.
+- [x] Update docs/README roadmap status and run full validation.
+
+## Review
+- Added scanner module: `src/scanner/rate_limit.rs`
+  - Active-check gated (`--active-checks` required).
+  - Checks:
+    - `rate_limit/not-detected` (no 429 + no rate-limit headers under burst)
+    - `rate_limit/missing-retry-after` (429 without retry guidance)
+    - `rate_limit/ip-header-bypass` (spoofed IP headers appear to evade throttling)
+  - Host-level dedup to avoid repeating burst probes for every URL on the same host.
+- Moved rate-limit logic out of `api_security`:
+  - removed inline `check_rate_limit` implementation and call path from `src/scanner/api_security.rs`.
+- Wiring:
+  - `src/scanner/mod.rs`: registered `rate_limit` module.
+  - `src/runner.rs`: added `RateLimitScanner` to active-check scanner list.
+- Tests:
+  - Added `tests/rate_limit_scanner.rs` with coverage for:
+    - no-limit detection,
+    - IP-header bypass detection,
+    - no-op when active checks are disabled.
+- Docs / roadmap:
+  - `docs/scanners.md`: added Rate Limit scanner section and active-checks notes.
+  - `Readme.md`: marked Rate Limit scanner as completed roadmap item.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test rate_limit_scanner` passed (`3/3`).
+  - `cargo test` passed (full suite green).
+  - Live run (non-mutation real targets):
+    - `./target/debug/api-scanner --urls /tmp/rate_real_targets_only.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/rate_real_only.ndjson --summary --delay-ms 0`
+    - scanned: `3`, findings: `1` (`rate_limit/not-detected` on `https://httpbin.org/get`), errors: `0`.
+
+---
+
+# Task: CVE Template Module (Roadmap Priority 3, Phase 15)
+
+## Plan
+- [x] Add a dedicated CVE template scanner module using a TOML catalog.
+- [x] Translate a starter set of Nuclei-style API CVE checks into compatible templates.
+- [x] Register scanner in active checks and keep probes low-impact/read-only.
+- [x] Add focused tests for translated template matching and required request headers.
+- [x] Update docs/README roadmap status and run full validation + live sanity pass.
+
+## Review
+- Added scanner module: `src/scanner/cve_templates.rs`
+  - Active-check gated (`--active-checks` required).
+  - Loads translated templates from `assets/cve_templates.toml`.
+  - Executes low-impact template probes (GET only) with:
+    - request headers from template definition,
+    - response status/body/header matchers,
+    - host+template deduplication to avoid repeated probes.
+- Added translated TOML catalog: `assets/cve_templates.toml`
+  - `CVE-2022-22947` Spring Cloud Gateway actuator exposure signal
+  - `CVE-2021-29442` Nacos auth-bypass signal
+  - `CVE-2020-13945` APISIX default admin key signal
+  - Each template includes source metadata referencing original Nuclei-style template path.
+- Wiring:
+  - `src/scanner/mod.rs`: registered `cve_templates` module.
+  - `src/runner.rs`: added `CveTemplateScanner` to active-check scanner list.
+- Tests:
+  - Added `tests/cve_templates_scanner.rs` with:
+    - Spring actuator template detection,
+    - APISIX default-key header template detection,
+    - no-op behavior when active checks are disabled.
+- Docs / roadmap:
+  - `docs/scanners.md`: added CVE Templates scanner section and active-check notes.
+  - `Readme.md`: marked CVE template module completed and updated next priorities to template expansion/tooling.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test cve_templates_scanner` passed (`3/3`).
+  - `cargo test` passed (full suite green).
+  - Live run:
+    - `./target/debug/api-scanner --urls /tmp/cve_real_targets.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/cve_real.ndjson --summary --delay-ms 0`
+    - scanned: `3`, findings: `1` (rate-limit signal), `cve/*` findings: `0`, errors: `0`.

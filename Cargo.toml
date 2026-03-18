@@ -22,6 +22,7 @@ reqwest = { version = "0.12", features = ["json", "gzip", "deflate", "rustls-tls
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+toml = "0.8"
 base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
@@ -76,4 +77,3 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-

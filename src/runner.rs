@@ -33,8 +33,10 @@ use crate::{
     reports::{Finding, Reporter},
     scanner::{
         api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
-        graphql::GraphqlScanner, jwt::JwtScanner, mass_assignment::MassAssignmentScanner,
-        openapi::OpenApiScanner, websocket::WebSocketScanner, Scanner,
+        cve_templates::CveTemplateScanner, graphql::GraphqlScanner, jwt::JwtScanner,
+        mass_assignment::MassAssignmentScanner, oauth_oidc::OAuthOidcScanner,
+        openapi::OpenApiScanner, rate_limit::RateLimitScanner, websocket::WebSocketScanner,
+        Scanner,
     },
 };
 
@@ -342,6 +344,9 @@ fn build_scanners(
     }
     if config.active_checks {
         scanners.push(Arc::new(MassAssignmentScanner::new(config)));
+        scanners.push(Arc::new(OAuthOidcScanner::new(config)));
+        scanners.push(Arc::new(RateLimitScanner::new(config)));
+        scanners.push(Arc::new(CveTemplateScanner::new(config)));
         scanners.push(Arc::new(WebSocketScanner::new(config)));
     }
 
