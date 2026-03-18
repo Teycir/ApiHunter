@@ -3,7 +3,7 @@ author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
 last_updated: 2026-03-18
-tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, websocket, active-checks]
+tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, mass-assignment, websocket, active-checks]
 category: Scanner Modules
 ---
 
@@ -88,6 +88,17 @@ The OpenAPI scanner discovers JSON/YAML spec files at common endpoints:
 
 ---
 
+## Mass Assignment (`scanner::mass_assignment`)
+
+Dedicated active-checks scanner for mass-assignment style field injection probes.
+
+This scanner currently runs only when `--active-checks` is enabled.
+
+**Detects:**
+- Reflection of crafted sensitive fields (for example `is_admin`, `role`, `permissions`) in mutation-like endpoints
+
+---
+
 ## WebSocket (`scanner::websocket`)
 
 Initial active-checks scaffold for WebSocket surface discovery.
@@ -113,7 +124,6 @@ These should only be used in controlled environments or with explicit permission
 - **Verb tampering** — attempts `TRACE`, `PATCH`, `HEAD` (if not already detected passively)
 - **BOLA/IDOR probing** — numeric ID swap tests on detected endpoints
 - **Rate-limit detection** — controlled burst probes to detect 429 (Too Many Requests) thresholds
-- **Mass-assignment heuristics** — POST/PUT with extra JSON fields to detect reflection
 
 ### JWT Active Checks
 - **Algorithm confusion** — attempts RS256 → HS256 substitution attacks

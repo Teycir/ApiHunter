@@ -133,11 +133,11 @@ Complete documentation is available in `docs/`. Start with:
 
 - ✅ **Roadmap Item 2:** Runtime User-Agent pool from `assets/user_agents.txt` with safe fallback.
 - ✅ **Roadmap Item 3:** Multi-stage Docker image with runtime assets and usage docs.
+- ✅ **WebSocket scanner:** active-checks module for upgrade + origin validation probing.
+- ✅ **Mass Assignment scanner:** dedicated active-checks module for reflected sensitive field injection.
 
 ### Next Priorities
 
-- 🔜 **WebSocket Scanner module:** origin/auth checks and GraphQL subscription abuse detection.
-- 🔜 **Mass Assignment scanner:** mutation field injection checks aligned to API schemas.
 - 🔜 **OAuth2/OIDC scanner:** `redirect_uri`, PKCE/state validation, and token-flow hardening checks.
 - 🔜 **Rate Limit scanner:** API4-style resource-consumption and bypass checks.
 - 🔜 **CVE template module:** API-contextual CVE probing informed by discovered API/OpenAPI context.

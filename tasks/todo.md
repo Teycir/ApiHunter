@@ -166,3 +166,37 @@
     - scanned: `3` (seed-only, no discovery fan-out)
     - findings: `14` (`7 INFO`, `7 MEDIUM`)
     - errors: `5` (down from `122` in discovery-enabled run)
+
+---
+
+# Task: Dedicated Mass Assignment Scanner (Phase 7)
+
+## Plan
+- [x] Add `src/scanner/mass_assignment.rs` with a dedicated active-checks scanner.
+- [x] Register scanner module in `scanner/mod.rs` and `runner.rs`.
+- [x] Remove mass-assignment probing from `api_security` to avoid duplicate findings.
+- [x] Add focused tests in `tests/mass_assignment_scanner.rs`.
+- [x] Update scanner docs and roadmap status in README.
+- [x] Run formatting and full tests, then document results.
+
+## Review
+- Added dedicated scanner: `src/scanner/mass_assignment.rs`
+  - Active-checks gated (`config.active_checks`).
+  - Probes mutation-like endpoints (`/users`, `/account`, `/profile`, etc.) with crafted sensitive fields.
+  - Emits `mass_assignment/reflected-fields` when crafted fields are reflected in successful JSON-like responses.
+- Registered module and runner wiring:
+  - `src/scanner/mod.rs`: `pub mod mass_assignment;`
+  - `src/runner.rs`: includes `MassAssignmentScanner` in active-check scanner registry.
+- Removed old inline mass-assignment probe from `api_security` scanner so findings are not duplicated across scanners.
+- Added tests: `tests/mass_assignment_scanner.rs`
+  - reflected sensitive-field detection,
+  - non-mutation path skip,
+  - no-op when active checks are disabled.
+- Updated docs/roadmap status:
+  - `docs/scanners.md`: added `Mass Assignment` scanner section and adjusted active-check bullets.
+  - `Readme.md`: moved Mass Assignment scanner to recently completed roadmap items.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test cli` passed.
+  - `cargo test --test mass_assignment_scanner` passed (`3/3`).
+  - `cargo test` passed (full suite green).

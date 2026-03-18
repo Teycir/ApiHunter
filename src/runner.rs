@@ -33,8 +33,8 @@ use crate::{
     reports::{Finding, Reporter},
     scanner::{
         api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
-        graphql::GraphqlScanner, jwt::JwtScanner, openapi::OpenApiScanner,
-        websocket::WebSocketScanner, Scanner,
+        graphql::GraphqlScanner, jwt::JwtScanner, mass_assignment::MassAssignmentScanner,
+        openapi::OpenApiScanner, websocket::WebSocketScanner, Scanner,
     },
 };
 
@@ -341,6 +341,7 @@ fn build_scanners(
         scanners.push(Arc::new(OpenApiScanner::new(config)));
     }
     if config.active_checks {
+        scanners.push(Arc::new(MassAssignmentScanner::new(config)));
         scanners.push(Arc::new(WebSocketScanner::new(config)));
     }
 

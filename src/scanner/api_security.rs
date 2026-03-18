@@ -656,7 +656,6 @@ impl Scanner for ApiSecurityScanner {
                 &mut errors,
             )
             .await;
-            check_mass_assignment(url, client, &mut findings, &mut errors).await;
             check_rate_limit(url, client, &self.checked_hosts, &mut findings, &mut errors).await;
         }
 
@@ -1770,65 +1769,6 @@ fn replace_numeric_segment(url: &str, seg: &NumericSegment, new_id: u64) -> Stri
     let mut new_url = parsed.clone();
     new_url.set_path(&new_path);
     new_url.to_string()
-}
-
-async fn check_mass_assignment(
-    url: &str,
-    client: &HttpClient,
-    findings: &mut Vec<Finding>,
-    errors: &mut Vec<CapturedError>,
-) {
-    let lower = url.to_ascii_lowercase();
-    let likely_mutation = ["/users", "/user", "/account", "/profile", "/admin"]
-        .iter()
-        .any(|k| lower.contains(k));
-
-    if !likely_mutation {
-        return;
-    }
-
-    let payload = serde_json::json!({
-        "__ah_probe": "1",
-        "is_admin": true
-    });
-
-    let resp = match client.post_json(url, &payload).await {
-        Ok(r) => r,
-        Err(e) => {
-            errors.push(e);
-            return;
-        }
-    };
-
-    if resp.status >= 400 {
-        return;
-    }
-
-    let ct = resp
-        .headers
-        .get("content-type")
-        .map(|s| s.as_str())
-        .unwrap_or("");
-    if !ct.to_ascii_lowercase().contains("json") {
-        return;
-    }
-
-    if resp.body.contains("\"__ah_probe\"") || resp.body.contains("\"is_admin\"") {
-        findings.push(
-            Finding::new(
-                url,
-                "api_security/mass-assignment",
-                "Potential mass-assignment",
-                Severity::Medium,
-                "The response reflects unexpected fields from a crafted JSON payload.",
-                "api_security",
-            )
-            .with_evidence("Payload contained __ah_probe and is_admin")
-            .with_remediation(
-                "Use explicit allowlists for writeable fields and validate request bodies server-side.",
-            ),
-        );
-    }
 }
 
 async fn check_rate_limit(

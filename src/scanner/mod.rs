@@ -7,6 +7,7 @@ pub mod cors;
 pub mod csp;
 pub mod graphql;
 pub mod jwt;
+pub mod mass_assignment;
 pub mod openapi;
 pub mod websocket;
 
