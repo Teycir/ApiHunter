@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wiremock::matchers::method;
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
@@ -79,6 +79,62 @@ async fn reflected_sensitive_fields_are_reported() {
             .iter()
             .any(|f| f.check == "mass_assignment/reflected-fields"),
         "expected mass-assignment finding, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
+async fn persisted_sensitive_fields_are_reported_as_high_severity() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .and(header("x-ah-ma-stage", "baseline"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"ok":true,"__ah_probe":"1","is_admin":true,"role":"admin","permissions":["*"]}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .and(header("x-ah-ma-stage", "confirm"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"user":{"id":1,"is_admin":true,"role":"admin","permissions":["*"]}}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/persisted-state-change"),
+        "expected confirmed mass-assignment finding, got: {findings:#?}"
     );
 }
 

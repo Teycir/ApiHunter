@@ -95,7 +95,8 @@ Dedicated active-checks scanner for mass-assignment style field injection probes
 This scanner currently runs only when `--active-checks` is enabled.
 
 **Detects:**
-- Reflection of crafted sensitive fields (for example `is_admin`, `role`, `permissions`) in mutation-like endpoints
+- `mass_assignment/reflected-fields` when crafted sensitive fields (for example `is_admin`, `role`, `permissions`) are reflected
+- `mass_assignment/persisted-state-change` when reflected fields also appear newly elevated in a post-injection confirmation read
 
 ---
 

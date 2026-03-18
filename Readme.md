@@ -53,7 +53,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 | **IDOR/BOLA Detection** | ✅ 3-tier (unauth/range/cross-user) | ⚠️ Manual templates | ⚠️ Limited | ✅ Manual testing | ❌ |
 | **Secret Detection** | ✅ Context-aware (frontend vs backend) | ⚠️ Regex-based | ⚠️ Basic | ⚠️ Basic | ❌ |
 | **Active Checks** | ✅ Opt-in (IDOR, mass-assignment, rate-limit) | ✅ Template-based | ✅ Active scan | ✅ Active scan | ✅ Fuzzing |
-| **WAF Evasion** | ✅ UA rotation, delays, retries | ⚠️ Basic | ⚠️ Limited | ✅ Good | ⚠️ Basic |
+| **WAF Evasion** | ✅ **Stealth-first**: UA rotation, delays, retries, adaptive timing | ⚠️ Basic (often blocked) | ⚠️ Limited (often blocked) | ✅ Good | ⚠️ Basic (often blocked) |
 | **CI/CD Integration** | ✅ NDJSON, SARIF, exit codes | ✅ JSON, SARIF | ⚠️ XML reports | ⚠️ XML/JSON | ✅ JSON |
 | **Baseline Diffing** | ✅ Built-in | ❌ External tools | ❌ | ❌ | ❌ |
 | **Auth Flows** | ✅ JSON-based pre-scan login | ⚠️ Header injection | ✅ Session mgmt | ✅ Session mgmt | ⚠️ Header injection |
@@ -67,6 +67,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 ### Key Differentiators
 
 **ApiHunter excels at:**
+- **Stealth & WAF evasion**: Built from the ground up to avoid detection. While Nuclei, ZAP, and other tools frequently get blocked by WAFs and rate limiters, ApiHunter uses intelligent UA rotation, adaptive delays, retry logic, and politeness controls to stay under the radar. Perfect for scanning production APIs without triggering alerts.
 - **API-specific security**: Deep CORS/CSP parsing, GraphQL schema analysis, OpenAPI security validation
 - **False positive reduction**: SPA catch-all detection, body content validation, context-aware secret detection
 - **CI/CD workflows**: Baseline diffing, streaming output, severity-based exit codes, SARIF support

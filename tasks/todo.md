@@ -200,3 +200,154 @@
   - `cargo test --test cli` passed.
   - `cargo test --test mass_assignment_scanner` passed (`3/3`).
   - `cargo test` passed (full suite green).
+
+---
+
+# Task: Mass Assignment Confirmation Hardening (Phase 8)
+
+## Plan
+- [x] Require confirmation logic for elevated-state findings (baseline vs confirm read).
+- [x] Add focused tests for confirmed persisted-state change path.
+- [x] Update scanner documentation with both finding IDs and semantics.
+- [x] Run formatting, targeted tests, and full suite validation.
+
+## Review
+- Hardened `src/scanner/mass_assignment.rs` so high-severity confirmation (`mass_assignment/persisted-state-change`) is emitted only when:
+  - crafted sensitive fields are reflected in the mutation response, and
+  - baseline + confirm reads both succeed, and
+  - sensitive fields are newly elevated after the probe.
+- Kept safe fallback to `mass_assignment/reflected-fields` when confirmation cannot be established.
+- Added test coverage in `tests/mass_assignment_scanner.rs`:
+  - `persisted_sensitive_fields_are_reported_as_high_severity` (stage-aware baseline/confirm flow),
+  - existing reflected/skip/noop tests remain green.
+- Updated `docs/scanners.md` Mass Assignment section to document both finding IDs.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test mass_assignment_scanner` passed (`4/4`).
+  - `cargo test` passed (full suite green).
+
+---
+
+# Task: Real-Target Validation for Mass Assignment Scanner (Phase 9)
+
+## Plan
+- [x] Prepare a small set of safe public API targets with mutation-like paths.
+- [x] Run a real-target active-check scan focused on mass-assignment behavior.
+- [x] Capture findings/errors and confirm signal quality.
+- [x] Document exact command and results in this review section.
+
+## Review
+- Target file used: `/tmp/mass_real_targets.txt`
+  - `https://jsonplaceholder.typicode.com/users`
+  - `https://reqres.in/api/users`
+  - `https://httpbin.org/anything/users`
+- Command:
+  - `./target/debug/api-scanner --urls /tmp/mass_real_targets.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/mass_real.ndjson --summary`
+- Notes:
+  - Initial in-sandbox run showed transport send errors (network restriction), then rerun outside sandbox.
+- Final live run result (`/tmp/mass_real.ndjson`):
+  - scanned: `3`
+  - findings: `2` (`2 MEDIUM`, both `mass_assignment/reflected-fields`)
+  - errors: `0`
+  - finding URLs:
+    - `https://httpbin.org/anything/users`
+    - `https://jsonplaceholder.typicode.com/users`
+  - no finding on:
+    - `https://reqres.in/api/users`
+
+---
+
+# Task: Expanded Real-Target Validation for Mass Assignment Scanner (Phase 10)
+
+## Plan
+- [x] Build a broader safe public target set with mutation-like paths.
+- [x] Run an expanded live scan with discovery disabled for controlled request volume.
+- [x] Extract per-check and per-URL results from NDJSON output.
+- [x] Document findings/errors and compare against prior Phase 9 run.
+
+## Review
+- Batch A targets: `/tmp/mass_real_targets_extended.txt` (`11` URLs)
+- Batch B targets: `/tmp/mass_real_targets_batch2.txt` (`10` URLs)
+- Command used for each batch:
+  - `./target/debug/api-scanner --urls <target-file> --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --timeout-secs 15 --retries 1 --format ndjson --output <result-file> --summary`
+- Output files:
+  - Batch A: `/tmp/mass_real_extended.ndjson`
+  - Batch B: `/tmp/mass_real_batch2.ndjson`
+- Batch A result:
+  - scanned: `11`
+  - findings: `5` (`5 MEDIUM`, all `mass_assignment/reflected-fields`)
+  - errors: `0`
+  - finding URLs:
+    - `https://dummyjson.com/users/add`
+    - `https://httpbin.org/anything/account`
+    - `https://httpbin.org/anything/profile`
+    - `https://httpbin.org/anything/users`
+    - `https://jsonplaceholder.typicode.com/users`
+- Batch B result:
+  - scanned: `10`
+  - findings: `0`
+  - errors: `0`
+- Combined outcome for this phase:
+  - scanned: `21`
+  - findings: `5`
+  - errors: `0`
+  - signal remained specific to reflection behavior; no confirmed persisted-state findings on public targets.
+
+---
+
+# Task: Third Real-Target Batch (Training + Public Mix) for Mass Assignment Scanner (Phase 11)
+
+## Plan
+- [x] Build a third target batch including training/demo user endpoints.
+- [x] Run live scan outside sandbox with the same controlled flags used in prior batches.
+- [x] Summarize findings and compare with prior expanded batches.
+
+## Review
+- Target file: `/tmp/mass_real_targets_batch3.txt` (`9` URLs)
+  - included `demo.owasp-juice.shop` user endpoints plus prior public high-signal targets.
+- Command:
+  - `./target/debug/api-scanner --urls /tmp/mass_real_targets_batch3.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --timeout-secs 15 --retries 1 --format ndjson --output /tmp/mass_real_batch3.ndjson --summary`
+- Result (`/tmp/mass_real_batch3.ndjson`):
+  - scanned: `9`
+  - findings: `4` (`4 MEDIUM`, all `mass_assignment/reflected-fields`)
+  - errors: `0`
+  - finding URLs:
+    - `https://demo.owasp-juice.shop/api/Users`
+    - `https://dummyjson.com/users/add`
+    - `https://httpbin.org/anything/users`
+    - `https://jsonplaceholder.typicode.com/users`
+- Combined across expanded batches (Phase 10 + Phase 11):
+  - total scanned: `30`
+  - total findings: `9`
+  - total errors: `0`
+  - `mass_assignment/persisted-state-change`: `0`
+
+---
+
+# Task: Dedicated Vulnerable Lab Target Validation (Phase 12)
+
+## Plan
+- [x] Stand up a real local HTTP target that intentionally persists mass-assigned fields.
+- [x] Run ApiHunter mass-assignment active checks against this lab target.
+- [x] Verify that `mass_assignment/persisted-state-change` is emitted.
+- [x] Capture command/output artifacts and document results.
+
+## Review
+- Temporary lab target server:
+  - Script: `/tmp/mass_assignment_lab_server.py`
+  - Bind: `127.0.0.1:18080`
+  - Behavior: intentionally persists all client-controlled fields on `POST /users` and returns them in `GET /users`.
+- Scan target file:
+  - `/tmp/mass_lab_target.txt` with `http://127.0.0.1:18080/users`
+- Scan command:
+  - `./target/debug/api-scanner --urls /tmp/mass_lab_target.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/mass_lab_result.ndjson --summary`
+- Result (`/tmp/mass_lab_result.ndjson`):
+  - scanned: `1`
+  - findings: `1`
+  - errors: `0`
+  - finding:
+    - check: `mass_assignment/persisted-state-change`
+    - severity: `HIGH`
+    - evidence included newly elevated fields after confirm GET: `is_admin, permissions, role`
+- Cleanup:
+  - lab server process stopped after validation.
