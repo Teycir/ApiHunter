@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-14
+last_updated: 2026-03-18
 tags: [configuration, cli, settings, parameters]
 category: Configuration Guide
 ---
@@ -17,6 +17,7 @@ Durations are in milliseconds unless noted.
 | `urls` | `Vec<String>` | required* | Target URLs (newline-delimited file or stdin) |
 | `concurrency` | `usize` | `20` | Max parallel tasks |
 | `max_endpoints` | `usize` | `0` | Hard cap on discovered endpoints (0 = unlimited) |
+| `no_discovery` | `bool` | `false` | Skip endpoint discovery and scan only provided seed URLs |
 | `min_severity` | `Severity` | `Info` | Drop findings below this |
 | `fail_on` | `Severity` | `Medium` | Exit non-zero at or above this level |
 | `output_path` | `Option<PathBuf>` | `None` (stdout) | Report output file |

@@ -55,6 +55,10 @@ pub struct Cli {
     #[arg(long, default_value_t = 3, value_name = "SECS")]
     pub filter_timeout: u64,
 
+    /// Skip endpoint discovery and scan only the provided seed URLs.
+    #[arg(long)]
+    pub no_discovery: bool,
+
     // ── Output ───────────────────────────────────────────────────────────────
     /// Write findings to this file path (default: stdout).
     #[arg(short = 'o', long, value_name = "FILE")]

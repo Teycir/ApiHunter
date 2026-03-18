@@ -33,7 +33,8 @@ use crate::{
     reports::{Finding, Reporter},
     scanner::{
         api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
-        graphql::GraphqlScanner, jwt::JwtScanner, openapi::OpenApiScanner, Scanner,
+        graphql::GraphqlScanner, jwt::JwtScanner, openapi::OpenApiScanner,
+        websocket::WebSocketScanner, Scanner,
     },
 };
 
@@ -69,12 +70,22 @@ pub async fn run(
     let (unique_seeds, skipped_dedup) = dedup(urls);
 
     // ── 2. Discovery phase with per-site cap ────────────────────────────────
-    let (discovered, mut discovery_errors) =
-        run_discovery_per_site(&unique_seeds, &config, &http_client).await;
-    eprintln!(
-        "Discovery complete: {} total endpoints",
-        discovered.len() + unique_seeds.len()
-    );
+    let (discovered, mut discovery_errors) = if config.no_discovery {
+        (Vec::new(), Vec::new())
+    } else {
+        run_discovery_per_site(&unique_seeds, &config, &http_client).await
+    };
+    if config.no_discovery {
+        eprintln!(
+            "Discovery skipped (--no-discovery): {} seed endpoints",
+            unique_seeds.len()
+        );
+    } else {
+        eprintln!(
+            "Discovery complete: {} total endpoints",
+            discovered.len() + unique_seeds.len()
+        );
+    }
 
     let mut merged = unique_seeds;
     merged.extend(discovered);
@@ -328,6 +339,9 @@ fn build_scanners(
     }
     if config.toggles.openapi {
         scanners.push(Arc::new(OpenApiScanner::new(config)));
+    }
+    if config.active_checks {
+        scanners.push(Arc::new(WebSocketScanner::new(config)));
     }
 
     if scanners.is_empty() {

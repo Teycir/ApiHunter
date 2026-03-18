@@ -48,6 +48,7 @@ fn test_config() -> Config {
         unauth_strip_headers: vec![],
         per_host_clients: false,
         adaptive_concurrency: false,
+        no_discovery: false,
         toggles: ScannerToggles {
             cors: true,
             csp: true,
@@ -509,6 +510,50 @@ async fn discovery_runs_once_per_site_not_per_seed() {
         false,
     )
     .await;
+}
+
+#[tokio::test]
+async fn no_discovery_skips_robots_probe() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/plain")
+                .set_body_string("User-agent: *\nDisallow:\n"),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.no_discovery = true;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.active_checks = false;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let url_a = format!("{}/alpha", server.uri());
+    let url_b = format!("{}/beta", server.uri());
+
+    let result = runner::run(
+        vec![url_a, url_b],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+
+    assert_eq!(result.scanned, 2, "seed URLs should be scanned directly");
 }
 
 // ─── Reporter unit-level tests ────────────────────────────────────────────────

@@ -8,6 +8,7 @@ pub mod csp;
 pub mod graphql;
 pub mod jwt;
 pub mod openapi;
+pub mod websocket;
 
 use crate::{config::Config, error::CapturedError, http_client::HttpClient, reports::Finding};
 

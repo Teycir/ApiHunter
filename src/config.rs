@@ -63,6 +63,9 @@ pub struct Config {
     /// Enable adaptive concurrency.
     pub adaptive_concurrency: bool,
 
+    /// Skip endpoint discovery and scan only provided seed URLs.
+    pub no_discovery: bool,
+
     /// Suppress verbose progress output.
     pub quiet: bool,
 }

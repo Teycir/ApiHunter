@@ -130,6 +130,7 @@ async fn run(cli: Cli) -> Result<i32> {
         unauth_strip_headers: build_unauth_strip_headers(cli.unauth_strip_headers.as_deref()),
         per_host_clients: cli.per_host_clients,
         adaptive_concurrency: cli.adaptive_concurrency,
+        no_discovery: cli.no_discovery,
         quiet: cli.quiet,
         toggles: ScannerToggles {
             cors: !cli.no_cors,

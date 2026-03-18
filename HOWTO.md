@@ -168,6 +168,20 @@ printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --a
 
 ---
 
+## Skip discovery for targeted checks
+
+Use this when you want to test only the seed URLs you provide (for example, focused WebSocket checks) without endpoint expansion.
+
+```bash
+printf "https://target.example.com/ws\n" | ./target/release/api-scanner \
+  --stdin \
+  --active-checks \
+  --no-discovery \
+  --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi
+```
+
+---
+
 ## Auth helpers and session cookies
 
 ```bash

@@ -39,6 +39,7 @@ fn test_config() -> Config {
         unauth_strip_headers: vec![],
         per_host_clients: false,
         adaptive_concurrency: false,
+        no_discovery: false,
         toggles: ScannerToggles {
             cors: false,
             csp: false,

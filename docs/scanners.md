@@ -2,8 +2,8 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-14
-tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, active-checks]
+last_updated: 2026-03-18
+tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, websocket, active-checks]
 category: Scanner Modules
 ---
 
@@ -85,6 +85,18 @@ The OpenAPI scanner discovers JSON/YAML spec files at common endpoints:
 - File upload endpoints (e.g., `multipart/form-data`)
 - Deprecated operations still present in the spec
 - Unsecured endpoints that should require authentication
+
+---
+
+## WebSocket (`scanner::websocket`)
+
+Initial active-checks scaffold for WebSocket surface discovery.
+
+This scanner currently runs only when `--active-checks` is enabled.
+
+**Detects:**
+- WebSocket upgrade acceptance on common WS paths (informational exposure signal)
+- Possible missing origin validation when an attacker origin is also accepted
 
 ---
 

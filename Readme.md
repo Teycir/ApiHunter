@@ -127,6 +127,28 @@ Complete documentation is available in `docs/`. Start with:
 - [Findings & Remediation](docs/findings.md)
 - [HOWTO](HOWTO.md)
 
+## Roadmap & Next Steps
+
+### Recently Completed
+
+- ✅ **Roadmap Item 2:** Runtime User-Agent pool from `assets/user_agents.txt` with safe fallback.
+- ✅ **Roadmap Item 3:** Multi-stage Docker image with runtime assets and usage docs.
+
+### Next Priorities
+
+- 🔜 **WebSocket Scanner module:** origin/auth checks and GraphQL subscription abuse detection.
+- 🔜 **Mass Assignment scanner:** mutation field injection checks aligned to API schemas.
+- 🔜 **OAuth2/OIDC scanner:** `redirect_uri`, PKCE/state validation, and token-flow hardening checks.
+- 🔜 **Rate Limit scanner:** API4-style resource-consumption and bypass checks.
+- 🔜 **CVE template module:** API-contextual CVE probing informed by discovered API/OpenAPI context.
+
+### What To Do Next After Quick Start
+
+1. Run `ScanScripts/quickscan.sh` to get a low-impact baseline quickly.
+2. Generate and keep a baseline with `ScanScripts/baselinescan.sh`, then diff using `ScanScripts/diffscan.sh`.
+3. Add `ScanScripts/sarifscan.sh` to CI so findings surface in code scanning tools.
+4. Use `ScanScripts/authscan.sh` when testing authenticated surfaces or IDOR/BOLA paths.
+
 ## Installation
 
 Requires Rust stable (tested on 1.76+).
@@ -175,6 +197,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--timeout-secs` | `8` | Per-request timeout in seconds |
 | `--no-filter` | off | Skip pre-filtering of inaccessible URLs |
 | `--filter-timeout` | `3` | Timeout for accessibility pre-check (seconds) |
+| `--no-discovery` | off | Skip endpoint discovery and scan only provided seed URLs |
 | `--waf-evasion` | off | Enable WAF evasion heuristics |
 | `--user-agents` | none | Comma-separated UA list (implies WAF evasion) |
 | `--headers` | none | Extra request headers (e.g. `Authorization: Bearer ...`) |

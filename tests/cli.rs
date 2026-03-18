@@ -65,6 +65,13 @@ fn default_concurrency_and_delay() {
     assert_eq!(cli.delay_ms, 150);
     assert_eq!(cli.retries, 1);
     assert_eq!(cli.timeout_secs, 8);
+    assert!(!cli.no_discovery);
+}
+
+#[test]
+fn parses_no_discovery_flag() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--no-discovery"]).unwrap();
+    assert!(cli.no_discovery);
 }
 
 #[test]
