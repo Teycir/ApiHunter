@@ -199,6 +199,8 @@ IDOR/BOLA lives under the `API Security` scanner (there is no dedicated `--no-id
   - Nuclei YAML import support
   - Baseline vs bypass differential matching
   - Host+template deduplication
+  - Loader quality gates skip invalid/unsafe request templates (for example unresolved request placeholders)
+  - Segment-aware context matching reduces broad path-substring over-triggering
   - Current local catalog: 168 templates (includes curated hardened checks such as CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288)
 
 ### Discovery & Enumeration

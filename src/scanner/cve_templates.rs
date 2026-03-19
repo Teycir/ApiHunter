@@ -108,6 +108,8 @@ fn default_method() -> String {
 fn load_templates() -> Vec<CveTemplate> {
     let mut templates = Vec::new();
     let mut seen_checks = HashSet::new();
+    let mut skipped_invalid = 0usize;
+    let mut skipped_unsafe = 0usize;
 
     for dir in cve_template_dirs() {
         if !dir.exists() || !dir.is_dir() {
@@ -163,6 +165,7 @@ fn load_templates() -> Vec<CveTemplate> {
                     || t.path.trim().is_empty()
                     || t.method.trim().is_empty()
                 {
+                    skipped_invalid += 1;
                     warn!(
                         template_path = %path.display(),
                         "Skipping invalid CVE template: id/check/path/method required"
@@ -170,15 +173,79 @@ fn load_templates() -> Vec<CveTemplate> {
                     continue;
                 }
 
-                if !seen_checks.insert(t.check.to_ascii_lowercase()) {
+                if !is_supported_template_method(&t.method) {
+                    skipped_invalid += 1;
+                    warn!(
+                        template_path = %path.display(),
+                        template_id = %t.id,
+                        method = %t.method,
+                        "Skipping CVE template with unsupported method"
+                    );
                     continue;
                 }
 
-                t.preflight_requests
-                    .retain(|step| !step.path.trim().is_empty() && !step.method.trim().is_empty());
+                if !t.path.trim().starts_with('/') {
+                    skipped_invalid += 1;
+                    warn!(
+                        template_path = %path.display(),
+                        template_id = %t.id,
+                        template_path_value = %t.path,
+                        "Skipping CVE template with non-root-relative path"
+                    );
+                    continue;
+                }
+
+                if has_unresolved_request_placeholder(&t.path)
+                    || headers_have_unresolved_placeholders(&t.headers)
+                {
+                    skipped_unsafe += 1;
+                    continue;
+                }
+
+                let mut invalid_preflight = false;
+                t.preflight_requests.retain(|step| {
+                    if step.path.trim().is_empty() || step.method.trim().is_empty() {
+                        return false;
+                    }
+                    if !step.path.trim().starts_with('/') {
+                        invalid_preflight = true;
+                        return false;
+                    }
+                    if !is_supported_template_method(&step.method)
+                        || has_unresolved_request_placeholder(&step.path)
+                        || headers_have_unresolved_placeholders(&step.headers)
+                    {
+                        invalid_preflight = true;
+                        return false;
+                    }
+                    true
+                });
+
+                if invalid_preflight {
+                    skipped_unsafe += 1;
+                    continue;
+                }
+
+                t.context_path_contains_any = normalize_context_hints(&t.context_path_contains_any);
+                if t.context_path_contains_any.is_empty() {
+                    t.context_path_contains_any = derive_context_hints_from_path(&t.path);
+                }
+                if t.context_path_contains_any.is_empty() {
+                    skipped_invalid += 1;
+                    warn!(
+                        template_path = %path.display(),
+                        template_id = %t.id,
+                        "Skipping CVE template with empty/invalid context hints"
+                    );
+                    continue;
+                }
 
                 if t.source.trim().is_empty() {
                     t.source = format!("apihunter:{}", path.display());
+                }
+
+                if !seen_checks.insert(t.check.to_ascii_lowercase()) {
+                    continue;
                 }
 
                 templates.push(t);
@@ -188,6 +255,14 @@ fn load_templates() -> Vec<CveTemplate> {
 
     if templates.is_empty() {
         warn!("No CVE templates loaded from configured template directories");
+    }
+    if skipped_invalid > 0 || skipped_unsafe > 0 {
+        warn!(
+            skipped_invalid,
+            skipped_unsafe,
+            loaded = templates.len(),
+            "CVE template loader skipped invalid/unsafe templates"
+        );
     }
 
     templates
@@ -338,9 +413,41 @@ fn template_context_matches(tmpl: &CveTemplate, target_path: &str) -> bool {
     if tmpl.context_path_contains_any.is_empty() {
         return true;
     }
-    tmpl.context_path_contains_any
+
+    let target_segments = path_segments(target_path);
+    if target_segments.is_empty() {
+        return false;
+    }
+
+    let mut specific_hints = Vec::new();
+    let mut generic_hints = Vec::new();
+
+    for hint in &tmpl.context_path_contains_any {
+        let hint_segments = path_segments(hint);
+        if hint_segments.is_empty() {
+            continue;
+        }
+
+        if hint_segments.len() == 1 && is_generic_context_token(hint_segments[0]) {
+            generic_hints.push(hint_segments);
+        } else {
+            specific_hints.push(hint_segments);
+        }
+    }
+
+    let candidate_hints = if !specific_hints.is_empty() {
+        specific_hints
+    } else {
+        generic_hints
+    };
+
+    if candidate_hints.is_empty() {
+        return false;
+    }
+
+    candidate_hints
         .iter()
-        .any(|hint| target_path.contains(&hint.to_ascii_lowercase()))
+        .any(|hint| contains_segment_sequence(&target_segments, hint))
 }
 
 fn template_has_baseline_matchers(tmpl: &CveTemplate) -> bool {
@@ -559,6 +666,126 @@ fn parse_severity(s: &str) -> Severity {
         "low" => Severity::Low,
         _ => Severity::Info,
     }
+}
+
+fn is_supported_template_method(method: &str) -> bool {
+    matches!(
+        method.trim().to_ascii_uppercase().as_str(),
+        "GET" | "HEAD" | "OPTIONS"
+    )
+}
+
+fn has_unresolved_request_placeholder(raw: &str) -> bool {
+    let v = raw.trim();
+    v.contains("{{") && v.contains("}}")
+}
+
+fn headers_have_unresolved_placeholders(headers: &[NameValue]) -> bool {
+    headers.iter().any(|h| {
+        has_unresolved_request_placeholder(&h.name) || has_unresolved_request_placeholder(&h.value)
+    })
+}
+
+fn normalize_context_hints(raw_hints: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for raw in raw_hints {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(normalized) = normalize_hint(trimmed) {
+            if seen.insert(normalized.clone()) {
+                out.push(normalized);
+            }
+        }
+    }
+
+    out
+}
+
+fn derive_context_hints_from_path(path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for token in path_segments(path) {
+        if token.starts_with('{') || token.contains("{{") || token.contains("}}") {
+            continue;
+        }
+        let hint = format!("/{token}");
+        if seen.insert(hint.clone()) {
+            out.push(hint);
+        }
+        if out.len() >= 4 {
+            break;
+        }
+    }
+    out
+}
+
+fn normalize_hint(raw: &str) -> Option<String> {
+    let canonical = raw.split('?').next().unwrap_or(raw).to_ascii_lowercase();
+    let segments = path_segments(&canonical);
+    if segments.is_empty() {
+        return None;
+    }
+    if segments
+        .iter()
+        .any(|s| s.contains("{{") || s.contains("}}"))
+    {
+        return None;
+    }
+    Some(format!("/{}", segments.join("/")))
+}
+
+fn path_segments(path: &str) -> Vec<&str> {
+    path.split('?')
+        .next()
+        .unwrap_or(path)
+        .split('/')
+        .filter_map(|seg| {
+            let trimmed = seg.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .collect()
+}
+
+fn is_generic_context_token(token: &str) -> bool {
+    matches!(
+        token,
+        "api"
+            | "apis"
+            | "rest"
+            | "v1"
+            | "v2"
+            | "v3"
+            | "v4"
+            | "v5"
+            | "latest"
+            | "public"
+            | "internal"
+            | "service"
+            | "services"
+            | "console"
+            | "ui"
+            | "web"
+            | "www"
+            | "app"
+            | "apps"
+            | "default"
+            | "index"
+    )
+}
+
+fn contains_segment_sequence(target: &[&str], hint: &[&str]) -> bool {
+    if hint.len() > target.len() {
+        return false;
+    }
+    target.windows(hint.len()).any(|win| win == hint)
 }
 
 fn snippet(s: &str, max_chars: usize) -> String {

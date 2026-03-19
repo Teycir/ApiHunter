@@ -119,3 +119,5 @@
 - Rule: when a CVE reference catalog is provided, automate import through `template-tool`, record importable/non-importable counts, and update docs with the resulting catalog size.
 - User correction pattern: lab spin-up knowledge for CVE template validation should not live only in session notes.
 - Rule: keep a dedicated `docs/lab-setup.md` with reproducible Vulhub compose commands (including Nacos one-at-a-time flows) and reference it from scanner docs/README.
+- User correction pattern: broad CVE catalog imports can degrade runtime signal quality without template safety gates.
+- Rule: enforce CVE loader quality gates (reject unresolved request placeholders + invalid request metadata) and prefer segment-aware, specificity-first context matching to control probe fan-out.

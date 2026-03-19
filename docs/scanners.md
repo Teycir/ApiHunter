@@ -178,6 +178,8 @@ Curated hardened examples include:
   - required request headers (for example known-default API keys)
   - optional safe preflight request chains (`GET`/`HEAD`/`OPTIONS`) before the main probe
   - optional baseline-vs-confirm differentials for bypass-style checks
+  - runtime template quality gates (invalid/unsafe request templates are skipped at load)
+  - segment-aware context matching (reduces broad substring-triggered probes)
 
 Regression target lists kept in-repo:
 - `targets/cve-regression-vulhub-local.txt` (local true-positive CVE validation set)

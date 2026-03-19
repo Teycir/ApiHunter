@@ -1947,3 +1947,38 @@
   - `targets/cve-regression-vulhub-local.txt` comment now points to `docs/lab-setup.md`.
 - Verification commands:
   - `rg -n "lab-setup|vulhub/nacos/CVE-2021-29441|vulhub/nacos/CVE-2021-29442" Readme.md docs/scanners.md docs/lab-setup.md targets/cve-regression-vulhub-local.txt`
+
+---
+
+# Task: CVE Runtime Hardening Toward Production Grade (2026-03-19)
+
+## Plan
+- [x] Add CVE template loader quality gates for unresolved request-surface placeholders and invalid request metadata.
+- [x] Tighten context-path matching from substring matching to segment-aware matching.
+- [x] Reduce over-broad template triggering by preferring specific context hints over generic hints.
+- [x] Add regression tests in `tests/` for placeholder rejection and context segment matching behavior.
+- [x] Validate with CVE-focused test suites (outside sandbox) and compare seeded real-target run metrics before/after.
+
+## Review
+- Runtime hardening in `src/scanner/cve_templates.rs`:
+  - Added loader quality gates to reject unsafe templates at load-time:
+    - unresolved request-surface placeholders in main/preflight request metadata
+    - unsupported methods for main/preflight requests
+    - non-root-relative request paths
+  - Added context hint normalization + derived fallback hints.
+  - Replaced context substring matching with segment-aware matching.
+  - Added hint prioritization: specific context hints are preferred over generic hints.
+  - Added loader summary warning with loaded/skipped counts.
+- Regression tests (`tests/` only):
+  - `tests/cve_templates_runtime_ext.rs`
+    - `generic_api_hint_is_ignored_when_specific_hint_exists`
+    - `request_surface_placeholders_are_rejected_at_load`
+  - Existing CVE suites remain green.
+- Validation (outside sandbox):
+  - `cargo test --test cve_templates_scanner --test cve_templates_runtime_ext --test cve_templates_upstream_parity --test cve_templates_real_data`
+  - Result: passed (`21/21` tests across these suites after additions).
+  - Follow-up: `cargo test --test cve_templates_scanner --test cve_templates_runtime_ext` passed (`11/11`).
+- Seeded real-target comparison (`/tmp/cve_real_public_seeded_targets.txt`):
+  - Before hardening: `http_requests=470`, `errors=198`, `elapsed≈48.7s`, findings `0`.
+  - After hardening: `http_requests=48`, `errors=12`, `elapsed≈5.3s`, findings `0`.
+  - Net effect: significant noise and probe fan-out reduction while preserving no-false-positive outcome.
