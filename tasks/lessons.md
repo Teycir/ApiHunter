@@ -24,3 +24,5 @@
 - User preference: strengthen CVE tests with real data, not only synthetic payloads.
 - Rule: capture and replay real payload fixtures from controlled vulnerable targets for CVE scanner regression tests.
 - Rule: when requested, use Exa discovery and Fetch retrieval to pin authoritative upstream references into fixture snapshots for parity tests.
+- User correction pattern: scanner tests must prove probe execution and payload correctness, not only resulting findings.
+- Rule: for active-check tests, assert request path/method specificity and exact probe payload contents, and verify baseline/probe/confirm call ordering when multi-step logic is expected.

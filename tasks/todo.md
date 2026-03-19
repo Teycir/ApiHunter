@@ -842,3 +842,36 @@
   - `cargo fmt`
   - `cargo test --test oauth_oidc_scanner --test websocket_scanner --test rate_limit_scanner --test cors_scanner --test cve_templates_scanner --test integration_runner`
   - `cargo test`
+
+---
+
+# Task: Mass Assignment Test Audit & Hardening (Phase 20)
+
+## Plan
+- [x] Validate each reported remark against current scanner logic and test behavior.
+- [x] Fix true issues in tests (precision/assertions/coverage) and implementation where warranted.
+- [x] Run targeted and full test suites outside sandbox.
+
+## Review
+- Validated user remarks and hardened tests for true gaps.
+- Scanner implementation improvement:
+  - `src/scanner/mass_assignment.rs`: reflected-field matching now case-insensitive by lowercasing response body before key checks.
+- Test precision fixes in `tests/mass_assignment_scanner.rs`:
+  - added explicit POST path matcher for the reflected test (`/users`).
+  - added request-level payload assertions for probe body (`is_admin`, `role`, `permissions`).
+  - added call-order assertion (`GET -> POST -> GET`) for persisted-state confirmation path.
+- New coverage added in `tests/mass_assignment_scanner.rs`:
+  - partial reflection still reports finding.
+  - non-JSON POST response path.
+  - POST 5xx early-return path.
+  - confirmation GET failure still keeps reflected finding and records error.
+  - mixed-case reflected keys detection.
+  - empty 200 POST body path.
+  - nested elevated fields confirmation path.
+- Notes on remark validity:
+  - "GET before POST" is intentional baseline-vs-confirm design, not a bug.
+  - other precision/coverage remarks were largely valid and addressed.
+- Validation (outside sandbox):
+  - `cargo fmt`
+  - `cargo test --test mass_assignment_scanner`
+  - `cargo test`

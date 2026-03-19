@@ -2,7 +2,9 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::Duration;
 
+use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -14,13 +16,17 @@ use api_scanner::{
 };
 
 fn test_config(active_checks: bool) -> Config {
+    test_config_with_timeout(active_checks, 5)
+}
+
+fn test_config_with_timeout(active_checks: bool, timeout_secs: u64) -> Config {
     Config {
         max_endpoints: 10,
         concurrency: 2,
         politeness: PolitenessConfig {
             delay_ms: 0,
             retries: 0,
-            timeout_secs: 5,
+            timeout_secs,
         },
         waf_evasion: WafEvasionConfig {
             enabled: false,
@@ -54,11 +60,54 @@ fn test_config(active_checks: bool) -> Config {
     }
 }
 
+fn assert_expected_mass_assignment_payload(
+    requests: &[wiremock::Request],
+    expected_path: &str,
+    expected_post_count: usize,
+) {
+    let posts = requests
+        .iter()
+        .filter(|r| r.method.as_str() == "POST" && r.url.path() == expected_path)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        posts.len(),
+        expected_post_count,
+        "unexpected POST request count at {expected_path}; got {}",
+        posts.len()
+    );
+
+    for req in posts {
+        let body: serde_json::Value =
+            serde_json::from_slice(&req.body).expect("POST body should be JSON");
+        assert_eq!(
+            body,
+            json!({
+                "is_admin": true,
+                "role": "admin",
+                "permissions": ["*"]
+            }),
+            "unexpected mass-assignment probe payload"
+        );
+    }
+}
+
 #[tokio::test]
 async fn reflected_sensitive_fields_are_reported() {
     let server = MockServer::start().await;
 
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
     Mock::given(method("POST"))
+        .and(path("/users"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/json")
@@ -66,6 +115,7 @@ async fn reflected_sensitive_fields_are_reported() {
                     r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
                 ),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -75,6 +125,7 @@ async fn reflected_sensitive_fields_are_reported() {
 
     let target = format!("{}/users", server.uri());
     let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
     assert!(
@@ -83,6 +134,7 @@ async fn reflected_sensitive_fields_are_reported() {
             .any(|f| f.check == "mass_assignment/reflected-fields"),
         "expected mass-assignment finding, got: {findings:#?}"
     );
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
 }
 
 #[tokio::test]
@@ -129,6 +181,11 @@ async fn persisted_sensitive_fields_are_reported_as_high_severity() {
 
     let target = format!("{}/users", server.uri());
     let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+    let method_path = requests
+        .iter()
+        .map(|r| format!("{} {}", r.method.as_str(), r.url.path()))
+        .collect::<Vec<_>>();
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
     assert!(
@@ -136,6 +193,302 @@ async fn persisted_sensitive_fields_are_reported_as_high_severity() {
             .iter()
             .any(|f| f.check == "mass_assignment/persisted-state-change"),
         "expected confirmed mass-assignment finding, got: {findings:#?}"
+    );
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        2,
+        "expected exactly two GET baseline/confirm calls"
+    );
+    assert!(
+        method_path
+            .windows(3)
+            .any(|w| { w[0] == "GET /users" && w[1] == "POST /users" && w[2] == "GET /users" }),
+        "expected GET -> POST -> GET call order, got: {method_path:?}"
+    );
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn partial_reflection_still_reports_finding() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"ok":true,"role":"admin"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    let finding = findings
+        .iter()
+        .find(|f| f.check == "mass_assignment/reflected-fields")
+        .expect("expected reflected finding");
+    assert!(
+        finding.evidence.as_deref().unwrap_or("").contains("role"),
+        "expected reflected role evidence, got: {}",
+        finding.evidence.as_deref().unwrap_or("-")
+    );
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn non_json_post_response_is_ignored() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/html")
+                .set_body_string("<html>ok</html>"),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn post_5xx_response_returns_no_finding() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(ResponseTemplate::new(500).set_body_string(r#"{"error":"boom"}"#))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn confirmation_get_failure_keeps_reflected_finding() {
+    let server = MockServer::start().await;
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(r#"{"user":{"id":1,"role":"user"}}"#)
+            } else {
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(2))
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(r#"{"user":{"id":1,"role":"admin"}}"#)
+            }
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"ok":true,"role":"admin"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config_with_timeout(true, 1));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/reflected-fields"),
+        "expected reflected finding despite confirm GET failure, got: {findings:#?}"
+    );
+    assert!(!errors.is_empty(), "expected timeout/error on confirm GET");
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn mixed_case_reflected_fields_are_detected() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"Is_Admin":true,"Role":"admin","Permissions":["*"]}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/reflected-fields"),
+        "expected mixed-case reflected finding, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
+async fn empty_post_body_is_ignored() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(""),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
+}
+
+#[tokio::test]
+async fn nested_elevated_fields_confirm_high_severity() {
+    let server = MockServer::start().await;
+
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(r#"{"profile":{"meta":{"role":"user"}}}"#)
+            } else {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(
+                        r#"{"profile":{"meta":{"role":"admin","permissions":["*"],"is_admin":true}}}"#,
+                    )
+            }
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"result":{"is_admin":true,"role":"admin","permissions":["*"]}}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/persisted-state-change"),
+        "expected high severity nested-field confirmation, got: {findings:#?}"
     );
 }
 

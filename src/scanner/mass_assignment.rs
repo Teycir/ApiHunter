@@ -159,10 +159,11 @@ fn is_likely_mutation_target(url: &str) -> bool {
 }
 
 fn reflected_probe_fields(body: &str) -> Vec<&'static str> {
+    let body_l = body.to_ascii_lowercase();
     let mut out = Vec::new();
     for key in ["is_admin", "role", "permissions"] {
         let needle = format!("\"{key}\"");
-        if body.contains(&needle) {
+        if body_l.contains(&needle) {
             out.push(key);
         }
     }
