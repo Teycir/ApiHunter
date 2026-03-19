@@ -271,11 +271,7 @@ fn normalize_path(input: &str) -> String {
     }
 
     if !path.starts_with('/') {
-        if path.starts_with('?') {
-            path = format!("/{path}");
-        } else {
-            path = format!("/{path}");
-        }
+        path = format!("/{path}");
     }
 
     path
