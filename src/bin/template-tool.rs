@@ -7,6 +7,8 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
@@ -70,18 +72,46 @@ struct Template {
     path: String,
     method: String,
     headers: Vec<NameValue>,
+    preflight_requests: Vec<RequestStep>,
     match_headers: Vec<NameValue>,
     status_any_of: Vec<u16>,
     body_contains_any: Vec<String>,
     body_contains_all: Vec<String>,
+    body_regex_any: Vec<String>,
+    body_regex_all: Vec<String>,
+    header_regex_any: Vec<String>,
+    header_regex_all: Vec<String>,
     context_path_contains_any: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct RequestStep {
+    path: String,
+    method: String,
+    headers: Vec<NameValue>,
+    expect_status_any_of: Vec<u16>,
+}
+
 struct RequestSelection<'a> {
+    index: usize,
     request: &'a Mapping,
     method: String,
     path: String,
 }
+
+#[derive(Debug, Default)]
+struct MatchersTranslation {
+    status_any_of: Vec<u16>,
+    body_contains_any: Vec<String>,
+    body_contains_all: Vec<String>,
+    match_headers: Vec<NameValue>,
+    body_regex_any: Vec<String>,
+    body_regex_all: Vec<String>,
+    header_regex_any: Vec<String>,
+    header_regex_all: Vec<String>,
+}
+
+const MAX_PREFLIGHT_STEPS: usize = 3;
 
 fn main() {
     if let Err(err) = run() {
@@ -133,9 +163,9 @@ fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing required top-level 'http' request list"))?;
 
     let selection = select_importable_request(http_requests)?;
+    let preflight_requests = extract_preflight_steps(http_requests, selection.index)?;
     let headers = extract_headers(selection.request);
-    let (status_any_of, body_contains_any, body_contains_all, match_headers) =
-        extract_matchers(selection.request);
+    let matchers = extract_matchers(selection.request);
 
     let source = args
         .source_url
@@ -166,10 +196,15 @@ fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
             path: selection.path,
             method: selection.method,
             headers,
-            match_headers,
-            status_any_of,
-            body_contains_any,
-            body_contains_all,
+            preflight_requests,
+            match_headers: matchers.match_headers,
+            status_any_of: matchers.status_any_of,
+            body_contains_any: matchers.body_contains_any,
+            body_contains_all: matchers.body_contains_all,
+            body_regex_any: matchers.body_regex_any,
+            body_regex_all: matchers.body_regex_all,
+            header_regex_any: matchers.header_regex_any,
+            header_regex_all: matchers.header_regex_all,
             context_path_contains_any: context_hints,
         }],
     };
@@ -207,8 +242,9 @@ fn select_importable_request(http_requests: &[Value]) -> Result<RequestSelection
     }
 
     let mut first_non_get: Option<String> = None;
+    let mut first_get_candidate: Option<RequestSelection<'_>> = None;
 
-    for raw_req in http_requests {
+    for (idx, raw_req) in http_requests.iter().enumerate() {
         let Some(req) = raw_req.as_mapping() else {
             continue;
         };
@@ -225,11 +261,24 @@ fn select_importable_request(http_requests: &[Value]) -> Result<RequestSelection
             continue;
         };
 
-        return Ok(RequestSelection {
+        let candidate = RequestSelection {
+            index: idx,
             request: req,
             method: "GET".to_string(),
             path,
-        });
+        };
+
+        if request_has_importable_matchers(req) {
+            return Ok(candidate);
+        }
+
+        if first_get_candidate.is_none() {
+            first_get_candidate = Some(candidate);
+        }
+    }
+
+    if let Some(candidate) = first_get_candidate {
+        return Ok(candidate);
     }
 
     if let Some(method) = first_non_get {
@@ -237,6 +286,58 @@ fn select_importable_request(http_requests: &[Value]) -> Result<RequestSelection
     }
 
     bail!("failed to extract request path from 'path' list or first 'raw' request line")
+}
+
+fn request_has_importable_matchers(req: &Mapping) -> bool {
+    let m = extract_matchers(req);
+    !m.status_any_of.is_empty()
+        || !m.body_contains_any.is_empty()
+        || !m.body_contains_all.is_empty()
+        || !m.match_headers.is_empty()
+        || !m.body_regex_any.is_empty()
+        || !m.body_regex_all.is_empty()
+        || !m.header_regex_any.is_empty()
+        || !m.header_regex_all.is_empty()
+}
+
+fn extract_preflight_steps(
+    http_requests: &[Value],
+    selected_index: usize,
+) -> Result<Vec<RequestStep>> {
+    let mut steps = Vec::new();
+
+    for raw_req in http_requests.iter().take(selected_index) {
+        if steps.len() >= MAX_PREFLIGHT_STEPS {
+            break;
+        }
+
+        let Some(req) = raw_req.as_mapping() else {
+            continue;
+        };
+        let method = extract_method(req).unwrap_or_else(|| "GET".to_string());
+        if !is_safe_chain_method(&method) {
+            continue;
+        }
+        let Some(path) = extract_path(req)? else {
+            continue;
+        };
+
+        let headers = extract_headers(req);
+        let matchers = extract_matchers(req);
+
+        steps.push(RequestStep {
+            path,
+            method,
+            headers,
+            expect_status_any_of: matchers.status_any_of,
+        });
+    }
+
+    Ok(steps)
+}
+
+fn is_safe_chain_method(method: &str) -> bool {
+    matches!(method, "GET" | "HEAD" | "OPTIONS")
 }
 
 fn extract_method(req: &Mapping) -> Option<String> {
@@ -399,22 +500,22 @@ fn extract_headers_from_raw(req: &Mapping) -> Vec<NameValue> {
     out
 }
 
-fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>, Vec<NameValue>) {
-    let mut status = Vec::new();
-    let mut any = Vec::new();
-    let mut all = Vec::new();
-    let mut match_headers = Vec::new();
-
+fn extract_matchers(req: &Mapping) -> MatchersTranslation {
+    let mut out = MatchersTranslation::default();
     let mut status_seen = HashSet::new();
-    let mut any_seen = HashSet::new();
-    let mut all_seen = HashSet::new();
+    let mut body_any_seen = HashSet::new();
+    let mut body_all_seen = HashSet::new();
     let mut header_seen = HashSet::new();
+    let mut body_regex_any_seen = HashSet::new();
+    let mut body_regex_all_seen = HashSet::new();
+    let mut header_regex_any_seen = HashSet::new();
+    let mut header_regex_all_seen = HashSet::new();
 
     let Some(matchers) = req
         .get(Value::String("matchers".to_string()))
         .and_then(Value::as_sequence)
     else {
-        return (status, any, all, match_headers);
+        return out;
     };
 
     for matcher in matchers {
@@ -444,57 +545,11 @@ fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>, Vec<N
                 for s in seq {
                     if let Some(code) = s.as_u64().and_then(|n| u16::try_from(n).ok()) {
                         if status_seen.insert(code) {
-                            status.push(code);
+                            out.status_any_of.push(code);
                         }
                     }
                 }
             }
-            continue;
-        }
-
-        if mtype != "word" {
-            continue;
-        }
-
-        let part = map
-            .get(Value::String("part".to_string()))
-            .and_then(Value::as_str)
-            .unwrap_or("body")
-            .to_ascii_lowercase();
-        if part == "header" || part == "all_headers" || part.starts_with("header_") {
-            if let Some(words) = map
-                .get(Value::String("words".to_string()))
-                .and_then(Value::as_sequence)
-            {
-                for w in words {
-                    let Some(raw) = w.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
-                        continue;
-                    };
-                    let Some((name_raw, value_raw)) = raw.split_once(':') else {
-                        continue;
-                    };
-                    let name = name_raw.trim();
-                    let value = value_raw.trim();
-                    if name.is_empty() || value.is_empty() {
-                        continue;
-                    }
-                    let key = format!(
-                        "{}:{}",
-                        name.to_ascii_lowercase(),
-                        value.to_ascii_lowercase()
-                    );
-                    if header_seen.insert(key) {
-                        match_headers.push(NameValue {
-                            name: name.to_string(),
-                            value: value.to_string(),
-                        });
-                    }
-                }
-            }
-            continue;
-        }
-
-        if !(part == "body" || part.starts_with("body_")) {
             continue;
         }
 
@@ -503,34 +558,261 @@ fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>, Vec<N
             .and_then(Value::as_str)
             .unwrap_or("or")
             .to_ascii_lowercase();
+        let condition_is_all = condition == "and";
 
-        let Some(words) = map
-            .get(Value::String("words".to_string()))
-            .and_then(Value::as_sequence)
-        else {
-            continue;
-        };
+        if mtype == "word" {
+            let part = map
+                .get(Value::String("part".to_string()))
+                .and_then(Value::as_str)
+                .unwrap_or("body")
+                .to_ascii_lowercase();
 
-        for w in words {
-            let Some(raw) = w.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+            if part == "header" || part == "all_headers" || part.starts_with("header_") {
+                if let Some(words) = map
+                    .get(Value::String("words".to_string()))
+                    .and_then(Value::as_sequence)
+                {
+                    for w in words {
+                        let Some(raw) = w.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                            continue;
+                        };
+                        if let Some((name, value)) = parse_header_pair(raw) {
+                            let key = format!(
+                                "{}:{}",
+                                name.to_ascii_lowercase(),
+                                value.to_ascii_lowercase()
+                            );
+                            if header_seen.insert(key) {
+                                out.match_headers.push(NameValue { name, value });
+                            }
+                        } else {
+                            let pattern = contains_literal_regex(raw);
+                            if condition_is_all {
+                                if header_regex_all_seen.insert(pattern.clone()) {
+                                    out.header_regex_all.push(pattern);
+                                }
+                            } else if header_regex_any_seen.insert(pattern.clone()) {
+                                out.header_regex_any.push(pattern);
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if !(part == "body" || part.starts_with("body_")) {
+                continue;
+            }
+
+            let Some(words) = map
+                .get(Value::String("words".to_string()))
+                .and_then(Value::as_sequence)
+            else {
                 continue;
             };
-            if condition == "and" {
-                let key = raw.to_ascii_lowercase();
-                if all_seen.insert(key) {
-                    all.push(raw.to_string());
+
+            for w in words {
+                let Some(raw) = w.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                    continue;
+                };
+                if condition_is_all {
+                    let key = raw.to_ascii_lowercase();
+                    if body_all_seen.insert(key) {
+                        out.body_contains_all.push(raw.to_string());
+                    }
+                } else {
+                    let key = raw.to_ascii_lowercase();
+                    if body_any_seen.insert(key) {
+                        out.body_contains_any.push(raw.to_string());
+                    }
                 }
-            } else {
-                let key = raw.to_ascii_lowercase();
-                if any_seen.insert(key) {
-                    any.push(raw.to_string());
+            }
+            continue;
+        }
+
+        if mtype == "regex" {
+            let part = map
+                .get(Value::String("part".to_string()))
+                .and_then(Value::as_str)
+                .unwrap_or("body")
+                .to_ascii_lowercase();
+            let Some(regexes) = map
+                .get(Value::String("regex".to_string()))
+                .and_then(Value::as_sequence)
+            else {
+                continue;
+            };
+
+            for r in regexes {
+                let Some(pattern) = r.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                    continue;
+                };
+                if part == "header" || part == "all_headers" || part.starts_with("header_") {
+                    if condition_is_all {
+                        if header_regex_all_seen.insert(pattern.to_string()) {
+                            out.header_regex_all.push(pattern.to_string());
+                        }
+                    } else if header_regex_any_seen.insert(pattern.to_string()) {
+                        out.header_regex_any.push(pattern.to_string());
+                    }
+                } else if part == "body" || part.starts_with("body_") {
+                    if condition_is_all {
+                        if body_regex_all_seen.insert(pattern.to_string()) {
+                            out.body_regex_all.push(pattern.to_string());
+                        }
+                    } else if body_regex_any_seen.insert(pattern.to_string()) {
+                        out.body_regex_any.push(pattern.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        if mtype == "dsl" {
+            let Some(expressions) = map
+                .get(Value::String("dsl".to_string()))
+                .and_then(Value::as_sequence)
+            else {
+                continue;
+            };
+
+            for expr in expressions {
+                let Some(expr_raw) = expr.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                    continue;
+                };
+
+                for caps in DSL_STATUS_EQ_RE.captures_iter(expr_raw) {
+                    let Some(code) = caps.get(1).and_then(|m| m.as_str().parse::<u16>().ok())
+                    else {
+                        continue;
+                    };
+                    if status_seen.insert(code) {
+                        out.status_any_of.push(code);
+                    }
+                }
+
+                for caps in DSL_CONTAINS_BODY_RE.captures_iter(expr_raw) {
+                    let Some(token) = caps.get(1).map(|m| m.as_str().trim()) else {
+                        continue;
+                    };
+                    if token.is_empty() {
+                        continue;
+                    }
+                    if condition_is_all {
+                        let key = token.to_ascii_lowercase();
+                        if body_all_seen.insert(key) {
+                            out.body_contains_all.push(token.to_string());
+                        }
+                    } else {
+                        let key = token.to_ascii_lowercase();
+                        if body_any_seen.insert(key) {
+                            out.body_contains_any.push(token.to_string());
+                        }
+                    }
+                }
+
+                for caps in DSL_REGEX_BODY_RE.captures_iter(expr_raw) {
+                    let Some(pattern) = caps.get(1).map(|m| m.as_str().trim()) else {
+                        continue;
+                    };
+                    if pattern.is_empty() {
+                        continue;
+                    }
+                    if condition_is_all {
+                        if body_regex_all_seen.insert(pattern.to_string()) {
+                            out.body_regex_all.push(pattern.to_string());
+                        }
+                    } else if body_regex_any_seen.insert(pattern.to_string()) {
+                        out.body_regex_any.push(pattern.to_string());
+                    }
+                }
+
+                for caps in DSL_CONTAINS_HEADERS_RE.captures_iter(expr_raw) {
+                    let Some(token) = caps.get(1).map(|m| m.as_str().trim()) else {
+                        continue;
+                    };
+                    if token.is_empty() {
+                        continue;
+                    }
+                    if let Some((name, value)) = parse_header_pair(token) {
+                        let key = format!(
+                            "{}:{}",
+                            name.to_ascii_lowercase(),
+                            value.to_ascii_lowercase()
+                        );
+                        if header_seen.insert(key) {
+                            out.match_headers.push(NameValue { name, value });
+                        }
+                    } else {
+                        let pattern = contains_literal_regex(token);
+                        if condition_is_all {
+                            if header_regex_all_seen.insert(pattern.clone()) {
+                                out.header_regex_all.push(pattern);
+                            }
+                        } else if header_regex_any_seen.insert(pattern.clone()) {
+                            out.header_regex_any.push(pattern);
+                        }
+                    }
+                }
+
+                for caps in DSL_REGEX_HEADERS_RE.captures_iter(expr_raw) {
+                    let Some(pattern) = caps.get(1).map(|m| m.as_str().trim()) else {
+                        continue;
+                    };
+                    if pattern.is_empty() {
+                        continue;
+                    }
+                    if condition_is_all {
+                        if header_regex_all_seen.insert(pattern.to_string()) {
+                            out.header_regex_all.push(pattern.to_string());
+                        }
+                    } else if header_regex_any_seen.insert(pattern.to_string()) {
+                        out.header_regex_any.push(pattern.to_string());
+                    }
                 }
             }
         }
     }
 
-    (status, any, all, match_headers)
+    out
 }
+
+fn parse_header_pair(raw: &str) -> Option<(String, String)> {
+    let (name_raw, value_raw) = raw.split_once(':')?;
+    let name = name_raw.trim();
+    let value = value_raw.trim();
+    if name.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), value.to_string()))
+}
+
+fn contains_literal_regex(raw: &str) -> String {
+    regex::escape(raw)
+}
+
+static DSL_STATUS_EQ_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\bstatus_code\s*==\s*(\d{3})\b").expect("dsl status regex"));
+static DSL_CONTAINS_BODY_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)contains\(\s*(?:tolower\(\s*)?(?:body|response\.body)\s*\)?\s*,\s*['"]([^'"]+)['"]\s*\)"#)
+        .expect("dsl contains body regex")
+});
+static DSL_REGEX_BODY_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)regex\(\s*(?:tolower\(\s*)?(?:body|response\.body)\s*\)?\s*,\s*['"]([^'"]+)['"]\s*\)"#)
+        .expect("dsl regex body regex")
+});
+static DSL_CONTAINS_HEADERS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"(?i)contains\(\s*(?:all_headers|header|response\.headers?)\s*,\s*['"]([^'"]+)['"]\s*\)"#,
+    )
+    .expect("dsl contains headers regex")
+});
+static DSL_REGEX_HEADERS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"(?i)regex\(\s*(?:all_headers|header|response\.headers?)\s*,\s*['"]([^'"]+)['"]\s*\)"#,
+    )
+    .expect("dsl regex headers regex")
+});
 
 fn derive_context_hints(path: &str) -> Vec<String> {
     let raw = path.split('?').next().unwrap_or(path);

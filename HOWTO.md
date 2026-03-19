@@ -210,12 +210,15 @@ cargo run --bin template-tool -- import-nuclei \
 ```
 
 Current importer scope:
-- GET-compatible request import (first compatible request from `http` list)
+- GET-compatible request import (first GET with importable matchers from `http` list)
+- safe preflight request-chain extraction (`GET`/`HEAD`/`OPTIONS` only, capped)
 - request path extraction (`path` or first `raw` request line)
 - request headers (structured `headers` map or `raw` request header lines)
 - status matchers
 - body word matchers
 - header word matchers with explicit `Header: Value` pairs
+- body/header regex matchers
+- `dsl` matcher subset (`status_code == ...`, `contains(...)`, `regex(...)`)
 
 ---
 

@@ -1,6 +1,11 @@
 use async_trait::async_trait;
 use dashmap::DashSet;
 use rand::seq::SliceRandom;
+use regex::Regex;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Method,
+};
 use serde::Deserialize;
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 use url::Url;
@@ -41,6 +46,17 @@ struct NameValue {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+struct TemplateRequestStep {
+    path: String,
+    #[serde(default = "default_method")]
+    method: String,
+    #[serde(default)]
+    headers: Vec<NameValue>,
+    #[serde(default)]
+    expect_status_any_of: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct CveTemplate {
     id: String,
     check: String,
@@ -55,6 +71,8 @@ struct CveTemplate {
     #[serde(default)]
     headers: Vec<NameValue>,
     #[serde(default)]
+    preflight_requests: Vec<TemplateRequestStep>,
+    #[serde(default)]
     match_headers: Vec<NameValue>,
     #[serde(default)]
     status_any_of: Vec<u16>,
@@ -62,6 +80,14 @@ struct CveTemplate {
     body_contains_any: Vec<String>,
     #[serde(default)]
     body_contains_all: Vec<String>,
+    #[serde(default)]
+    body_regex_any: Vec<String>,
+    #[serde(default)]
+    body_regex_all: Vec<String>,
+    #[serde(default)]
+    header_regex_any: Vec<String>,
+    #[serde(default)]
+    header_regex_all: Vec<String>,
     #[serde(default)]
     context_path_contains_any: Vec<String>,
     #[serde(default)]
@@ -143,6 +169,9 @@ fn load_templates() -> Vec<CveTemplate> {
                 if !seen_checks.insert(t.check.to_ascii_lowercase()) {
                     continue;
                 }
+
+                t.preflight_requests
+                    .retain(|step| !step.path.trim().is_empty() && !step.method.trim().is_empty());
 
                 if t.source.trim().is_empty() {
                     t.source = format!("apihunter:{}", path.display());
@@ -230,6 +259,15 @@ impl Scanner for CveTemplateScanner {
                 format!("{base}/{}", tmpl.path)
             };
 
+            match execute_preflight_chain(client, &base, tmpl).await {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                }
+            }
+
             if template_has_baseline_matchers(tmpl) {
                 let baseline_resp = match client.get(&probe_url).await {
                     Ok(r) => r,
@@ -243,7 +281,15 @@ impl Scanner for CveTemplateScanner {
                 }
             }
 
-            let resp = match execute_template_request(client, &probe_url, tmpl).await {
+            let resp = match execute_template_request(
+                client,
+                &probe_url,
+                &tmpl.method,
+                &tmpl.headers,
+                &tmpl.id,
+            )
+            .await
+            {
                 Ok(r) => r,
                 Err(e) => {
                     errors.push(e);
@@ -299,27 +345,72 @@ fn template_has_baseline_matchers(tmpl: &CveTemplate) -> bool {
 async fn execute_template_request(
     client: &HttpClient,
     probe_url: &str,
-    tmpl: &CveTemplate,
+    method_raw: &str,
+    headers_raw: &[NameValue],
+    template_id: &str,
 ) -> Result<HttpResponse, CapturedError> {
-    let method = tmpl.method.to_ascii_uppercase();
+    let method = method_raw.to_ascii_uppercase();
 
-    if method != "GET" {
+    if !matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
         return Err(CapturedError::internal(format!(
             "Unsupported CVE template method '{}' for {}",
-            tmpl.method, tmpl.id
+            method_raw, template_id
         )));
     }
 
-    if tmpl.headers.is_empty() {
-        client.get(probe_url).await
+    let parsed_method = Method::from_bytes(method.as_bytes()).map_err(|e| {
+        CapturedError::internal(format!(
+            "Invalid CVE template method '{}' for {}: {}",
+            method_raw, template_id, e
+        ))
+    })?;
+
+    let headers = to_header_map(headers_raw);
+    let extra = if headers.is_empty() {
+        None
     } else {
-        let headers = tmpl
-            .headers
-            .iter()
-            .map(|h| (h.name.clone(), h.value.clone()))
-            .collect::<Vec<_>>();
-        client.get_with_headers(probe_url, &headers).await
+        Some(headers)
+    };
+    client.request(parsed_method, probe_url, extra, None).await
+}
+
+async fn execute_preflight_chain(
+    client: &HttpClient,
+    base: &str,
+    tmpl: &CveTemplate,
+) -> Result<bool, CapturedError> {
+    for step in &tmpl.preflight_requests {
+        let url = build_template_url(base, &step.path);
+        let resp =
+            execute_template_request(client, &url, &step.method, &step.headers, &tmpl.id).await?;
+        if !step.expect_status_any_of.is_empty()
+            && !step.expect_status_any_of.contains(&resp.status)
+        {
+            return Ok(false);
+        }
     }
+    Ok(true)
+}
+
+fn build_template_url(base: &str, path: &str) -> String {
+    if path.starts_with('/') {
+        format!("{base}{path}")
+    } else {
+        format!("{base}/{path}")
+    }
+}
+
+fn to_header_map(pairs: &[NameValue]) -> HeaderMap {
+    let mut map = HeaderMap::new();
+    for pair in pairs {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(pair.name.as_bytes()),
+            HeaderValue::from_str(&pair.value),
+        ) {
+            map.insert(name, value);
+        }
+    }
+    map
 }
 
 fn template_matches_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
@@ -327,7 +418,11 @@ fn template_matches_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
         &tmpl.status_any_of,
         &tmpl.body_contains_any,
         &tmpl.body_contains_all,
+        &tmpl.body_regex_any,
+        &tmpl.body_regex_all,
         &tmpl.match_headers,
+        &tmpl.header_regex_any,
+        &tmpl.header_regex_all,
         resp,
     )
 }
@@ -337,7 +432,11 @@ fn template_matches_baseline_response(tmpl: &CveTemplate, resp: &HttpResponse) -
         &tmpl.baseline_status_any_of,
         &tmpl.baseline_body_contains_any,
         &tmpl.baseline_body_contains_all,
+        &[],
+        &[],
         &tmpl.baseline_match_headers,
+        &[],
+        &[],
         resp,
     )
 }
@@ -346,7 +445,11 @@ fn response_matches_constraints(
     status_any_of: &[u16],
     body_contains_any: &[String],
     body_contains_all: &[String],
+    body_regex_any: &[String],
+    body_regex_all: &[String],
     match_headers: &[NameValue],
+    header_regex_any: &[String],
+    header_regex_all: &[String],
     resp: &HttpResponse,
 ) -> bool {
     if !status_any_of.is_empty() && !status_any_of.contains(&resp.status) {
@@ -371,6 +474,22 @@ fn response_matches_constraints(
         return false;
     }
 
+    if !body_regex_all.is_empty()
+        && !body_regex_all
+            .iter()
+            .all(|pattern| regex_matches(pattern, &resp.body))
+    {
+        return false;
+    }
+
+    if !body_regex_any.is_empty()
+        && !body_regex_any
+            .iter()
+            .any(|pattern| regex_matches(pattern, &resp.body))
+    {
+        return false;
+    }
+
     if !match_headers.is_empty() {
         for hv in match_headers {
             let name_l = hv.name.to_ascii_lowercase();
@@ -382,7 +501,36 @@ fn response_matches_constraints(
         }
     }
 
+    if !header_regex_all.is_empty() || !header_regex_any.is_empty() {
+        let header_blob = resp
+            .headers
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}\n"))
+            .collect::<String>();
+
+        if !header_regex_all.is_empty()
+            && !header_regex_all
+                .iter()
+                .all(|pattern| regex_matches(pattern, &header_blob))
+        {
+            return false;
+        }
+        if !header_regex_any.is_empty()
+            && !header_regex_any
+                .iter()
+                .any(|pattern| regex_matches(pattern, &header_blob))
+        {
+            return false;
+        }
+    }
+
     true
+}
+
+fn regex_matches(pattern: &str, haystack: &str) -> bool {
+    Regex::new(pattern)
+        .map(|re| re.is_match(haystack))
+        .unwrap_or(false)
 }
 
 fn parse_severity(s: &str) -> Severity {

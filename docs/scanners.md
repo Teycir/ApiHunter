@@ -154,7 +154,9 @@ Current translated checks include:
 - CVE-specific exposure signals based on:
   - HTTP status constraints
   - response body indicators
+  - response body/header regex constraints
   - required request headers (for example known-default API keys)
+  - optional safe preflight request chains (`GET`/`HEAD`/`OPTIONS`) before the main probe
   - optional baseline-vs-confirm differentials for bypass-style checks
 
 Regression target lists kept in-repo:
@@ -229,6 +231,8 @@ These should only be used in controlled environments or with explicit permission
 
 ### CVE Template Active Checks
 - **Template-driven CVE probes** — translated low-impact API CVE checks executed against host-contextual paths
+- **Regex + DSL translation support** — template constraints can include translated regex and supported DSL operators
+- **Safe preflight chains** — optional non-mutating setup requests run before the primary probe
 - **Catalog extensibility** — add or tune templates via `assets/cve_templates/*.toml` without changing scanner code
 
 ⚠️ **Warning:** Active checks generate significantly higher request volume and may:

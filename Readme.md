@@ -18,15 +18,235 @@
 Async, modular web security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
+## Why ApiHunter?
+
+### Core Advantages
+
+- **API-First Architecture**: Purpose-built for REST/GraphQL APIs, not adapted from web app scanners
+- **Intelligent False Positive Reduction**: 
+  - SPA catch-all detection with canary probing
+  - Context-aware secret validation (frontend vs backend)
+  - Body content validation and referer checking
+  - Response fingerprinting to skip duplicate findings
+- **Production-Safe by Design**:
+  - Adaptive concurrency (AIMD) that backs off on errors
+  - Per-host rate limiting with configurable delays
+  - Politeness controls (retries, timeouts, WAF evasion)
+  - Dry-run mode for active checks
+- **Stealth & Evasion**:
+  - Runtime User-Agent rotation from curated pool (assets/user_agents.txt)
+  - Randomized request delays with jitter
+  - Per-host delay enforcement (avoids burst patterns)
+  - Retry logic with exponential backoff
+  - Custom header injection for blending with legitimate traffic
+  - Adaptive timing based on server responses
+  - No hardcoded scanner fingerprints in default mode
+- **CI/CD Native**:
+  - Baseline diffing (only report new findings)
+  - Streaming NDJSON output for real-time monitoring
+  - SARIF 2.1.0 for GitHub/GitLab Code Scanning
+  - Exit code bitmask for pipeline control
+  - Severity-based filtering and failure thresholds
+- **Performance at Scale**:
+  - Rust async runtime (tokio) with zero-cost abstractions
+  - Concurrent scanning with semaphore-bounded parallelism
+  - Per-host HTTP client pools to avoid connection bottlenecks
+  - Efficient memory usage (no GC pauses)
+- **Comprehensive Auth Support**:
+  - JSON-based auth flows with cookie/header extraction
+  - Dual-identity IDOR/BOLA testing
+  - Session file import (Excalibur integration)
+  - Bearer, Basic, and custom header auth
+  - Automatic unauth client for privilege escalation checks
+
 ## Features
 
-- ⚡ Async Rust (`tokio` + `reqwest`) with adaptive concurrency
-- 🔌 Pluggable scanner modules via trait system
-- 🛡️ WAF evasion (UA rotation, delays, retries)
-- 📊 NDJSON/SARIF output with baseline diffing
-- 🚦 Exit-code bitmask for CI (`0x01` findings, `0x02` errors)
-- 🧾 JWT/OpenAPI/GraphQL/CORS/CSP analysis
-- 🎯 Active checks: IDOR/BOLA, mass-assignment, OAuth/OIDC, rate-limit, CVE templates
+### Passive Security Analysis
+- **CORS Misconfiguration Detection**:
+  - Dynamic origin generation based on target domain
+  - Regex bypass testing (suffix/prefix attacks)
+  - Credential-aware severity scoring
+  - Wildcard and null origin detection
+- **CSP Policy Analysis**:
+  - Missing/weak Content Security Policy detection
+  - Unsafe inline/eval directives
+  - Wildcard source detection
+  - Policy bypass patterns
+- **GraphQL Security**:
+  - Introspection query detection
+  - Sensitive type/field name analysis
+  - Query batching support detection
+  - Alias amplification (DoS) probing
+  - GraphiQL/Playground exposure
+- **JWT Token Analysis**:
+  - Algorithm confusion (alg=none, HS256→RS256)
+  - Weak secret detection (curated wordlist)
+  - Long-lived token detection (missing/excessive exp)
+  - Sensitive claim exposure
+  - Token extraction from headers and cookies
+- **OpenAPI/Swagger Analysis**:
+  - Security scheme validation
+  - File upload endpoint detection
+  - Deprecated operation flagging
+  - Missing security definitions
+  - Spec caching for performance
+- **Secret Exposure Detection**:
+  - AWS keys (AKIA*, secret keys)
+  - Google API keys (AIza*)
+  - GitHub tokens (ghp_*, github_pat_*)
+  - Slack tokens (xox*)
+  - Stripe keys (sk_live_*, pk_live_*)
+  - Database URLs, private keys, bearer tokens
+  - Context-aware validation (reduces false positives)
+- **API Security Checks**:
+  - HTTP method enumeration
+  - Debug endpoint detection
+  - Directory listing exposure
+  - Security.txt presence
+  - Response header analysis (HSTS, X-Frame-Options, etc.)
+  - Error message disclosure
+
+### Active Security Testing (--active-checks)
+- **IDOR/BOLA Detection** (3-tier approach):
+  - Unauthenticated access testing
+  - ID enumeration (±2 range walk)
+  - Cross-user authorization bypass (dual-identity)
+- **Mass Assignment Vulnerabilities**:
+  - Reflected sensitive field injection
+  - Persisted state change detection
+  - Baseline→Mutate→Confirm verification
+  - Privilege escalation via field injection
+- **OAuth/OIDC Security**:
+  - Redirect URI validation bypass
+  - State parameter handling
+  - PKCE support detection
+  - Metadata configuration hardening
+  - Implicit flow and password grant detection
+- **Rate Limiting**:
+  - Burst request probing
+  - Missing rate limit detection
+  - Retry-After header validation
+  - IP header spoofing bypass tests
+- **WebSocket Security**:
+  - Upgrade acceptance on common paths
+  - Origin validation testing
+  - Missing authentication checks
+- **CVE Template Engine**:
+  - TOML-based template catalog
+  - Nuclei YAML import support
+  - Baseline vs bypass differential matching
+  - Host+template deduplication
+  - Translated checks: CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288
+
+### Discovery & Enumeration
+- **Endpoint Discovery**:
+  - robots.txt parsing
+  - sitemap.xml parsing
+  - OpenAPI/Swagger spec import
+  - HAR file import (Excalibur integration)
+  - JavaScript endpoint extraction
+  - Same-host filtering
+- **URL Accessibility Pre-filtering**:
+  - Fast pre-check to skip dead endpoints
+  - Configurable timeout
+  - Optional bypass with --no-filter
+
+### Performance & Reliability
+- **Adaptive Concurrency (AIMD)**:
+  - Automatic rate adjustment based on errors
+  - Additive increase (every 5s)
+  - Multiplicative decrease on 429/503/timeouts
+- **Stealth & WAF Evasion**:
+  - User-Agent rotation from runtime pool (assets/user_agents.txt with 100+ real UAs)
+  - Embedded fallback UAs if file unavailable
+  - Random delay jitter to avoid detection patterns
+  - Per-host timing enforcement (not global)
+  - Retry logic with exponential backoff
+  - Custom header injection (X-Forwarded-For, Referer, etc.)
+  - Adaptive timing based on 429/503 responses
+  - Politeness mode for cooperative testing
+  - No scanner fingerprints in User-Agent or headers by default
+- **Resource Management**:
+  - Semaphore-bounded parallelism
+  - Per-host HTTP client pools
+  - Connection reuse and pooling
+  - Configurable timeouts and retries
+- **Error Handling**:
+  - Panic recovery via JoinSet
+  - Captured errors reported separately
+  - Graceful degradation on scanner failures
+
+### Output & Reporting
+- **Multiple Output Formats**:
+  - Pretty JSON (human-readable)
+  - NDJSON (streaming, parseable)
+  - SARIF 2.1.0 (GitHub/GitLab Code Scanning)
+- **Baseline Diffing**:
+  - Generate baseline snapshots
+  - Compare scans to report only new findings
+  - Perfect for regression testing
+- **Auto-Save Reports**:
+  - Saved to ~/Documents/ApiHunterReports/<timestamp>/
+  - findings.json (structured findings)
+  - summary.md (markdown report)
+  - scan.log (execution log)
+- **Real-Time Streaming**:
+  - Stream findings as they're discovered
+  - NDJSON format for live parsing
+  - Progress tracking
+- **Severity Filtering**:
+  - Filter by minimum severity (info/low/medium/high/critical)
+  - Fail-on threshold for CI/CD
+  - Exit code bitmask (0x01 findings, 0x02 errors)
+
+### Integration & Extensibility
+- **Pluggable Scanner Architecture**:
+  - Implement Scanner trait to add modules
+  - Async-first design
+  - Independent scanner execution
+  - Panic isolation per scanner
+- **TOML-Based Extensibility**:
+  - CVE template catalog in assets/cve_templates/*.toml
+  - No code changes needed to add new checks
+  - Template-driven vulnerability detection
+  - Community-shareable template format
+- **Nuclei Template Import**:
+  - template-tool binary for YAML → TOML conversion
+  - Automatic matcher translation (status, word, regex, dsl)
+  - Safe preflight request-chain extraction
+  - Preserves detection logic from upstream templates
+- **Dual Extension Model**:
+  - **Code-based**: Write Rust scanners implementing Scanner trait for complex logic
+  - **Template-based**: Write TOML templates for signature-based checks (CVEs, misconfigs)
+  - Best of both worlds: performance + flexibility
+- **Complementary Tools**:
+  - Excalibur browser extension (HAR capture)
+  - BurpAPIsecuritysuite (manual testing)
+  - Workflow: Capture → Automate → Deep test
+
+### Configuration & Control
+- **Flexible Input**:
+  - File-based URL lists
+  - stdin (pipe from other tools)
+  - HAR file import
+  - OpenAPI spec import
+- **Granular Scanner Control**:
+  - Enable/disable individual scanners
+  - Active vs passive mode
+  - Dry-run for active checks
+  - Per-scanner configuration
+- **Network Configuration**:
+  - HTTP/HTTPS proxy support
+  - TLS certificate validation control
+  - Custom headers and cookies
+  - Configurable timeouts and retries
+- **Scan Profiles**:
+  - quickscan.sh (fast, low-impact)
+  - deepscan.sh (comprehensive, active checks)
+  - baselinescan.sh (generate baseline)
+  - diffscan.sh (compare against baseline)
+  - authscan.sh (authenticated scanning)
+  - sarifscan.sh (CI/CD integration)
 
 ## Comparison with Other Tools
 
@@ -56,10 +276,10 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) usin
 
 ### Key Differentiators
 
-**ApiHunter:** API-first design, SPA detection, baseline diffing, 3-tier IDOR/BOLA, context-aware secrets, AIMD concurrency  
-**Nuclei:** Broader CVE coverage, YAML templates  
-**ZAP/Burp:** Manual testing, proxy workflows  
-**ffuf:** Pure fuzzing, content discovery
+**ApiHunter:** API-first design, SPA detection, baseline diffing, 3-tier IDOR/BOLA, context-aware secrets, AIMD concurrency, **stealth/WAF evasion (UA rotation, jitter, adaptive timing)**, **dual extensibility (TOML templates + Rust modules)**  
+**Nuclei:** Broader CVE coverage, YAML templates only, basic evasion  
+**ZAP/Burp:** Manual testing, proxy workflows, GUI-based extensions, limited stealth  
+**ffuf:** Pure fuzzing, content discovery, limited extensibility, basic evasion
 
 ## Quick Start
 
@@ -77,13 +297,54 @@ See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
 
 ## Template Tooling
 
-Import Nuclei CVE templates:
+ApiHunter supports **dual extensibility**: add checks via **TOML templates** (no code) or **Rust modules** (full control).
+
+### TOML Template Format
+Create custom checks in `assets/cve_templates/*.toml`:
+```toml
+id = "custom-api-check"
+name = "Custom API Vulnerability"
+severity = "high"
+
+[[requests]]
+method = "GET"
+path = "/api/vulnerable"
+
+[[requests.matchers]]
+type = "status"
+values = [200]
+
+[[requests.matchers]]
+type = "word"
+part = "body"
+words = ["sensitive_data", "exposed"]
+```
+
+### Import Nuclei Templates
+Convert existing Nuclei YAML templates:
 ```bash
 cargo run --bin template-tool -- import-nuclei \
   --input tests/fixtures/upstream_nuclei/CVE-2022-24288.yaml \
   --output assets/cve_templates/cve-2022-24288.toml
 ```
-See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) for details.
+
+### Add Custom Rust Scanners
+Implement the `Scanner` trait for complex logic:
+```rust
+#[async_trait]
+impl Scanner for MyCustomScanner {
+    async fn scan(
+        &self,
+        url: &str,
+        client: &HttpClient,
+        config: &Config,
+    ) -> (Vec<Finding>, Vec<CapturedError>) {
+        // Your custom scanning logic
+    }
+}
+```
+
+See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) and [docs/scanners.md](docs/scanners.md) for details.
 
 ## Scan Scripts
 
@@ -103,8 +364,8 @@ Complete documentation is available in `docs/`. Start with:
 
 ## Roadmap
 
-**Completed:** WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, Nuclei importer, Docker image  
-**Next:** Expand CVE templates, stealth hardening (remove scanner markers, randomize probes), multi-step template chains
+**Completed:** WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, expanded Nuclei importer (regex/dsl + safe preflight chains), Docker image  
+**Next:** Expand CVE templates, stealth hardening (remove scanner markers, randomize probes), broader matcher/operator parity for advanced Nuclei expressions
 
 ## Installation
 
@@ -194,11 +455,20 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `2` | One or more scanners captured errors |
 | `3` | Both findings and errors |
 
+## Related Projects
+
+ApiHunter is part of a complementary security testing toolkit:
+
+- **[Excalibur](https://github.com/Teycir/Excalibur)** - Browser extension for capturing API traffic and exporting HAR files with session cookies. Use with ApiHunter via `--har` and `--session-file` flags.
+- **[BurpAPIsecuritysuite](https://github.com/Teycir/BurpAPIsecuritysuite)** - Burp Suite extension for interactive API security testing. Complements ApiHunter's automated scanning with manual testing workflows.
+
+**Workflow:** Capture traffic with Excalibur → Automated baseline with ApiHunter → Deep manual testing with BurpAPIsecuritysuite
+
 ## About
 
-**Author:** teycir ben soltane  
+**Author:** Teycir Ben Soltane  
 **Email:** teycir@pxdmail.net  
-**Website:** teycirbensoltane.tn
+**Website:** [teycirbensoltane.tn](https://teycirbensoltane.tn)
 
 ## FAQ
 
@@ -257,6 +527,12 @@ AIMD: increases by 1 every 5s, halves on errors (429/503/timeouts). Enable with 
 
 **Q: Disable scanners?**  
 `--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`, `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
+
+**Q: Is ApiHunter stealthy?**  
+A: Yes. Features: UA rotation from 100+ real browsers (assets/user_agents.txt), randomized delays with jitter, per-host rate limiting, adaptive backoff on 429/503, no scanner fingerprints in headers, exponential retry logic, custom header injection. Enable with `--waf-evasion`.
+
+**Q: How does WAF evasion work?**  
+A: Automatically rotates User-Agents from curated pool, adds random jitter to delays, enforces per-host timing (not global bursts), backs off exponentially on rate limits, and allows custom header injection to blend with legitimate traffic. No "scanner" strings in default headers.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 

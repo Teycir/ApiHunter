@@ -338,3 +338,179 @@ http:
     assert!(contains_pair("X-Frame-Options", "DENY"));
     assert_eq!(match_headers.len(), 2);
 }
+
+#[test]
+fn import_nuclei_translates_regex_and_dsl_matchers() {
+    let tmp = tempdir().expect("tempdir");
+    let in_yaml = tmp.path().join("regex-dsl.yaml");
+    let out = tmp.path().join("out.toml");
+
+    fs::write(
+        &in_yaml,
+        r#"
+id: CVE-2099-0005
+info:
+  name: Regex and DSL translation test
+  severity: high
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/regex"
+    matchers:
+      - type: regex
+        part: body
+        condition: and
+        regex:
+          - "(?i)admin\\s*=\\s*true"
+      - type: regex
+        part: all_headers
+        regex:
+          - "(?i)x-powered-by:\\s*express"
+      - type: dsl
+        condition: and
+        dsl:
+          - 'status_code == 200'
+          - 'contains(body, "token")'
+          - 'regex(body, "(?i)session_[a-z0-9]+")'
+          - 'contains(all_headers, "Server: nginx")'
+"#,
+    )
+    .expect("write fixture");
+
+    Command::cargo_bin("template-tool")
+        .expect("template-tool binary")
+        .args([
+            "import-nuclei",
+            "--input",
+            in_yaml.to_str().expect("in path"),
+            "--output",
+            out.to_str().expect("out path"),
+        ])
+        .assert()
+        .success();
+
+    let toml_raw = fs::read_to_string(&out).expect("generated toml");
+    let parsed: toml::Value = toml::from_str(&toml_raw).expect("parse generated toml");
+    let tmpl = parsed
+        .get("templates")
+        .and_then(toml::Value::as_array)
+        .and_then(|a| a.first())
+        .expect("templates[0]");
+
+    assert!(tmpl
+        .get("status_any_of")
+        .and_then(toml::Value::as_array)
+        .expect("status_any_of")
+        .iter()
+        .any(|v| v.as_integer() == Some(200)));
+    assert!(tmpl
+        .get("body_contains_all")
+        .and_then(toml::Value::as_array)
+        .expect("body_contains_all")
+        .iter()
+        .any(|v| v.as_str() == Some("token")));
+    assert!(tmpl
+        .get("body_regex_all")
+        .and_then(toml::Value::as_array)
+        .expect("body_regex_all")
+        .iter()
+        .any(|v| {
+            v.as_str()
+                .map(|s| s.contains("admin\\s*=\\s*true") || s.contains("session_[a-z0-9]+"))
+                .unwrap_or(false)
+        }));
+    assert!(tmpl
+        .get("header_regex_any")
+        .and_then(toml::Value::as_array)
+        .expect("header_regex_any")
+        .iter()
+        .any(|v| {
+            v.as_str()
+                .map(|s| s.contains("x-powered-by"))
+                .unwrap_or(false)
+        }));
+
+    let match_headers = tmpl
+        .get("match_headers")
+        .and_then(toml::Value::as_array)
+        .expect("match_headers");
+    assert!(match_headers.iter().any(|h| {
+        h.get("name").and_then(toml::Value::as_str) == Some("Server")
+            && h.get("value").and_then(toml::Value::as_str) == Some("nginx")
+    }));
+}
+
+#[test]
+fn import_nuclei_emits_safe_preflight_chain_steps() {
+    let tmp = tempdir().expect("tempdir");
+    let in_yaml = tmp.path().join("chain.yaml");
+    let out = tmp.path().join("out.toml");
+
+    fs::write(
+        &in_yaml,
+        r#"
+id: CVE-2099-0006
+info:
+  name: Request chain translation test
+  severity: medium
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/warmup"
+  - method: POST
+    path:
+      - "{{BaseURL}}/mutate"
+  - method: GET
+    path:
+      - "{{BaseURL}}/probe"
+    matchers:
+      - type: status
+        status: [200]
+"#,
+    )
+    .expect("write fixture");
+
+    Command::cargo_bin("template-tool")
+        .expect("template-tool binary")
+        .args([
+            "import-nuclei",
+            "--input",
+            in_yaml.to_str().expect("in path"),
+            "--output",
+            out.to_str().expect("out path"),
+        ])
+        .assert()
+        .success();
+
+    let toml_raw = fs::read_to_string(&out).expect("generated toml");
+    let parsed: toml::Value = toml::from_str(&toml_raw).expect("parse generated toml");
+    let tmpl = parsed
+        .get("templates")
+        .and_then(toml::Value::as_array)
+        .and_then(|a| a.first())
+        .expect("templates[0]");
+
+    assert_eq!(
+        tmpl.get("path").and_then(toml::Value::as_str),
+        Some("/probe"),
+        "main probe should be the GET request with matchers"
+    );
+
+    let preflight = tmpl
+        .get("preflight_requests")
+        .and_then(toml::Value::as_array)
+        .expect("preflight_requests");
+    assert_eq!(
+        preflight.len(),
+        1,
+        "unsafe POST preflight should be skipped"
+    );
+    assert_eq!(
+        preflight[0].get("path").and_then(toml::Value::as_str),
+        Some("/warmup")
+    );
+    assert_eq!(
+        preflight[0].get("method").and_then(toml::Value::as_str),
+        Some("GET")
+    );
+}

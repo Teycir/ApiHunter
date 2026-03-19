@@ -1199,3 +1199,62 @@
   - `cargo check`
   - `cargo test --test template_tooling` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Template Tooling Expansion 2 (Phase 30)
+
+## Plan
+- [x] Add importer translation support for Nuclei `regex` and `dsl` matcher families into scanner-compatible TOML fields.
+- [x] Extend CVE template runtime schema/matching to evaluate translated regex constraints.
+- [x] Add controlled multi-step request-chain support with low-impact preflight steps (safe methods only, no mutation/body payloads).
+- [x] Add tests for regex/dsl translation, chain import shape, and chain execution behavior.
+- [x] Update README/HOWTO/docs and run fmt + targeted/full tests outside sandbox.
+
+## Review
+- Expanded template importer in `src/bin/template-tool.rs`:
+  - matcher translation now supports:
+    - `regex` matchers for body/header parts,
+    - supported `dsl` subset:
+      - `status_code == ...`
+      - `contains(...)` for body/headers
+      - `regex(...)` for body/headers
+  - added TOML output fields for regex constraints:
+    - `body_regex_any`, `body_regex_all`
+    - `header_regex_any`, `header_regex_all`
+  - added controlled request-chain extraction:
+    - emits `preflight_requests` before the main probe request,
+    - preflights are restricted to low-impact methods (`GET`/`HEAD`/`OPTIONS`),
+    - capped by `MAX_PREFLIGHT_STEPS`.
+  - improved main request selection for multi-request templates:
+    - prefers first `GET` request with importable matchers,
+    - falls back to first importable `GET` if no matcher-bearing request exists.
+- Extended CVE template runtime in `src/scanner/cve_templates.rs`:
+  - added schema support for importer-emitted fields:
+    - `preflight_requests`
+    - body/header regex matcher arrays
+  - preflight chain execution added before main probe:
+    - each preflight executes with safe-method validation,
+    - optional `expect_status_any_of` gating controls chain continuation.
+  - response matching now evaluates:
+    - body regex constraints,
+    - header regex constraints (against flattened response headers),
+    - existing status/body/header contains logic remains intact.
+- Added/updated tests:
+  - `tests/template_tooling.rs`:
+    - `import_nuclei_translates_regex_and_dsl_matchers`
+    - `import_nuclei_emits_safe_preflight_chain_steps`
+    - existing importer tests remain green.
+  - new runtime integration tests in `tests/cve_templates_runtime_ext.rs`:
+    - `preflight_chain_executes_before_probe`
+    - `regex_constraints_match_for_body_and_headers`
+  - existing `tests/cve_templates_scanner.rs` suite remains green.
+- Documentation updates:
+  - `Readme.md` Template Tooling section now documents regex/dsl translation and safe preflight chain extraction.
+  - `HOWTO.md` importer scope updated with the same capabilities.
+  - `docs/scanners.md` CVE template scanner section updated to include regex constraints and safe preflight behavior.
+- Validation:
+  - `cargo fmt`
+  - `cargo check`
+  - `cargo test --test template_tooling --test cve_templates_runtime_ext --test cve_templates_scanner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)
