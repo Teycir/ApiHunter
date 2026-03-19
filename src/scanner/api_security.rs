@@ -635,7 +635,7 @@ impl Scanner for ApiSecurityScanner {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
         let base = url.trim_end_matches('/');
-        let spa_fingerprint = detect_spa_catchall(base, client).await;
+        let spa_fingerprint = detect_spa_catchall(base, client, &mut errors).await;
         let spa_catchall = spa_fingerprint.is_some();
 
         // Run all checks; failures are captured rather than propagated.
@@ -695,7 +695,11 @@ fn body_fingerprint(body: &str) -> (usize, u64) {
 ///
 /// We test multiple canary paths to handle SPAs that treat paths differently
 /// based on prefix (e.g., paths starting with _ vs __ vs random).
-async fn detect_spa_catchall(base: &str, client: &HttpClient) -> Option<(usize, u64)> {
+async fn detect_spa_catchall(
+    base: &str,
+    client: &HttpClient,
+    errors: &mut Vec<CapturedError>,
+) -> Option<(usize, u64)> {
     // Test multiple canary patterns to catch different SPA routing behaviors
     let canaries = [
         format!("{base}/__canary_404_check_xz9q7"),
@@ -722,7 +726,12 @@ async fn detect_spa_catchall(base: &str, client: &HttpClient) -> Option<(usize, 
                     return Some(body_fingerprint(&resp.body));
                 }
             }
-            _ => continue,
+            Ok(_) => continue,
+            Err(mut e) => {
+                e.message = format!("spa_canary_probe: {}", e.message);
+                errors.push(e);
+                continue;
+            }
         }
     }
     None
@@ -799,6 +808,12 @@ async fn check_secrets_in_response(
                     || cleaned.to_lowercase().contains("secret")
                     || cleaned.len() < 12
                 {
+                    debug!(
+                        url = %url,
+                        check = chk.name,
+                        redacted_match = %redact(matched),
+                        "Skipping potential secret match after generic-secret validation"
+                    );
                     continue;
                 }
             }
@@ -1593,7 +1608,7 @@ async fn check_idor_bola(
     // Finding: if IDs outside the original all return 200, authorization
     // may be missing per-object (returns data for any ID).
 
-    type RangeResult = (u64, u16, Option<(usize, u64)>);
+    type RangeResult = (u64, Option<u16>, Option<(usize, u64)>);
 
     let base_id = numeric_seg.value;
     let range_ids: Vec<u64> = (base_id.saturating_sub(2)..=base_id + 2).collect();
@@ -1609,11 +1624,11 @@ async fn check_idor_bola(
                 } else {
                     None
                 };
-                range_results.push((id, r.status, fp));
+                range_results.push((id, Some(r.status), fp));
             }
             Err(e) => {
                 errors.push(e);
-                range_results.push((id, 0, None));
+                range_results.push((id, None, None));
             }
         }
     }
@@ -1622,7 +1637,11 @@ async fn check_idor_bola(
     let other_successes: Vec<&RangeResult> = range_results
         .iter()
         .filter(|(id, status, fp)| {
-            *id != base_id && *status < 400 && fp.as_ref().map(|f| f.0 > 32).unwrap_or(false)
+            *id != base_id
+                && status
+                    .map(|status| (200..400).contains(&status))
+                    .unwrap_or(false)
+                && fp.as_ref().map(|f| f.0 > 32).unwrap_or(false)
             // non-trivial body
         })
         .collect();
@@ -1633,7 +1652,10 @@ async fn check_idor_bola(
             .iter()
             .map(|(id, status, _)| {
                 let marker = if *id == base_id { " ← original" } else { "" };
-                format!("  ID {id}: HTTP {status}{marker}")
+                let status_display = status
+                    .map(|status| status.to_string())
+                    .unwrap_or_else(|| "ERROR".to_string());
+                format!("  ID {id}: HTTP {status_display}{marker}")
             })
             .collect();
 

@@ -80,6 +80,25 @@ impl Scanner for RateLimitScanner {
 
         let baseline = burst_gets(client, url, None, BURST_REQUESTS, &mut errors).await;
         if baseline.success == 0 && baseline.too_many == 0 {
+            if !errors.is_empty() {
+                findings.push(
+                    Finding::new(
+                        url,
+                        "rate_limit/check-failed",
+                        "Rate limit check could not complete",
+                        Severity::Info,
+                        "All burst probe requests failed; unable to determine whether rate limiting is enforced.",
+                        "rate_limit",
+                    )
+                    .with_evidence(format!(
+                        "Host: {host}\nBurst: {BURST_REQUESTS}\nRequest errors: {}",
+                        errors.len()
+                    ))
+                    .with_remediation(
+                        "Verify network reachability and retry the scan to evaluate rate-limit controls.",
+                    ),
+                );
+            }
             return (findings, errors);
         }
 

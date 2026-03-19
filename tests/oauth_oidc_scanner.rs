@@ -131,6 +131,14 @@ async fn oidc_metadata_flags_pkce_and_legacy_grants() {
 
     let target = format!("{}/oauth/token", server.uri());
     let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(
+        requests
+            .iter()
+            .any(|r| r.url.path() == "/.well-known/openid-configuration"),
+        "expected metadata request to be sent, got requests: {requests:#?}"
+    );
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
     assert!(
@@ -166,4 +174,28 @@ async fn scanner_noop_when_active_checks_disabled() {
 
     assert!(errors.is_empty());
     assert!(findings.is_empty());
+}
+
+#[tokio::test]
+async fn metadata_parse_error_includes_metadata_url_context() {
+    let server = MockServer::start().await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = OAuthOidcScanner::new(cfg.as_ref());
+
+    let expected_metadata_url = format!("{}/.well-known/openid-configuration", server.uri());
+    client.cache_spec(&expected_metadata_url, "{invalid-json");
+
+    let target = format!("{}/oauth/token", server.uri());
+    let (_findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let parse_error = errors
+        .iter()
+        .find(|e| e.context == "oauth/openid-metadata-parse")
+        .unwrap_or_else(|| panic!("expected openid metadata parse error, got: {errors:#?}"));
+    assert_eq!(
+        parse_error.url.as_deref(),
+        Some(expected_metadata_url.as_str()),
+        "expected metadata parse error to include failing metadata URL context"
+    );
 }

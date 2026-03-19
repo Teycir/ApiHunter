@@ -236,6 +236,7 @@ pub async fn run(
 
     dedup_findings(&mut findings);
     sort_findings(&mut findings);
+    dedup_errors(&mut errors);
 
     let elapsed = start.elapsed();
     eprintln!(
@@ -539,5 +540,17 @@ fn sort_findings(findings: &mut [Finding]) {
             .cmp(&a.severity.rank())
             .then_with(|| a.url.cmp(&b.url))
             .then_with(|| a.check.cmp(&b.check))
+    });
+}
+
+fn dedup_errors(errors: &mut Vec<CapturedError>) {
+    let mut seen = HashSet::new();
+    errors.retain(|error| {
+        seen.insert((
+            error.context.clone(),
+            error.url.clone(),
+            error.error_type.clone(),
+            error.message.clone(),
+        ))
     });
 }

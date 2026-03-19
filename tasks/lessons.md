@@ -37,3 +37,7 @@
 - Rule: when adding invasive-check improvements, include an explicit dry-run path that reports intended actions without sending mutation probes.
 - User correction pattern: repeated helper logic across scanners should be centralized instead of reimplemented per scanner.
 - Rule: when 3+ scanners duplicate response/content-type, string, or finding-construction helpers, extract a `scanner/common` utility and keep compatibility re-exports during transition.
+- User correction pattern: silent scanner probe failures hide recall risk and should never be dropped on the floor.
+- Rule: for active probes and confirmation steps, convert every recoverable request/parse failure into explicit `CapturedError` entries (and add an informational finding when an entire check cannot run).
+- User correction pattern: repeated transport failures can drown real diagnostics when emitted as duplicate errors.
+- Rule: deduplicate identical `CapturedError` entries in final run aggregation (`context + url + type + message`) to keep reports actionable.

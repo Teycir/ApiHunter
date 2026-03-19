@@ -428,6 +428,18 @@ async fn confirmation_get_failure_keeps_reflected_finding() {
             .any(|f| f.check == "mass_assignment/reflected-fields"),
         "expected reflected finding despite confirm GET failure, got: {findings:#?}"
     );
+    let reflected = findings
+        .iter()
+        .find(|f| f.check == "mass_assignment/reflected-fields")
+        .expect("expected reflected finding");
+    assert!(
+        reflected
+            .evidence
+            .as_deref()
+            .unwrap_or("")
+            .contains("Confirmation GET failed"),
+        "expected reflected finding evidence to mention failed confirmation, got: {reflected:#?}"
+    );
     assert!(!errors.is_empty(), "expected timeout/error on confirm GET");
     assert!(
         errors.iter().any(|e| {

@@ -144,29 +144,32 @@ impl Scanner for CorsScanner {
                                 "GET".to_string(),
                             ),
                         ];
-                        if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
-                            if r.header("access-control-allow-origin") == Some(&bypass)
-                                && r.header("access-control-allow-credentials") == Some("true")
-                            {
-                                findings.push(
-                                        Finding::new(
-                                            url,
-                                            "cors/regex-bypass-suffix",
-                                            "CORS regex bypass (suffix)",
-                                            Severity::High,
-                                            format!("Origin validation uses weak regex — attacker can bypass by appending: {}", bypass),
-                                            "cors",
-                                        )
-                                        .with_evidence(format!(
-                                            "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
-                                            bypass, bypass
-                                        ))
-                                        .with_remediation(
-                                            "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
-                                        ),
-                                    );
-                                break;
+                        match client.get_with_headers(url, &bypass_extra).await {
+                            Ok(r) => {
+                                if r.header("access-control-allow-origin") == Some(&bypass)
+                                    && r.header("access-control-allow-credentials") == Some("true")
+                                {
+                                    findings.push(
+                                            Finding::new(
+                                                url,
+                                                "cors/regex-bypass-suffix",
+                                                "CORS regex bypass (suffix)",
+                                                Severity::High,
+                                                format!("Origin validation uses weak regex — attacker can bypass by appending: {}", bypass),
+                                                "cors",
+                                            )
+                                            .with_evidence(format!(
+                                                "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
+                                                bypass, bypass
+                                            ))
+                                            .with_remediation(
+                                                "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
+                                            ),
+                                        );
+                                    break;
+                                }
                             }
+                            Err(e) => errors.push(e),
                         }
                     }
 
@@ -183,29 +186,32 @@ impl Scanner for CorsScanner {
                                 "GET".to_string(),
                             ),
                         ];
-                        if let Ok(r) = client.get_with_headers(url, &bypass_extra).await {
-                            if r.header("access-control-allow-origin") == Some(&bypass)
-                                && r.header("access-control-allow-credentials") == Some("true")
-                            {
-                                findings.push(
-                                        Finding::new(
-                                            url,
-                                            "cors/regex-bypass-prefix",
-                                            "CORS regex bypass (prefix)",
-                                            Severity::High,
-                                            format!("Origin validation uses weak regex — attacker can bypass by prepending: {}", bypass),
-                                            "cors",
-                                        )
-                                        .with_evidence(format!(
-                                            "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
-                                            bypass, bypass
-                                        ))
-                                        .with_remediation(
-                                            "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
-                                        ),
-                                    );
-                                break;
+                        match client.get_with_headers(url, &bypass_extra).await {
+                            Ok(r) => {
+                                if r.header("access-control-allow-origin") == Some(&bypass)
+                                    && r.header("access-control-allow-credentials") == Some("true")
+                                {
+                                    findings.push(
+                                            Finding::new(
+                                                url,
+                                                "cors/regex-bypass-prefix",
+                                                "CORS regex bypass (prefix)",
+                                                Severity::High,
+                                                format!("Origin validation uses weak regex — attacker can bypass by prepending: {}", bypass),
+                                                "cors",
+                                            )
+                                            .with_evidence(format!(
+                                                "Origin: {}\nAccess-Control-Allow-Origin: {}\nAccess-Control-Allow-Credentials: true",
+                                                bypass, bypass
+                                            ))
+                                            .with_remediation(
+                                                "Use exact domain matching or strict regex anchors (^https://trusted\\.com$).",
+                                            ),
+                                        );
+                                    break;
+                                }
                             }
+                            Err(e) => errors.push(e),
                         }
                     }
                 }

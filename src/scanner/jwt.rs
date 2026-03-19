@@ -147,29 +147,51 @@ async fn analyze_jwt(
     config: &Config,
     baseline_status: u16,
     findings: &mut Vec<Finding>,
-    _errors: &mut Vec<CapturedError>,
+    errors: &mut Vec<CapturedError>,
 ) {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return;
     }
 
-    let header = decode_json(parts[0]);
-    let payload = decode_json(parts[1]);
-    let signature = decode_segment(parts[2]);
+    let header = match decode_json(parts[0]) {
+        Some(v) => v,
+        None => {
+            errors.push(CapturedError::from_str(
+                "jwt/decode",
+                Some(url.to_string()),
+                "Failed to decode JWT header segment as JSON",
+            ));
+            return;
+        }
+    };
+    let payload = match decode_json(parts[1]) {
+        Some(v) => v,
+        None => {
+            errors.push(CapturedError::from_str(
+                "jwt/decode",
+                Some(url.to_string()),
+                "Failed to decode JWT payload segment as JSON",
+            ));
+            return;
+        }
+    };
+    let signature = match decode_segment(parts[2]) {
+        Some(v) => v,
+        None => {
+            errors.push(CapturedError::from_str(
+                "jwt/decode",
+                Some(url.to_string()),
+                "Failed to decode JWT signature segment",
+            ));
+            return;
+        }
+    };
 
-    let alg = header
-        .as_ref()
-        .and_then(|h| h.get("alg"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let alg = header.get("alg").and_then(Value::as_str).unwrap_or("");
 
     // Suspicious kid patterns (path traversal / URL fetch).
-    if let Some(kid) = header
-        .as_ref()
-        .and_then(|h| h.get("kid"))
-        .and_then(Value::as_str)
-    {
+    if let Some(kid) = header.get("kid").and_then(Value::as_str) {
         if kid.contains("..")
             || kid.starts_with("http://")
             || kid.starts_with("https://")
@@ -209,99 +231,100 @@ async fn analyze_jwt(
         );
     }
 
-    if let Some(payload) = &payload {
-        let mut hits = Vec::new();
-        for key in SENSITIVE_CLAIMS {
-            if payload.get(*key).is_some() {
-                hits.push(*key);
+    let mut hits = Vec::new();
+    for key in SENSITIVE_CLAIMS {
+        if payload.get(*key).is_some() {
+            hits.push(*key);
+        }
+    }
+
+    if !hits.is_empty() {
+        findings.push(
+            Finding::new(
+                url,
+                "jwt/sensitive-claims",
+                "JWT contains sensitive claims",
+                Severity::Medium,
+                format!(
+                    "JWT payload exposes potentially sensitive claims: {}",
+                    hits.join(", ")
+                ),
+                "jwt",
+            )
+            .with_evidence(format!("Token: {}", redact_token(token)))
+            .with_remediation(
+                "Minimize sensitive data in JWTs and prefer opaque tokens when possible.",
+            ),
+        );
+    }
+
+    match payload.get("exp").and_then(Value::as_i64) {
+        Some(exp) => {
+            let now = Utc::now().timestamp();
+            if exp - now > LONG_LIVED_SECS {
+                findings.push(
+                    Finding::new(
+                        url,
+                        "jwt/long-lived",
+                        "JWT has a long expiration window",
+                        Severity::Medium,
+                        "JWT expiration is far in the future; long-lived tokens increase risk if leaked.",
+                        "jwt",
+                    )
+                    .with_evidence(format!("exp: {exp}, now: {now}"))
+                    .with_remediation(
+                        "Use short-lived access tokens and rotate/refresh them frequently.",
+                    ),
+                );
             }
         }
-
-        if !hits.is_empty() {
+        None => {
             findings.push(
                 Finding::new(
                     url,
-                    "jwt/sensitive-claims",
-                    "JWT contains sensitive claims",
+                    "jwt/no-exp",
+                    "JWT missing exp claim",
                     Severity::Medium,
+                    "JWT has no exp claim; tokens without expiration increase risk if leaked.",
+                    "jwt",
+                )
+                .with_evidence(format!("Token: {}", redact_token(token)))
+                .with_remediation("Include a short-lived exp claim and rotate tokens regularly."),
+            );
+        }
+    }
+
+    if alg.eq_ignore_ascii_case("hs256") {
+        if let Some(secret) = weak_secret_match(url, parts[0], parts[1], &signature) {
+            findings.push(
+                Finding::new(
+                    url,
+                    "jwt/weak-secret",
+                    "JWT signed with weak HS256 secret",
+                    Severity::Critical,
                     format!(
-                        "JWT payload exposes potentially sensitive claims: {}",
-                        hits.join(", ")
+                        "JWT signature verifies with a weak secret candidate: '{secret}'.",
                     ),
                     "jwt",
                 )
                 .with_evidence(format!("Token: {}", redact_token(token)))
                 .with_remediation(
-                    "Minimize sensitive data in JWTs and prefer opaque tokens when possible.",
+                    "Use a strong, high-entropy secret for HS256 or move to asymmetric signing (RS256/ES256).",
                 ),
             );
-        }
-
-        match payload.get("exp").and_then(Value::as_i64) {
-            Some(exp) => {
-                let now = Utc::now().timestamp();
-                if exp - now > LONG_LIVED_SECS {
-                    findings.push(
-                        Finding::new(
-                            url,
-                            "jwt/long-lived",
-                            "JWT has a long expiration window",
-                            Severity::Medium,
-                            "JWT expiration is far in the future; long-lived tokens increase risk if leaked.",
-                            "jwt",
-                        )
-                        .with_evidence(format!("exp: {exp}, now: {now}"))
-                        .with_remediation(
-                            "Use short-lived access tokens and rotate/refresh them frequently.",
-                        ),
-                    );
-                }
-            }
-            None => {
-                findings.push(
-                    Finding::new(
-                        url,
-                        "jwt/no-exp",
-                        "JWT missing exp claim",
-                        Severity::Medium,
-                        "JWT has no exp claim; tokens without expiration increase risk if leaked.",
-                        "jwt",
-                    )
-                    .with_evidence(format!("Token: {}", redact_token(token)))
-                    .with_remediation(
-                        "Include a short-lived exp claim and rotate tokens regularly.",
-                    ),
-                );
-            }
-        }
-    }
-
-    if alg.eq_ignore_ascii_case("hs256") {
-        if let Some(sig) = signature {
-            if let Some(secret) = weak_secret_match(url, parts[0], parts[1], &sig) {
-                findings.push(
-                    Finding::new(
-                        url,
-                        "jwt/weak-secret",
-                        "JWT signed with weak HS256 secret",
-                        Severity::Critical,
-                        format!(
-                            "JWT signature verifies with a weak secret candidate: '{secret}'.",
-                        ),
-                        "jwt",
-                    )
-                    .with_evidence(format!("Token: {}", redact_token(token)))
-                    .with_remediation(
-                        "Use a strong, high-entropy secret for HS256 or move to asymmetric signing (RS256/ES256).",
-                    ),
-                );
-            }
         }
     }
 
     if config.active_checks && alg.eq_ignore_ascii_case("rs256") {
-        if let Some(finding) =
-            attempt_alg_confusion(url, header.as_ref(), parts[1], client, baseline_status).await
+        if let Some(finding) = attempt_alg_confusion(
+            url,
+            Some(&header),
+            parts[1],
+            client,
+            baseline_status,
+            errors,
+        )
+        .await
         {
             findings.push(finding);
         }
@@ -361,6 +384,7 @@ async fn attempt_alg_confusion(
     payload_b64: &str,
     client: &HttpClient,
     baseline_status: u16,
+    errors: &mut Vec<CapturedError>,
 ) -> Option<Finding> {
     let header = header?;
 
@@ -395,7 +419,14 @@ async fn attempt_alg_confusion(
     let auth_header = format!("Bearer {forged}");
 
     let extra = vec![("Authorization".to_string(), auth_header)];
-    let resp = client.get_with_headers(url, &extra).await.ok()?;
+    let resp = match client.get_with_headers(url, &extra).await {
+        Ok(r) => r,
+        Err(mut e) => {
+            e.message = format!("alg_confusion_probe: {}", e.message);
+            errors.push(e);
+            return None;
+        }
+    };
 
     if resp.status < 400 {
         return Some(

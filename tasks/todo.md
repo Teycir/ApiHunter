@@ -1047,3 +1047,40 @@
   - `cargo fmt`
   - `cargo test --test rate_limit_scanner --test mass_assignment_scanner --test cli`
   - `cargo test`
+
+---
+
+# Task: Scanner Error-Handling Hardening (Phase 26)
+
+## Plan
+- [x] Remove silent error swallowing in critical scanner probe paths (`cors`, `jwt`, `api_security` SPA canary).
+- [x] Fix ambiguous error-state handling in `api_security` ID-range walk and keep error context explicit.
+- [x] Improve scanner reporting when checks partially fail (`rate_limit` full-burst failure info finding, `mass_assignment` confirm-failure evidence note).
+- [x] Preserve parse/probe context on OAuth metadata parse failures.
+- [x] Add/adjust regression tests under `tests/` for each changed behavior and run fmt + targeted/full test suites outside sandbox.
+
+## Review
+- Scanner hardening changes:
+  - `src/scanner/cors.rs`: bypass probe request failures now append to scanner `errors` instead of being silently ignored.
+  - `src/scanner/jwt.rs`:
+    - malformed JWT segment decode failures now emit `jwt/decode` errors with URL context.
+    - algorithm-confusion active probe request failures now propagate into `errors` (`alg_confusion_probe: ...`) instead of silent `.ok()?`.
+  - `src/scanner/api_security.rs`:
+    - SPA canary request errors are now surfaced (annotated with `spa_canary_probe`).
+    - ID-range probe results now store status as `Option<u16>` and only count explicit `200..399` successes.
+    - Generic-secret validation skips now emit debug logs with redacted match context.
+  - `src/scanner/rate_limit.rs`: when all burst probes fail, scanner now emits `rate_limit/check-failed` info finding and returns captured errors.
+  - `src/scanner/mass_assignment.rs`: reflected-only finding evidence now notes failed confirmation GET when confirm step errors.
+  - `src/scanner/oauth_oidc.rs`: metadata JSON parse errors now include the failing metadata URL in `CapturedError`.
+  - `src/runner.rs`: duplicate `CapturedError` entries are now deduplicated before final reporting.
+- Regression tests added/updated:
+  - `tests/cors_scanner.rs`: `regex_bypass_probe_failures_are_collected`
+  - `tests/jwt_scanner.rs`: `malformed_jwt_decode_errors_are_reported`, `alg_confusion_probe_failure_is_reported`
+  - `tests/rate_limit_scanner.rs`: `all_burst_requests_fail_reports_check_failed`
+  - `tests/mass_assignment_scanner.rs`: confirmation-failure evidence note assertion
+  - `tests/oauth_oidc_scanner.rs`: metadata parse URL-context assertion (cache-seeded invalid metadata)
+  - `tests/integration_runner.rs`: `api_security_spa_canary_probe_errors_are_reported`, `api_security_id_range_request_errors_are_not_counted_as_success`
+- Validation (tests run outside sandbox):
+  - `cargo fmt`
+  - `cargo test --test cors_scanner --test jwt_scanner --test rate_limit_scanner --test mass_assignment_scanner --test oauth_oidc_scanner --test integration_runner`
+  - `cargo test`

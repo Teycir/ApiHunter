@@ -98,13 +98,17 @@ impl Scanner for MassAssignmentScanner {
         }
 
         let mut confirmed_fields = Vec::new();
+        let mut confirmation_failed = false;
         if let Some(before_elevated) = baseline_elevated.as_ref() {
             match fetch_elevated_fields(client, url, "confirm_get").await {
                 Ok(after_elevated) => {
                     confirmed_fields =
                         compute_newly_elevated_fields(before_elevated, after_elevated, &reflected);
                 }
-                Err(e) => errors.push(e),
+                Err(e) => {
+                    confirmation_failed = true;
+                    errors.push(e);
+                }
             }
         }
 
@@ -115,6 +119,7 @@ impl Scanner for MassAssignmentScanner {
                 resp.status,
                 &reflected,
                 Some(&confirmed_fields),
+                false,
             ));
         } else {
             findings.push(create_mass_assignment_finding(
@@ -122,6 +127,7 @@ impl Scanner for MassAssignmentScanner {
                 resp.status,
                 &reflected,
                 None,
+                confirmation_failed,
             ));
         }
 
@@ -335,6 +341,7 @@ fn create_mass_assignment_finding(
     status: u16,
     reflected: &[&'static str],
     confirmed: Option<&[&'static str]>,
+    confirmation_failed: bool,
 ) -> Finding {
     if let Some(confirmed_fields) = confirmed {
         FindingBuilder::new(url, "mass_assignment")
@@ -352,16 +359,22 @@ fn create_mass_assignment_finding(
             "Block sensitive fields from client-controlled input and enforce server-side authorization invariants.",
         )
     } else {
+        let mut evidence = format!(
+            "POST {url}\nStatus: {status}\nReflected fields: {}",
+            reflected.join(", ")
+        );
+        if confirmation_failed {
+            evidence
+                .push_str("\nNote: Confirmation GET failed; persistence could not be verified.");
+        }
+
         FindingBuilder::new(url, "mass_assignment")
         .check("mass_assignment/reflected-fields")
         .title("Potential mass-assignment via reflected fields")
         .severity(Severity::Medium)
         .detail("Response reflected crafted sensitive fields from request payload.")
         .build()
-        .with_evidence(format!(
-            "POST {url}\nStatus: {status}\nReflected fields: {}",
-            reflected.join(", ")
-        ))
+        .with_evidence(evidence)
         .with_remediation(
             "Use explicit allowlists for writeable fields and reject unexpected attributes server-side.",
         )

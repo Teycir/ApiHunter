@@ -5,6 +5,7 @@
 // returned findings / errors.
 
 use std::sync::Arc;
+use std::time::Duration;
 use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
@@ -366,6 +367,119 @@ async fn api_security_real_env_file_detected() {
     assert!(
         env_finding,
         "A real .env file with KEY=VALUE content should be detected"
+    );
+}
+
+#[tokio::test]
+async fn api_security_spa_canary_probe_errors_are_reported() {
+    let server = MockServer::start().await;
+
+    for canary in [
+        "/__canary_404_check_xz9q7",
+        "/_canary_test_404",
+        "/xyzabc123notfound",
+    ] {
+        Mock::given(method("GET"))
+            .and(path(canary))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+            .mount(&server)
+            .await;
+    }
+
+    Mock::given(method("OPTIONS"))
+        .respond_with(ResponseTemplate::new(405))
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.politeness.timeout_secs = 1;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.message.contains("spa_canary_probe")),
+        "expected SPA canary probe failures to be surfaced in errors, got: {:#?}",
+        result.errors
+    );
+}
+
+#[tokio::test]
+async fn api_security_id_range_request_errors_are_not_counted_as_success() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/42"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"id":42,"owner":"alice","profile":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    for timeout_path in ["/users/40", "/users/44"] {
+        Mock::given(method("GET"))
+            .and(path(timeout_path))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+            .mount(&server)
+            .await;
+    }
+
+    for forbidden_path in ["/users/41", "/users/43"] {
+        Mock::given(method("GET"))
+            .and(path(forbidden_path))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+    }
+
+    Mock::given(method("OPTIONS"))
+        .respond_with(ResponseTemplate::new(405))
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.active_checks = true;
+    cfg.no_discovery = true;
+    cfg.politeness.timeout_secs = 1;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let target = format!("{}/users/42", server.uri());
+    let result = runner::run(vec![target], config, client, None, test_reporter(), false).await;
+
+    assert!(
+        result
+            .findings
+            .iter()
+            .all(|f| f.check != "api_security/idor-id-enumerable"),
+        "IDOR enumerable finding should not trigger when adjacent IDs are only 403/timeouts, got: {:#?}",
+        result.findings
+    );
+    assert!(
+        !result.errors.is_empty(),
+        "expected timeout errors from range probes to be captured"
     );
 }
 

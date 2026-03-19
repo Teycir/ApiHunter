@@ -1,6 +1,7 @@
 // tests/cors_scanner.rs
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -13,13 +14,17 @@ use api_scanner::{
 };
 
 fn test_config() -> Config {
+    test_config_with_timeout(5)
+}
+
+fn test_config_with_timeout(timeout_secs: u64) -> Config {
     Config {
         max_endpoints: 10,
         concurrency: 2,
         politeness: PolitenessConfig {
             delay_ms: 0,
             retries: 0,
-            timeout_secs: 5,
+            timeout_secs,
         },
         waf_evasion: WafEvasionConfig {
             enabled: false,
@@ -99,4 +104,47 @@ async fn same_origin_reflection_not_reported() {
 
     assert!(errors.is_empty());
     assert!(findings.is_empty());
+}
+
+#[tokio::test]
+async fn regex_bypass_probe_failures_are_collected() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(|request: &wiremock::Request| {
+            let origin = request
+                .headers
+                .get("origin")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
+            if origin.contains(".cdn-edge.net") {
+                ResponseTemplate::new(200).set_delay(Duration::from_secs(2))
+            } else {
+                ResponseTemplate::new(200)
+                    .insert_header("Access-Control-Allow-Origin", origin)
+                    .insert_header("Access-Control-Allow-Credentials", "true")
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config_with_timeout(1));
+    let client = HttpClient::new(cfg.as_ref()).unwrap();
+    let scanner = CorsScanner::new(cfg.as_ref());
+
+    let (_findings, errors) = scanner.scan(&server.uri(), &client, cfg.as_ref()).await;
+
+    assert!(
+        !errors.is_empty(),
+        "expected timeout errors from regex bypass probes"
+    );
+    assert!(
+        errors.iter().any(|e| e
+            .message
+            .to_ascii_lowercase()
+            .contains("error sending request")),
+        "expected network/send error details for bypass probe failures, got: {errors:#?}"
+    );
 }

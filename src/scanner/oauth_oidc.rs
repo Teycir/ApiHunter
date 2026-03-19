@@ -283,9 +283,10 @@ async fn analyze_openid_metadata(
     let parsed: Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
-            errors.push(CapturedError::parse(
+            errors.push(CapturedError::new(
                 "oauth/openid-metadata-parse",
-                e.to_string(),
+                Some(metadata_url.to_string()),
+                &e,
             ));
             return (findings, errors);
         }

@@ -1,3 +1,4 @@
+use std::net::TcpListener;
 use std::sync::Arc;
 
 use wiremock::matchers::{method, path};
@@ -11,13 +12,17 @@ use api_scanner::{
 };
 
 fn test_config(active_checks: bool) -> Config {
+    test_config_with_timeout(active_checks, 5)
+}
+
+fn test_config_with_timeout(active_checks: bool, timeout_secs: u64) -> Config {
     Config {
         max_endpoints: 10,
         concurrency: 2,
         politeness: PolitenessConfig {
             delay_ms: 0,
             retries: 0,
-            timeout_secs: 5,
+            timeout_secs,
         },
         waf_evasion: WafEvasionConfig {
             enabled: false,
@@ -50,6 +55,13 @@ fn test_config(active_checks: bool) -> Config {
         },
         quiet: false,
     }
+}
+
+fn unused_local_url(path: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("local addr");
+    drop(listener);
+    format!("http://{}:{}{}", addr.ip(), addr.port(), path)
 }
 
 #[tokio::test]
@@ -132,4 +144,23 @@ async fn scanner_noop_when_active_checks_disabled() {
 
     assert!(errors.is_empty());
     assert!(findings.is_empty());
+}
+
+#[tokio::test]
+async fn all_burst_requests_fail_reports_check_failed() {
+    let cfg = Arc::new(test_config_with_timeout(true, 1));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = RateLimitScanner::new(cfg.as_ref());
+
+    let target = unused_local_url("/api/users");
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(
+        !errors.is_empty(),
+        "expected request errors when all burst probes fail"
+    );
+    assert!(
+        findings.iter().any(|f| f.check == "rate_limit/check-failed"),
+        "expected check-failed info finding when rate-limit probe cannot execute, got: {findings:#?}"
+    );
 }
