@@ -1,6 +1,8 @@
 use async_trait::async_trait;
+use dashmap::DashSet;
 use rand::{distributions::Alphanumeric, seq::SliceRandom, Rng};
 use serde_json::Value;
+use std::sync::Arc;
 use url::Url;
 
 use crate::{
@@ -12,11 +14,15 @@ use crate::{
 
 use super::{common::http_utils::is_json_response, Scanner};
 
-pub struct OAuthOidcScanner;
+pub struct OAuthOidcScanner {
+    checked_hosts: Arc<DashSet<String>>,
+}
 
 impl OAuthOidcScanner {
     pub fn new(_config: &Config) -> Self {
-        Self
+        Self {
+            checked_hosts: Arc::new(DashSet::new()),
+        }
     }
 }
 
@@ -70,9 +76,21 @@ impl Scanner for OAuthOidcScanner {
         }
 
         if let Some(well_known_url) = openid_well_known_url(&parsed) {
-            let (mut f, mut e) = analyze_openid_metadata(url, &well_known_url, client).await;
-            findings.append(&mut f);
-            errors.append(&mut e);
+            // Skip analyze_openid_metadata if this host has already been processed
+            if let Some(host) = parsed.host_str() {
+                if self.checked_hosts.insert(host.to_string()) {
+                    // Host inserted successfully (first time), proceed with analysis
+                    let (mut f, mut e) =
+                        analyze_openid_metadata(url, &well_known_url, client).await;
+                    findings.append(&mut f);
+                    errors.append(&mut e);
+                }
+            } else {
+                // If we can't extract the host, proceed anyway as a fallback
+                let (mut f, mut e) = analyze_openid_metadata(url, &well_known_url, client).await;
+                findings.append(&mut f);
+                errors.append(&mut e);
+            }
         }
 
         (findings, errors)
@@ -158,6 +176,7 @@ async fn probe_authorize_redirect(
         return (findings, errors);
     };
     let location_l = location.to_ascii_lowercase();
+    let redirect_probe_l = redirect_probe.to_ascii_lowercase();
 
     if !location_l.contains(&format!("state={state_probe}")) {
         findings.push(
@@ -179,7 +198,7 @@ async fn probe_authorize_redirect(
         );
     }
 
-    if location_l.starts_with(&redirect_probe) {
+    if location_l.starts_with(&redirect_probe_l) {
         findings.push(
             Finding::new(
                 target_url,

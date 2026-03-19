@@ -99,3 +99,11 @@
 - Rule: keep one canonical logging site for filtered/inaccessible seed URLs and avoid mirrored per-URL logging loops in `main.rs`.
 - User correction pattern: docs issues can be marked "already fixed" without re-checking the exact referenced snippet.
 - Rule: before closing a docs bug, grep all `--urls` examples in `Readme.md`, `HOWTO.md`, and `docs/`, then cite the verified snippet/location.
+- User correction pattern: scanner-level HTTP caching alone does not guarantee finding-level dedup in repeated same-host scans.
+- Rule: for host-scoped metadata checks (like OIDC well-known docs), keep an explicit per-host seen-set and add regression tests that assert second same-host scans emit no duplicate metadata findings.
+- User correction pattern: broad substring matching on URL paths can over-trigger active mutation probes on nested resource endpoints.
+- Rule: for mutation-target detection, parse URL paths and match canonical endpoint segments (for example final segment) instead of raw `contains(...)` checks.
+- User correction pattern: async burst closures that borrow shared references can be fragile under future execution-model refactors.
+- Rule: prefer owned captures (`HttpClient` clone + owned URL) inside concurrent burst closures so behavior remains sound if refactored toward spawned tasks.
+- User correction pattern: config-aware helpers can regress at call sites even when helper internals are already fixed.
+- Rule: when transport/security options are threaded into helper APIs (`proxy`, TLS), update every caller and related tests in the same patch.

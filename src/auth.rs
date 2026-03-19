@@ -18,6 +18,8 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use crate::config::Config;
+
 // ── Flow descriptor ───────────────────────────────────────────────────────────
 
 /// How the extracted credential is injected into every request.
@@ -169,13 +171,22 @@ pub fn load_flow(path: &Path) -> Result<AuthFlow> {
 /// Execute all steps in the auth flow using a plain reqwest client
 /// (not the scanner's HttpClient, to avoid circular dependency).
 /// Returns the live credential ready for injection.
-pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
+pub async fn execute_flow(flow: &AuthFlow, config: &Config) -> Result<LiveCredential> {
     let jar = Arc::new(Jar::default());
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
-        .cookie_provider(Arc::clone(&jar))
-        .build()
-        .context("Failed to build auth client")?;
+        .cookie_provider(Arc::clone(&jar));
+
+    // Apply proxy settings if configured
+    if let Some(proxy_url) = &config.proxy {
+        let proxy = reqwest::Proxy::all(proxy_url).context("Invalid proxy URL in auth flow")?;
+        builder = builder.proxy(proxy);
+    }
+
+    // Apply TLS settings
+    builder = builder.danger_accept_invalid_certs(config.danger_accept_invalid_certs);
+
+    let client = builder.build().context("Failed to build auth client")?;
 
     let mut last_credential: Option<LiveCredential> = None;
 
@@ -277,7 +288,11 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
 /// Spawn a background task that re-executes the auth flow before the token
 /// expires. Writes the new token into `cred.value` so all in-flight requests
 /// automatically pick it up on the next read.
-pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) -> RefreshTaskHandle {
+pub fn spawn_refresh_task(
+    flow: AuthFlow,
+    cred: Arc<LiveCredential>,
+    config: Config,
+) -> RefreshTaskHandle {
     let cancel = CancellationToken::new();
     let child_cancel = cancel.child_token();
 
@@ -293,7 +308,7 @@ pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) -> RefreshT
             }
 
             info!("Auth flow: refreshing credential…");
-            match execute_flow(&flow).await {
+            match execute_flow(&flow, &config).await {
                 Ok(new_cred) => {
                     let new_val = new_cred.current();
                     cred.value.store(Arc::new(new_val));

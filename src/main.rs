@@ -166,13 +166,17 @@ async fn run(cli: Cli) -> Result<i32> {
         let flow = auth::load_flow(flow_path).context("Failed to load auth flow")?;
 
         info!("Executing auth flow from {}...", flow_path.display());
-        let cred = auth::execute_flow(&flow)
+        let cred = auth::execute_flow(&flow, config.as_ref())
             .await
             .context("Auth flow failed")?;
         let cred = Arc::new(cred);
 
         // Spawn background refresh task
-        auth_refresh_tasks.push(auth::spawn_refresh_task(flow, Arc::clone(&cred)));
+        auth_refresh_tasks.push(auth::spawn_refresh_task(
+            flow,
+            Arc::clone(&cred),
+            config.as_ref().clone(),
+        ));
 
         Arc::new(
             HttpClient::new(&config)
@@ -186,11 +190,15 @@ async fn run(cli: Cli) -> Result<i32> {
     // Second credential for IDOR cross-user checks
     let http_client_b: Option<Arc<HttpClient>> = if let Some(ref flow_path) = config.auth_flow_b {
         let flow = auth::load_flow(flow_path).context("Failed to load auth flow B")?;
-        let cred = auth::execute_flow(&flow)
+        let cred = auth::execute_flow(&flow, config.as_ref())
             .await
             .context("Auth flow B failed")?;
         let cred = Arc::new(cred);
-        auth_refresh_tasks.push(auth::spawn_refresh_task(flow, Arc::clone(&cred)));
+        auth_refresh_tasks.push(auth::spawn_refresh_task(
+            flow,
+            Arc::clone(&cred),
+            config.as_ref().clone(),
+        ));
         Some(Arc::new(
             HttpClient::new(&config)
                 .context("Failed to build HTTP client B")?

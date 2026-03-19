@@ -1,12 +1,60 @@
 use std::collections::HashMap;
 
 use api_scanner::auth::{execute_flow, AuthFlow, AuthStep, InjectAs};
+use api_scanner::config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig};
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+fn test_config() -> Config {
+    Config {
+        max_endpoints: 10,
+        concurrency: 2,
+        politeness: PolitenessConfig {
+            delay_ms: 0,
+            retries: 0,
+            timeout_secs: 5,
+        },
+        waf_evasion: WafEvasionConfig {
+            enabled: false,
+            user_agents: vec![],
+        },
+        default_headers: vec![],
+        cookies: vec![],
+        proxy: None,
+        danger_accept_invalid_certs: false,
+        active_checks: false,
+        dry_run: false,
+        stream_findings: false,
+        baseline_path: None,
+        session_file: None,
+        auth_bearer: None,
+        auth_basic: None,
+        auth_flow: None,
+        auth_flow_b: None,
+        unauth_strip_headers: vec![],
+        per_host_clients: false,
+        adaptive_concurrency: false,
+        no_discovery: false,
+        toggles: ScannerToggles {
+            cors: false,
+            csp: false,
+            graphql: false,
+            api_security: false,
+            jwt: false,
+            openapi: false,
+            mass_assignment: false,
+            oauth_oidc: false,
+            rate_limit: false,
+            cve_templates: false,
+            websocket: false,
+        },
+        quiet: false,
+    }
+}
 
 #[tokio::test]
 async fn execute_flow_accepts_float_expires_in() {
@@ -35,7 +83,7 @@ async fn execute_flow_accepts_float_expires_in() {
         refresh_interval_secs: 840,
     };
 
-    let cred = execute_flow(&flow)
+    let cred = execute_flow(&flow, &test_config())
         .await
         .expect("flow with float expires_in should succeed");
 
@@ -87,7 +135,7 @@ async fn execute_flow_substitutes_lowercase_env_placeholders() {
         refresh_interval_secs: 840,
     };
 
-    let result = execute_flow(&flow).await;
+    let result = execute_flow(&flow, &test_config()).await;
 
     if let Some(value) = previous {
         std::env::set_var("api_key", value);

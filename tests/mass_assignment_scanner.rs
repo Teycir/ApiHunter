@@ -870,6 +870,26 @@ async fn non_mutation_paths_are_skipped() {
 }
 
 #[tokio::test]
+async fn nested_users_resource_paths_are_skipped() {
+    let server = MockServer::start().await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/api/v2/users/123/addresses", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(errors.is_empty());
+    assert!(findings.is_empty());
+    assert!(
+        requests.is_empty(),
+        "expected no mutation probe traffic for nested resource path, got: {requests:#?}"
+    );
+}
+
+#[tokio::test]
 async fn disabled_active_checks_means_noop() {
     let server = MockServer::start().await;
 

@@ -100,7 +100,7 @@ struct SarifText {
 // ── Severity ───────────────────────────────────────────────────────────────────
 
 /// Unified severity scale shared by every scanner.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Severity {
     Critical,
@@ -109,6 +109,19 @@ pub enum Severity {
     Low,
     #[default]
     Info,
+}
+
+impl PartialOrd for Severity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Severity {
+    /// Severity ordering: Critical > High > Medium > Low > Info.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.rank().cmp(&other.rank())
+    }
 }
 
 impl Severity {
@@ -665,20 +678,20 @@ pub fn build_summary(result: &RunResult) -> ReportSummary {
 /// Uses plain `println!` so it always reaches the user regardless of log level.
 fn print_summary_table(summary: &ReportSummary, elapsed: Duration) {
     println!();
-    println!("╔══════════════════════════════╗");
-    println!("║         SCAN SUMMARY         ║");
-    println!("╠══════════════════════════════╣");
+    println!("╔═══════════════════════════════╗");
+    println!("║         SCAN SUMMARY          ║");
+    println!("╠═══════════════════════════════╣");
     println!("║  Findings      {:>5}          ║", summary.total);
     println!("║  ├─ Critical   {:>5}          ║", summary.critical);
     println!("║  ├─ High       {:>5}          ║", summary.high);
     println!("║  ├─ Medium     {:>5}          ║", summary.medium);
     println!("║  ├─ Low        {:>5}          ║", summary.low);
     println!("║  └─ Info       {:>5}          ║", summary.info);
-    println!("╠══════════════════════════════╣");
+    println!("╠═══════════════════════════════╣");
     println!("║  Errors        {:>5}          ║", summary.errors);
-    println!("╠══════════════════════════════╣");
+    println!("╠═══════════════════════════════╣");
     println!("║  Elapsed    {:>8}ms          ║", elapsed.as_millis());
-    println!("╚══════════════════════════════╝");
+    println!("╚═══════════════════════════════╝");
     println!();
 }
 

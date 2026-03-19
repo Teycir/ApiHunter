@@ -1795,3 +1795,37 @@
 - Validation:
   - `cargo fmt`
   - `cargo test` (outside sandbox, full suite): passed.
+
+---
+
+# Task: OAuth/Mass-Assignment/Auth Follow-up Fix Pass (2026-03-19)
+
+## Plan
+- [x] Verify bug report claims against current source and classify as reproducible vs already fixed.
+- [x] Harden `BurstProbe::execute` to use owned captures (`HttpClient` clone + owned URL) so closure lifetimes are robust to future spawn refactors.
+- [x] Tighten mass-assignment mutation target matching so probes only run on collection-like endpoints, not arbitrary nested resource paths.
+- [x] Complete auth-flow transport wiring by passing `Config` through all `execute_flow`/refresh call sites and aligning tests with the current API.
+- [x] Add/refresh regression tests for OAuth host-level metadata dedup and redirect comparison robustness.
+- [x] Run `cargo fmt` and full `cargo test` outside sandbox, then document review outcomes.
+
+## Review
+- Verification outcome for this report:
+  - Already fixed in current tree: Bug 1 (OAuth metadata per-host dedup), Bug 2 (case-folded redirect comparison), Bug 5 (auth flow transport settings in `auth.rs`).
+  - Reproducible and fixed in this pass: Bug 3 (BurstProbe closure-capture fragility hardening), Bug 4 (mass-assignment overbroad mutation target matching).
+  - Confirmed non-bug: Bug 6 (`print_summary_table` behavior remains correctly gated by `print_summary`; comment intent remains informational).
+- Code changes:
+  - `src/main.rs`: completed auth flow wiring by passing `config` into `auth::execute_flow(...)` and `auth::spawn_refresh_task(...)`.
+  - `src/auth.rs`: added explicit `use crate::config::Config;` import for the existing config-aware auth flow API.
+  - `src/scanner/common/probe.rs`: `BurstProbe::execute` now captures owned `HttpClient` clone and owned URL string in async closures.
+  - `src/scanner/mass_assignment.rs`: mutation target detection now matches final path segment hints only (URL-parsed), avoiding nested resource over-probing.
+- Regression tests:
+  - `tests/oauth_oidc_scanner.rs`:
+    - `oidc_metadata_is_analyzed_once_per_host`
+    - `oauth_redirect_uri_probe_is_case_insensitive_for_location`
+  - `tests/mass_assignment_scanner.rs`:
+    - `nested_users_resource_paths_are_skipped`
+  - `tests/auth_flow.rs` and `tests/auth_refresh.rs` aligned with current config-aware auth-flow API.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test oauth_oidc_scanner --test mass_assignment_scanner --test auth_flow --test auth_refresh --test burst_probe` (outside sandbox): passed.
+  - `cargo test` (outside sandbox, full suite): passed.

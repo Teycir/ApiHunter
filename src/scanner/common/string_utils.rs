@@ -25,12 +25,19 @@ pub fn snippet(s: &str, max_len: usize) -> String {
 }
 
 pub fn slugify(s: &str) -> String {
-    s.to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .split("--")
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
+    let mut result = String::with_capacity(s.len());
+    let mut prev_dash = false;
+
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            result.push(c.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            result.push('-');
+            prev_dash = true;
+        }
+    }
+
+    // Trim leading/trailing dashes
+    result.trim_matches('-').to_string()
 }

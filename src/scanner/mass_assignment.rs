@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashSet;
+use url::Url;
 
 use crate::{
     config::Config,
@@ -33,14 +34,14 @@ impl MassAssignmentScanner {
 }
 
 static MUTATION_HINTS: &[&str] = &[
-    "/users",
-    "/user",
-    "/account",
-    "/profile",
-    "/admin",
-    "/settings",
-    "/roles",
-    "/permissions",
+    "users",
+    "user",
+    "account",
+    "profile",
+    "admin",
+    "settings",
+    "roles",
+    "permissions",
 ];
 
 #[async_trait]
@@ -150,8 +151,20 @@ fn should_skip_scan(config: &Config, url: &str) -> bool {
 }
 
 fn is_likely_mutation_target(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    MUTATION_HINTS.iter().any(|k| lower.contains(k))
+    let parsed = match Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    let path = parsed.path().trim_end_matches('/');
+    let Some(last_segment) = path.rsplit('/').next() else {
+        return false;
+    };
+    if last_segment.is_empty() {
+        return false;
+    }
+    let last_segment_l = last_segment.to_ascii_lowercase();
+    MUTATION_HINTS.iter().any(|hint| last_segment_l == *hint)
 }
 
 fn should_skip_response_status(status: u16) -> bool {

@@ -114,6 +114,122 @@ async fn oauth_redirect_uri_probe_detects_untrusted_callback() {
 }
 
 #[tokio::test]
+async fn oauth_redirect_uri_probe_is_case_insensitive_for_location() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/oauth/authorize"))
+        .respond_with(|request: &wiremock::Request| {
+            let mut redirect_uri = None;
+            let mut state = None;
+            for (k, v) in request.url.query_pairs() {
+                if k == "redirect_uri" {
+                    redirect_uri = Some(v.into_owned());
+                } else if k == "state" {
+                    state = Some(v.into_owned());
+                }
+            }
+
+            let location = format!(
+                "{}?CODE=abc&STATE={}",
+                redirect_uri
+                    .unwrap_or_else(|| "https://app.example.net/callback".to_string())
+                    .to_ascii_uppercase(),
+                state
+                    .unwrap_or_else(|| "missing".to_string())
+                    .to_ascii_uppercase()
+            );
+            ResponseTemplate::new(302).insert_header("Location", location)
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = OAuthOidcScanner::new(cfg.as_ref());
+
+    let target = format!("{}/oauth/authorize", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "oauth/redirect-uri-not-validated"),
+        "expected redirect_uri finding for uppercase Location header, got: {findings:#?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.check == "oauth/state-not-returned"),
+        "did not expect state-not-returned when state is present, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
+async fn oidc_metadata_is_analyzed_once_per_host() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+                    "issuer": "https://issuer.example",
+                    "code_challenge_methods_supported": ["plain"],
+                    "response_types_supported": ["code"],
+                    "grant_types_supported": ["authorization_code"]
+                }"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = OAuthOidcScanner::new(cfg.as_ref());
+
+    let first_target = format!("{}/oauth/token", server.uri());
+    let second_target = format!("{}/oidc/connect", server.uri());
+
+    let (first_findings, first_errors) = scanner.scan(&first_target, &client, cfg.as_ref()).await;
+    let (second_findings, second_errors) =
+        scanner.scan(&second_target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+    let metadata_requests = requests
+        .iter()
+        .filter(|r| r.url.path() == "/.well-known/openid-configuration")
+        .count();
+
+    assert!(
+        first_errors.is_empty(),
+        "unexpected errors: {first_errors:#?}"
+    );
+    assert!(
+        first_findings
+            .iter()
+            .any(|f| f.check == "oauth/pkce-s256-not-supported"),
+        "expected first scan to include metadata finding, got: {first_findings:#?}"
+    );
+    assert!(
+        second_errors.is_empty(),
+        "unexpected errors: {second_errors:#?}"
+    );
+    assert!(
+        second_findings.is_empty(),
+        "expected second same-host scan to skip metadata re-analysis, got: {second_findings:#?}"
+    );
+    assert_eq!(
+        metadata_requests, 1,
+        "expected exactly one metadata fetch per host"
+    );
+}
+
+#[tokio::test]
 async fn authorize_probe_uses_configured_auth_headers_and_cookies() {
     let server = MockServer::start().await;
 
