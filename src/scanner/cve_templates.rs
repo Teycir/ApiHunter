@@ -417,85 +417,93 @@ fn to_header_map(pairs: &[NameValue]) -> HeaderMap {
     map
 }
 
+struct ResponseMatchConstraints<'a> {
+    status_any_of: &'a [u16],
+    body_contains_any: &'a [String],
+    body_contains_all: &'a [String],
+    body_regex_any: &'a [String],
+    body_regex_all: &'a [String],
+    match_headers: &'a [NameValue],
+    header_regex_any: &'a [String],
+    header_regex_all: &'a [String],
+}
+
 fn template_matches_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
-    response_matches_constraints(
-        &tmpl.status_any_of,
-        &tmpl.body_contains_any,
-        &tmpl.body_contains_all,
-        &tmpl.body_regex_any,
-        &tmpl.body_regex_all,
-        &tmpl.match_headers,
-        &tmpl.header_regex_any,
-        &tmpl.header_regex_all,
-        resp,
-    )
+    let constraints = ResponseMatchConstraints {
+        status_any_of: &tmpl.status_any_of,
+        body_contains_any: &tmpl.body_contains_any,
+        body_contains_all: &tmpl.body_contains_all,
+        body_regex_any: &tmpl.body_regex_any,
+        body_regex_all: &tmpl.body_regex_all,
+        match_headers: &tmpl.match_headers,
+        header_regex_any: &tmpl.header_regex_any,
+        header_regex_all: &tmpl.header_regex_all,
+    };
+    response_matches_constraints(&constraints, resp)
 }
 
 fn template_matches_baseline_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
-    response_matches_constraints(
-        &tmpl.baseline_status_any_of,
-        &tmpl.baseline_body_contains_any,
-        &tmpl.baseline_body_contains_all,
-        &[],
-        &[],
-        &tmpl.baseline_match_headers,
-        &[],
-        &[],
-        resp,
-    )
+    let constraints = ResponseMatchConstraints {
+        status_any_of: &tmpl.baseline_status_any_of,
+        body_contains_any: &tmpl.baseline_body_contains_any,
+        body_contains_all: &tmpl.baseline_body_contains_all,
+        body_regex_any: &[],
+        body_regex_all: &[],
+        match_headers: &tmpl.baseline_match_headers,
+        header_regex_any: &[],
+        header_regex_all: &[],
+    };
+    response_matches_constraints(&constraints, resp)
 }
 
 fn response_matches_constraints(
-    status_any_of: &[u16],
-    body_contains_any: &[String],
-    body_contains_all: &[String],
-    body_regex_any: &[String],
-    body_regex_all: &[String],
-    match_headers: &[NameValue],
-    header_regex_any: &[String],
-    header_regex_all: &[String],
+    constraints: &ResponseMatchConstraints,
     resp: &HttpResponse,
 ) -> bool {
-    if !status_any_of.is_empty() && !status_any_of.contains(&resp.status) {
+    if !constraints.status_any_of.is_empty() && !constraints.status_any_of.contains(&resp.status) {
         return false;
     }
 
     let body_l = resp.body.to_ascii_lowercase();
 
-    if !body_contains_all.is_empty()
-        && !body_contains_all
+    if !constraints.body_contains_all.is_empty()
+        && !constraints
+            .body_contains_all
             .iter()
             .all(|needle| body_l.contains(&needle.to_ascii_lowercase()))
     {
         return false;
     }
 
-    if !body_contains_any.is_empty()
-        && !body_contains_any
+    if !constraints.body_contains_any.is_empty()
+        && !constraints
+            .body_contains_any
             .iter()
             .any(|needle| body_l.contains(&needle.to_ascii_lowercase()))
     {
         return false;
     }
 
-    if !body_regex_all.is_empty()
-        && !body_regex_all
+    if !constraints.body_regex_all.is_empty()
+        && !constraints
+            .body_regex_all
             .iter()
             .all(|pattern| regex_matches(pattern, &resp.body))
     {
         return false;
     }
 
-    if !body_regex_any.is_empty()
-        && !body_regex_any
+    if !constraints.body_regex_any.is_empty()
+        && !constraints
+            .body_regex_any
             .iter()
             .any(|pattern| regex_matches(pattern, &resp.body))
     {
         return false;
     }
 
-    if !match_headers.is_empty() {
-        for hv in match_headers {
+    if !constraints.match_headers.is_empty() {
+        for hv in constraints.match_headers {
             let name_l = hv.name.to_ascii_lowercase();
             let want_l = hv.value.to_ascii_lowercase();
             let got = resp.headers.get(&name_l).map(|v| v.to_ascii_lowercase());
@@ -505,22 +513,24 @@ fn response_matches_constraints(
         }
     }
 
-    if !header_regex_all.is_empty() || !header_regex_any.is_empty() {
+    if !constraints.header_regex_all.is_empty() || !constraints.header_regex_any.is_empty() {
         let header_blob = resp
             .headers
             .iter()
             .map(|(k, v)| format!("{k}: {v}\n"))
             .collect::<String>();
 
-        if !header_regex_all.is_empty()
-            && !header_regex_all
+        if !constraints.header_regex_all.is_empty()
+            && !constraints
+                .header_regex_all
                 .iter()
                 .all(|pattern| regex_matches(pattern, &header_blob))
         {
             return false;
         }
-        if !header_regex_any.is_empty()
-            && !header_regex_any
+        if !constraints.header_regex_any.is_empty()
+            && !constraints
+                .header_regex_any
                 .iter()
                 .any(|pattern| regex_matches(pattern, &header_blob))
         {

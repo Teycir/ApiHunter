@@ -1476,3 +1476,46 @@
   - `cargo check`
   - `cargo test --test jwt_scanner --test integration_runner --test reports --test cors_scanner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Post-Review Hardening Sweep (Phase 37)
+
+## Plan
+- [x] Re-verify reported “remaining” items against current source and classify fixed vs still-open.
+- [x] Add per-step discovery timeout wrapping to prevent one hanging discovery strategy from blocking site discovery forever.
+- [x] Improve auth JSON extraction to accept scalar values beyond strings/integers (notably float `expires_in`).
+- [x] Allow empty cookie values when parsing `Set-Cookie` pairs for session persistence.
+- [x] Optimize JWT leading-zero normalization to avoid repeated `Vec::remove(0)` shifts.
+- [x] Add regression tests for discovery changes, float `expires_in`, and empty cookie value persistence.
+- [x] Run fmt/check and full tests outside sandbox; document outcomes.
+
+## Review
+- Verification pass outcomes:
+  - Already fixed in current tree before this phase: SARIF driver name uses `env!("CARGO_PKG_NAME")`, query-order canonicalization is active, refresh task handle lifecycle is retained + shutdown in `main.rs`, discovery already runs strategies concurrently, and package/binary naming has already moved to `apihunter` + `api-scanner` alias.
+- Discovery hardening (`src/runner.rs`):
+  - Added `run_discovery_with_timeout(...)` wrapper.
+  - Each per-site discovery step (`robots`, `sitemap`, `swagger`, `js`, `headers`, `common-paths`) now runs under timeout = `max(1, timeout_secs * 2)`.
+  - Timeout emits explicit captured error context `discovery/<step>` instead of stalling site discovery.
+  - Added integration coverage in `tests/integration_runner.rs`:
+    - `discovery_results_are_merged_when_step_completes_in_time` verifies discovery output still feeds scan targets.
+  - Moved discovery timeout tests out of production source to comply with test-placement policy (`tests/` only).
+- Auth JSON extraction (`src/auth.rs`):
+  - Added `json_scalar_to_string(...)` to normalize string/int/uint/float/bool JSON scalar values.
+  - `extract_jsonpath(...)` now uses this helper for both JSON Pointer and JSONPath results.
+  - Float values like `3600.0` are normalized to integer string form when integral.
+  - Added `tests/auth_flow.rs`:
+    - `execute_flow_accepts_float_expires_in` verifies float `expires_in` drives refresh interval correctly.
+- Cookie parsing (`src/http_client.rs`):
+  - `parse_set_cookie_pair` now accepts empty cookie values (`name=`) while still rejecting empty names.
+  - Added `tests/session_file_formats.rs`:
+    - `session_file_preserves_empty_cookie_values` verifies empty-value cookies are persisted in session store output.
+- JWT normalization performance (`src/scanner/jwt.rs`):
+  - Replaced iterative leading-byte removal with a single drain based on first non-zero position.
+  - Preserves at least one zero byte for all-zero inputs.
+- Validation:
+  - `cargo fmt`
+  - `cargo check`
+  - `cargo test --test auth_flow --test session_file_formats --test jwt_scanner --test integration_runner --test reports` (outside sandbox)
+  - `cargo test --test cve_templates_runtime_ext --test integration_runner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

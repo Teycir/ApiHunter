@@ -8,7 +8,7 @@ use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
 };
-use tempfile::NamedTempFile;
+use tempfile::{tempdir, NamedTempFile};
 use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
 
 fn test_config() -> Config {
@@ -130,5 +130,42 @@ fn session_file_rejects_legacy_cookies_schema() {
     assert!(
         msg.contains("hosts"),
         "expected hosts-schema parse failure, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn session_file_preserves_empty_cookie_values() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("set-cookie", "session=; Path=/; HttpOnly")
+                .set_body_string("ok"),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().unwrap();
+    let session_path = temp.path().join("session.json");
+
+    let mut cfg = test_config();
+    cfg.session_file = Some(session_path.clone());
+
+    let config = Arc::new(cfg);
+    let client = HttpClient::new(config.as_ref()).expect("http client");
+    let _ = client.get(&server.uri()).await.expect("request");
+    client.save_session().await.expect("save session");
+
+    let host = url::Url::parse(&server.uri())
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .expect("host");
+    let raw = std::fs::read_to_string(&session_path).expect("session file");
+    let doc: serde_json::Value = serde_json::from_str(&raw).expect("session json");
+
+    assert_eq!(
+        doc["hosts"][host]["session"].as_str(),
+        Some(""),
+        "empty-value cookies should be persisted instead of dropped",
     );
 }

@@ -539,8 +539,15 @@ fn extract_rsa_components_from_jwk(jwk: &Value) -> Option<(Vec<u8>, Vec<u8>)> {
 }
 
 fn trim_leading_zeros(bytes: &mut Vec<u8>) {
-    while bytes.len() > 1 && bytes.first() == Some(&0) {
-        bytes.remove(0);
+    if bytes.len() <= 1 {
+        return;
+    }
+    let first_non_zero = bytes
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(bytes.len().saturating_sub(1));
+    if first_non_zero > 0 {
+        bytes.drain(0..first_non_zero);
     }
 }
 
@@ -633,6 +640,13 @@ fn pem_encode(label: &str, der: &[u8]) -> String {
 }
 
 fn extract_subject_public_key_info_der_from_certificate(cert_der: &[u8]) -> Option<Vec<u8>> {
+    if let Some(spki) = extract_spki_from_x509_layout(cert_der) {
+        return Some(spki);
+    }
+    extract_spki_sequence_recursive(cert_der, 0)
+}
+
+fn extract_spki_from_x509_layout(cert_der: &[u8]) -> Option<Vec<u8>> {
     let (cert_tag, cert_value_start, cert_value_end, _) = parse_der_tlv(cert_der, 0)?;
     if cert_tag != 0x30 {
         return None;
@@ -663,6 +677,51 @@ fn extract_subject_public_key_info_der_from_certificate(cert_der: &[u8]) -> Opti
     }
 
     Some(tbs[idx..spki_next].to_vec())
+}
+
+fn extract_spki_sequence_recursive(input: &[u8], offset: usize) -> Option<Vec<u8>> {
+    if offset >= input.len() {
+        return None;
+    }
+
+    let (tag, value_start, value_end, next) = parse_der_tlv(input, offset)?;
+
+    if tag == 0x30 && looks_like_spki_sequence(&input[value_start..value_end]) {
+        return Some(input[offset..next].to_vec());
+    }
+
+    // Recurse into constructed values.
+    if (tag & 0x20) != 0 {
+        if let Some(found) = extract_spki_sequence_recursive(&input[value_start..value_end], 0) {
+            return Some(found);
+        }
+    }
+
+    // BIT STRING often wraps an encoded key structure. First octet is
+    // "unused bits" count, then nested DER payload.
+    if tag == 0x03 && value_start < value_end {
+        let bit_payload = &input[value_start..value_end];
+        if bit_payload.first() == Some(&0) && bit_payload.len() > 1 {
+            if let Some(found) = extract_spki_sequence_recursive(&bit_payload[1..], 0) {
+                return Some(found);
+            }
+        }
+    }
+
+    extract_spki_sequence_recursive(input, next)
+}
+
+fn looks_like_spki_sequence(seq_value: &[u8]) -> bool {
+    let Some((alg_tag, _, _, alg_next)) = parse_der_tlv(seq_value, 0) else {
+        return false;
+    };
+    if alg_tag != 0x30 {
+        return false;
+    }
+    let Some((key_tag, _, _, key_next)) = parse_der_tlv(seq_value, alg_next) else {
+        return false;
+    };
+    key_tag == 0x03 && key_next == seq_value.len()
 }
 
 fn parse_der_tlv(input: &[u8], offset: usize) -> Option<(u8, usize, usize, usize)> {

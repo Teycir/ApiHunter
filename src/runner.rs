@@ -10,6 +10,7 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
+    future::Future,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -570,6 +571,8 @@ async fn run_discovery_per_site(
 ) -> (Vec<String>, Vec<CapturedError>) {
     const MAX_SITEMAPS: usize = 5;
     const MAX_SCRIPTS: usize = 10;
+    let discovery_timeout_secs = config.politeness.timeout_secs.saturating_mul(2).max(1);
+    let discovery_timeout = Duration::from_secs(discovery_timeout_secs);
 
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
@@ -591,12 +594,21 @@ async fn run_discovery_per_site(
         let headers = HeaderDiscovery::new(client, &base, &host);
         let common_paths = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new());
 
-        let robots_fut = robots.run();
-        let sitemap_fut = sitemap.run();
-        let swagger_fut = swagger.run();
-        let js_fut = js.run();
-        let headers_fut = headers.run();
-        let common_paths_fut = common_paths.run();
+        let robots_fut =
+            run_discovery_with_timeout(&base, "robots", discovery_timeout, robots.run());
+        let sitemap_fut =
+            run_discovery_with_timeout(&base, "sitemap", discovery_timeout, sitemap.run());
+        let swagger_fut =
+            run_discovery_with_timeout(&base, "swagger", discovery_timeout, swagger.run());
+        let js_fut = run_discovery_with_timeout(&base, "js", discovery_timeout, js.run());
+        let headers_fut =
+            run_discovery_with_timeout(&base, "headers", discovery_timeout, headers.run());
+        let common_paths_fut = run_discovery_with_timeout(
+            &base,
+            "common-paths",
+            discovery_timeout,
+            common_paths.run(),
+        );
 
         let (
             (robots_paths, robots_errs),
@@ -694,6 +706,31 @@ fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
     for path in paths {
         let url = format!("{base}{path}");
         out.insert(url);
+    }
+}
+
+async fn run_discovery_with_timeout<F>(
+    base: &str,
+    step: &'static str,
+    timeout: Duration,
+    fut: F,
+) -> (HashSet<String>, Vec<CapturedError>)
+where
+    F: Future<Output = (HashSet<String>, Vec<CapturedError>)>,
+{
+    match tokio::time::timeout(timeout, fut).await {
+        Ok((paths, errs)) => (paths, errs),
+        Err(_) => (
+            HashSet::new(),
+            vec![CapturedError::from_str(
+                format!("discovery/{step}"),
+                Some(base.to_string()),
+                format!(
+                    "Discovery step '{step}' timed out after {}s",
+                    timeout.as_secs()
+                ),
+            )],
+        ),
     }
 }
 

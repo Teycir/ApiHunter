@@ -1,7 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 use tempfile::tempdir;
+use tokio::sync::Mutex;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -63,9 +64,9 @@ fn test_config(active_checks: bool) -> Config {
 
 #[tokio::test]
 async fn preflight_chain_executes_before_probe() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
-    let tmp = tempdir().expect("tempdir");
-    let template_path = tmp.path().join("chain.toml");
+    let _guard = ENV_LOCK.lock().await;
+    let _tmp = tempdir().expect("tempdir");
+    let template_path = _tmp.path().join("chain.toml");
 
     std::fs::write(
         &template_path,
@@ -94,7 +95,7 @@ expect_status_any_of = [200]
 
     std::env::set_var(
         "APIHUNTER_CVE_TEMPLATE_DIRS",
-        tmp.path().to_str().expect("tmp path"),
+        _tmp.path().to_str().expect("tmp path"),
     );
 
     let server = MockServer::start().await;
@@ -142,9 +143,9 @@ expect_status_any_of = [200]
 
 #[tokio::test]
 async fn regex_constraints_match_for_body_and_headers() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
-    let tmp = tempdir().expect("tempdir");
-    let template_path = tmp.path().join("regex.toml");
+    let _guard = ENV_LOCK.lock().await;
+    let _tmp = tempdir().expect("tempdir");
+    let template_path = _tmp.path().join("regex.toml");
 
     std::fs::write(
         &template_path,
@@ -169,7 +170,7 @@ context_path_contains_any = ["/api"]
 
     std::env::set_var(
         "APIHUNTER_CVE_TEMPLATE_DIRS",
-        tmp.path().to_str().expect("tmp path"),
+        _tmp.path().to_str().expect("tmp path"),
     );
 
     let server = MockServer::start().await;

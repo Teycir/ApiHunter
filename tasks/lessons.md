@@ -61,3 +61,7 @@
 - Rule: when introducing aliases/renames for binaries, ensure each Cargo target has a unique source path so `cargo run`/`cargo test` stay warning-free.
 - User correction pattern: JWT alg-confusion probes are only meaningful when forged secrets mirror realistic public-key encodings.
 - Rule: for RS256->HS256 confusion checks, derive and try SPKI/certificate-based key material from `jwk`/`x5c` (with explicit probe-source errors), rather than simplistic modulus-only or serialized-object bytes.
+- User correction pattern: follow-up reviews may mix stale and current findings.
+- Rule: always re-verify each claimed issue against live source before patching, explicitly mark already-fixed items, and only implement reproducible gaps.
+- User correction pattern: async tests that mutate process-wide env vars can race even when setup is serialized.
+- Rule: keep env-lock guards alive for the full async test body (not just setup) whenever tests set/remove global environment variables.

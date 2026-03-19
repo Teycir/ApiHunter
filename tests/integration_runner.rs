@@ -749,6 +749,63 @@ async fn no_discovery_skips_robots_probe() {
 }
 
 #[tokio::test]
+async fn discovery_results_are_merged_when_step_completes_in_time() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/plain")
+                .set_body_string("User-agent: *\nAllow: /from-robots\n"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.politeness.timeout_secs = 1;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.toggles.mass_assignment = false;
+    cfg.toggles.oauth_oidc = false;
+    cfg.toggles.rate_limit = false;
+    cfg.toggles.cve_templates = false;
+    cfg.toggles.websocket = false;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+
+    assert!(
+        result
+            .errors
+            .iter()
+            .all(|e| e.context != "discovery/robots" || !e.message.contains("timed out")),
+        "did not expect robots timeout for fast response: {:#?}",
+        result.errors
+    );
+    assert!(
+        result.scanned >= 2,
+        "expected seed + discovered robots path to be scanned; scanned={}",
+        result.scanned
+    );
+}
+
+#[tokio::test]
 async fn canonicalise_dedups_query_parameter_order_variants() {
     let mut cfg = test_config();
     cfg.no_discovery = true;

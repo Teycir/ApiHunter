@@ -783,7 +783,7 @@ fn parse_set_cookie_pair(raw: &str) -> Option<(&str, &str)> {
     let (name, value) = first_part.split_once('=')?;
     let name = name.trim();
     let value = value.trim();
-    if name.is_empty() || value.is_empty() {
+    if name.is_empty() {
         return None;
     }
     Some((name, value))

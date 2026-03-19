@@ -318,11 +318,7 @@ fn extract_jsonpath(doc: &Value, path: &str) -> Result<String> {
     if path.starts_with('/') {
         return doc
             .pointer(path)
-            .and_then(|v| {
-                v.as_str()
-                    .map(|s| s.to_string())
-                    .or_else(|| v.as_i64().map(|n| n.to_string()))
-            })
+            .and_then(json_scalar_to_string)
             .context("JSON Pointer matched nothing");
     }
 
@@ -332,14 +328,35 @@ fn extract_jsonpath(doc: &Value, path: &str) -> Result<String> {
     let first = finder.find();
     if let Value::Array(arr) = &first {
         if let Some(v) = arr.first() {
-            return v
-                .as_str()
-                .map(|s| s.to_string())
-                .or_else(|| v.as_i64().map(|n| n.to_string()))
-                .context("JSONPath result is not a string or integer");
+            return json_scalar_to_string(v)
+                .context("JSONPath result is not a scalar (string/number/bool)");
         }
     }
     bail!("JSONPath '{path}' matched nothing in response")
+}
+
+fn json_scalar_to_string(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(i) = v.as_i64() {
+        return Some(i.to_string());
+    }
+    if let Some(u) = v.as_u64() {
+        return Some(u.to_string());
+    }
+    if let Some(f) = v.as_f64() {
+        if f.is_finite() {
+            if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                return Some((f as i64).to_string());
+            }
+            return Some(f.to_string());
+        }
+    }
+    if let Some(b) = v.as_bool() {
+        return Some(b.to_string());
+    }
+    None
 }
 
 /// Replace `{{ENV_VAR}}` placeholders with environment variable values.

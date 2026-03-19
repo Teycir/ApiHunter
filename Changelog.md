@@ -171,6 +171,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CORS: Only flag High severity when regex bypass succeeds with credentials enabled
 - Discovery bypass: runner skips robots/sitemap/swagger probes when `--no-discovery` is enabled
 - Runner URL canonicalization now normalizes query parameter ordering before deduplication
+- Discovery per-site strategy runs now have per-step timeout guards to prevent a single hanging discovery path from blocking the site
 - Replaced tracing logs with eprintln for user-facing output
 - Default `--min-severity` changed from High to Info
 - Endpoint cap now applies per-site instead of globally
@@ -181,6 +182,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Binary target paths split (`apihunter` vs `api-scanner`) to eliminate duplicate-target Cargo warnings
 - Improved code idioms and flexibility across multiple modules (clippy fixes)
 - Simplified session file format to only support Excalibur cookies JSON
+- Auth flow JSON extraction now accepts scalar JSONPath/JSON Pointer values (string/int/uint/float/bool), including integral float `expires_in` values
+- JWT leading-zero normalization now uses single-pass draining instead of repeated front removals
 - HAR import now filters for likely API/business endpoints (excludes static/CDN)
 
 ### Fixed
@@ -200,6 +203,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Error array response detection to reduce false positives
 - Severity serde expectation in tests
 - SARIF driver tool name now uses `env!("CARGO_PKG_NAME")` instead of a hardcoded value
+- Session persistence now preserves empty cookie values from `Set-Cookie` entries (for cookie-clearing flows)
+- CVE runtime extension tests now hold env-var lock for full async test execution to prevent cross-test races
 
 ### Performance
 - **Mass Assignment Scanner Optimizations**:
