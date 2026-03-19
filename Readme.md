@@ -559,6 +559,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Configuration](docs/configuration.md)
 - [Auth Flow](docs/auth-flow.md)
 - [Testing Guide](docs/testing.md)
+- [Operations Runbook](docs/operations.md)
 - [Scanners](docs/scanners.md)
 - [Findings & Remediation](docs/findings.md)
 - [Security Policy](SECURITY.md)

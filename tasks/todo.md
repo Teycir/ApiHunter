@@ -1,3 +1,47 @@
+# Task: Ownership Governance Hardening (Phase 16)
+
+## Plan
+- [x] Add `.github/CODEOWNERS` to define mandatory review ownership.
+- [x] Document branch-protection expectation in operations guidance.
+- [x] Verify new governance artifacts are discoverable and consistent.
+
+## Review
+- Added `.github/CODEOWNERS` with explicit ownership rules for:
+  - all files,
+  - CI/release workflows,
+  - security/operations governance docs.
+- Updated `docs/operations.md` preconditions to require branch protection with CODEOWNERS enforcement.
+- Updated `CONTRIBUTING.md` PR checklist to include CODEOWNERS approval requirement for protected branches.
+- Verification:
+  - `test -f .github/CODEOWNERS`
+  - `rg -n "CODEOWNERS|Branch protection|protected branches|required CODEOWNERS review" -S .github/CODEOWNERS docs/operations.md CONTRIBUTING.md`
+
+---
+
+# Task: Operational Hardening Blocker Removal (Phase 15)
+
+## Plan
+- [x] Add an operations runbook covering canary rollout, rollback, and failure-handling policy.
+- [x] Add monitoring/alert guidance using ApiHunter runtime metrics and report outputs.
+- [x] Link the runbook from `Readme.md` and `docs/INDEX.md`.
+- [x] Verify links and summarize the operational hardening outcome.
+
+## Review
+- Added `docs/operations.md` with:
+  - staged canary rollout plan (passive baseline -> limited active canary -> expanded scope),
+  - explicit rollback triggers and rollback actions,
+  - monitoring thresholds tied to runtime metrics (`http_requests`, `http_retries`, `scanner_findings`, `scanner_errors`),
+  - post-run triage discipline and incident note template.
+- Linked runbook for discoverability:
+  - `Readme.md` documentation list now includes `Operations Runbook`.
+  - `docs/INDEX.md` includes operations guide entries across quick navigation, tag/category sections, and help paths.
+- Updated documentation stats in `docs/INDEX.md` to reflect 8 core docs.
+- Verification:
+  - `test -f docs/operations.md`
+  - `rg -n "\\[Operations Runbook\\]\\(docs/operations\\.md\\)|\\[Operations Runbook\\]\\(\\./operations\\.md\\)|\\[Operations\\.md\\]\\(\\./operations\\.md\\)" Readme.md docs/INDEX.md`
+
+---
+
 # Task: Clippy Gate Cleanup (Phase 14)
 
 ## Plan

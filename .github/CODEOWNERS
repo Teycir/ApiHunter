@@ -1,0 +1,9 @@
+# Default owner for all files
+* @Teycir
+
+# CI/CD and release pipeline ownership
+/.github/workflows/* @Teycir
+
+# Security and operations governance docs
+/SECURITY.md @Teycir
+/docs/operations.md @Teycir

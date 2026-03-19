@@ -48,6 +48,7 @@ cargo test
 3. Tests pass with `cargo test`.
 4. Documentation is updated for user-facing changes.
 5. Changelog entry is added when needed.
+6. For protected branches, required CODEOWNERS review is obtained.
 
 ## Bug Reports and Feature Requests
 
