@@ -77,6 +77,12 @@ struct Template {
     context_path_contains_any: Vec<String>,
 }
 
+struct RequestSelection<'a> {
+    request: &'a Mapping,
+    method: String,
+    path: String,
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("template-tool error: {err:#}");
@@ -121,26 +127,15 @@ fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
         "Apply vendor patches and harden exposed management endpoints.".to_string()
     });
 
-    let request = yaml
+    let http_requests = yaml
         .get("http")
         .and_then(Value::as_sequence)
-        .and_then(|v| v.first())
-        .and_then(Value::as_mapping)
-        .ok_or_else(|| anyhow::anyhow!("missing required 'http[0]' request mapping"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing required top-level 'http' request list"))?;
 
-    let method = extract_method(request).unwrap_or_else(|| "GET".to_string());
-    if method != "GET" {
-        bail!("Only GET method is supported by ApiHunter CVE templates (found '{method}')");
-    }
-
-    let path = extract_path(request)?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "failed to extract request path from 'path' list or first 'raw' request line"
-        )
-    })?;
-
-    let headers = extract_headers(request);
-    let (status_any_of, body_contains_any, body_contains_all) = extract_matchers(request);
+    let selection = select_importable_request(http_requests)?;
+    let headers = extract_headers(selection.request);
+    let (status_any_of, body_contains_any, body_contains_all, match_headers) =
+        extract_matchers(selection.request);
 
     let source = args
         .source_url
@@ -154,7 +149,7 @@ fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
     let check = format!("cve/{}/{}", id.to_ascii_lowercase(), check_suffix);
 
     let context_hints = if args.context_hints.is_empty() {
-        derive_context_hints(&path)
+        derive_context_hints(&selection.path)
     } else {
         sanitize_hints(&args.context_hints)
     };
@@ -168,10 +163,10 @@ fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
             detail,
             remediation,
             source,
-            path,
-            method,
+            path: selection.path,
+            method: selection.method,
             headers,
-            match_headers: Vec::new(),
+            match_headers,
             status_any_of,
             body_contains_any,
             body_contains_all,
@@ -206,6 +201,44 @@ fn map_get_string(map: &Mapping, key: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn select_importable_request(http_requests: &[Value]) -> Result<RequestSelection<'_>> {
+    if http_requests.is_empty() {
+        bail!("missing required 'http[0]' request mapping");
+    }
+
+    let mut first_non_get: Option<String> = None;
+
+    for raw_req in http_requests {
+        let Some(req) = raw_req.as_mapping() else {
+            continue;
+        };
+
+        let method = extract_method(req).unwrap_or_else(|| "GET".to_string());
+        if method != "GET" {
+            if first_non_get.is_none() {
+                first_non_get = Some(method);
+            }
+            continue;
+        }
+
+        let Some(path) = extract_path(req)? else {
+            continue;
+        };
+
+        return Ok(RequestSelection {
+            request: req,
+            method: "GET".to_string(),
+            path,
+        });
+    }
+
+    if let Some(method) = first_non_get {
+        bail!("Only GET method is supported by ApiHunter CVE templates (found '{method}')");
+    }
+
+    bail!("failed to extract request path from 'path' list or first 'raw' request line")
+}
+
 fn extract_method(req: &Mapping) -> Option<String> {
     if let Some(m) = req
         .get(Value::String("method".to_string()))
@@ -217,10 +250,14 @@ fn extract_method(req: &Mapping) -> Option<String> {
     // Fall back to parsing the first raw request line (e.g., "GET /path HTTP/1.1").
     req.get(Value::String("raw".to_string()))
         .and_then(Value::as_sequence)
-        .and_then(|seq| seq.first())
-        .and_then(Value::as_str)
-        .and_then(|raw| raw.lines().next())
-        .and_then(|line| line.split_whitespace().next())
+        .and_then(|seq| {
+            seq.iter().find_map(|entry| {
+                entry
+                    .as_str()
+                    .and_then(|raw| raw.lines().find(|line| !line.trim().is_empty()))
+                    .and_then(|line| line.split_whitespace().next())
+            })
+        })
         .map(|m| m.to_ascii_uppercase())
 }
 
@@ -237,9 +274,13 @@ fn extract_path(req: &Mapping) -> Result<Option<String>> {
     if let Some(raw_first_line) = req
         .get(Value::String("raw".to_string()))
         .and_then(Value::as_sequence)
-        .and_then(|seq| seq.first())
-        .and_then(Value::as_str)
-        .and_then(|raw| raw.lines().next())
+        .and_then(|seq| {
+            seq.iter().find_map(|entry| {
+                entry
+                    .as_str()
+                    .and_then(|raw| raw.lines().find(|line| !line.trim().is_empty()))
+            })
+        })
     {
         let parts = raw_first_line.split_whitespace().collect::<Vec<_>>();
         if parts.len() >= 2 {
@@ -303,23 +344,77 @@ fn extract_headers(req: &Mapping) -> Vec<NameValue> {
         }
     }
 
+    if out.is_empty() {
+        return extract_headers_from_raw(req);
+    }
+
     out
 }
 
-fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>) {
+fn extract_headers_from_raw(req: &Mapping) -> Vec<NameValue> {
+    let Some(raw_entries) = req
+        .get(Value::String("raw".to_string()))
+        .and_then(Value::as_sequence)
+    else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in raw_entries {
+        let Some(raw_block) = entry.as_str() else {
+            continue;
+        };
+
+        let mut lines = raw_block.lines();
+        let _ = lines.next(); // request line
+        for line in lines {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                break;
+            }
+            let Some((name_raw, value_raw)) = trimmed.split_once(':') else {
+                continue;
+            };
+
+            let name = name_raw.trim();
+            let value = value_raw.trim();
+            if name.is_empty() || value.is_empty() {
+                continue;
+            }
+            if name.eq_ignore_ascii_case("host") || name.eq_ignore_ascii_case("content-length") {
+                continue;
+            }
+
+            let key = name.to_ascii_lowercase();
+            if seen.insert(key) {
+                out.push(NameValue {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                });
+            }
+        }
+    }
+
+    out
+}
+
+fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>, Vec<NameValue>) {
     let mut status = Vec::new();
     let mut any = Vec::new();
     let mut all = Vec::new();
+    let mut match_headers = Vec::new();
 
     let mut status_seen = HashSet::new();
     let mut any_seen = HashSet::new();
     let mut all_seen = HashSet::new();
+    let mut header_seen = HashSet::new();
 
     let Some(matchers) = req
         .get(Value::String("matchers".to_string()))
         .and_then(Value::as_sequence)
     else {
-        return (status, any, all);
+        return (status, any, all, match_headers);
     };
 
     for matcher in matchers {
@@ -366,6 +461,39 @@ fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>) {
             .and_then(Value::as_str)
             .unwrap_or("body")
             .to_ascii_lowercase();
+        if part == "header" || part == "all_headers" || part.starts_with("header_") {
+            if let Some(words) = map
+                .get(Value::String("words".to_string()))
+                .and_then(Value::as_sequence)
+            {
+                for w in words {
+                    let Some(raw) = w.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                        continue;
+                    };
+                    let Some((name_raw, value_raw)) = raw.split_once(':') else {
+                        continue;
+                    };
+                    let name = name_raw.trim();
+                    let value = value_raw.trim();
+                    if name.is_empty() || value.is_empty() {
+                        continue;
+                    }
+                    let key = format!(
+                        "{}:{}",
+                        name.to_ascii_lowercase(),
+                        value.to_ascii_lowercase()
+                    );
+                    if header_seen.insert(key) {
+                        match_headers.push(NameValue {
+                            name: name.to_string(),
+                            value: value.to_string(),
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
         if !(part == "body" || part.starts_with("body_")) {
             continue;
         }
@@ -401,7 +529,7 @@ fn extract_matchers(req: &Mapping) -> (Vec<u16>, Vec<String>, Vec<String>) {
         }
     }
 
-    (status, any, all)
+    (status, any, all, match_headers)
 }
 
 fn derive_context_hints(path: &str) -> Vec<String> {

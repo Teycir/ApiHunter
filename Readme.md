@@ -15,29 +15,18 @@
 
 ---
 
-An async, modular web security scanner written in Rust.  
-Great for quickly baselining API exposure in staging or production-like environments, and for catching regressions after gateway, WAF, or auth changes.  
-Innovation: combines discovery + targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT) with fast, adaptive concurrency, producing actionable outputs (NDJSON/SARIF) that slot into CI.  
-Benefit: faster feedback loops, fewer false positives, and security findings your teams can triage immediately.
+Async, modular web security scanner for API baseline testing and regression detection.  
+Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
 ## Features
 
-- ⚡ **Fully async** via `tokio` + `reqwest`
-- 🔌 **Pluggable scanner modules** — implement `Scanner` and drop in
-- 🛡️ **WAF evasion** — UA rotation, politeness delays, retry logic
-- 📊 **NDJSON + SARIF output** for pipelines and CI integration
-- 📈 **Runtime metrics in report metadata** (HTTP request/retry counters + per-scanner counts)
-- 🔒 **Proxy support** and TLS control
-- 🚦 **Exit-code bitmask** for scripting (`0x01` findings, `0x02` errors)
-- 🧾 **JWT checks** — alg=none, weak HS256 secrets, long-lived tokens
-- 📜 **OpenAPI analysis** — security schemes, uploads, deprecated ops
-
-## Use Cases
-
-- ✅ Baseline security checks on internal APIs before release
-- 🔄 Regression scans in CI after gateway or WAF changes
-- 📋 Inventory scanning for CORS/CSP/GraphQL exposure in staging
-- 🎯 Triage and prioritization by severity thresholds
+- ⚡ Async Rust (`tokio` + `reqwest`) with adaptive concurrency
+- 🔌 Pluggable scanner modules via trait system
+- 🛡️ WAF evasion (UA rotation, delays, retries)
+- 📊 NDJSON/SARIF output with baseline diffing
+- 🚦 Exit-code bitmask for CI (`0x01` findings, `0x02` errors)
+- 🧾 JWT/OpenAPI/GraphQL/CORS/CSP analysis
+- 🎯 Active checks: IDOR/BOLA, mass-assignment, OAuth/OIDC, rate-limit, CVE templates
 
 ## Comparison with Other Tools
 
@@ -67,27 +56,10 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 
 ### Key Differentiators
 
-**ApiHunter excels at:**
-- **Politeness & rate control**: Built-in UA rotation, adaptive concurrency (AIMD), per-host delays, and retry logic with exponential backoff. Suitable for cooperative testing in staging/internal environments where you want to avoid overwhelming targets.
-- **API-specific security**: Deep CORS/CSP parsing, GraphQL schema analysis, OpenAPI security validation
-- **False positive reduction**: SPA catch-all detection, body content validation, context-aware secret detection
-- **CI/CD workflows**: Baseline diffing, streaming output, severity-based exit codes, SARIF support
-- **Performance**: Rust async runtime with adaptive concurrency for large-scale scans
-- **IDOR/BOLA detection**: 3-tier approach (unauthenticated/ID enumeration/cross-user) with dual-identity support
-
-**When to use Nuclei instead:**
-- You need broader community-maintained CVE template coverage than the current ApiHunter catalog
-- You prefer YAML-based extensibility over code
-- You're scanning for known vulnerabilities rather than API misconfigurations
-
-**When to use ZAP/Burp instead:**
-- You need interactive manual testing
-- You require a full proxy/interceptor workflow
-- You're testing complex multi-step authentication flows
-
-**When to use ffuf instead:**
-- You need pure fuzzing (directories, parameters, subdomains)
-- You're doing content discovery rather than security analysis
+**ApiHunter:** API-first design, SPA detection, baseline diffing, 3-tier IDOR/BOLA, context-aware secrets, AIMD concurrency  
+**Nuclei:** Broader CVE coverage, YAML templates  
+**ZAP/Burp:** Manual testing, proxy workflows  
+**ffuf:** Pure fuzzing, content discovery
 
 ## Quick Start
 
@@ -103,41 +75,19 @@ cat ./targets/targets.txt | ./target/release/api-scanner --stdin --min-severity 
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
 
-## Template Tooling (Nuclei -> ApiHunter TOML)
+## Template Tooling
 
-ApiHunter ships a companion binary, `template-tool`, for importing compatible Nuclei API CVE templates:
-
+Import Nuclei CVE templates:
 ```bash
 cargo run --bin template-tool -- import-nuclei \
   --input tests/fixtures/upstream_nuclei/CVE-2022-24288.yaml \
-  --output assets/cve_templates/cve-2022-24288.toml \
-  --check-suffix airflow-example-dag-params-rce-signal \
-  --context-hints /airflow,/admin,/dags,/code
+  --output assets/cve_templates/cve-2022-24288.toml
 ```
-
-Current importer scope:
-- GET-only request templates
-- first request path extraction (`path` or first `raw` request line)
-- request headers
-- status matchers
-- body word matchers
-
-See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) for additional examples.
+See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) for details.
 
 ## Scan Scripts
 
-Helper scripts live in `ScanScripts/`:
-
-- `ScanScripts/defaultscan.sh` — run with CLI defaults.
-- `ScanScripts/deepscan.sh` — deeper scan profile (active checks, retries, unlimited endpoints).
-- `ScanScripts/quickscan.sh` — fast, low-impact baseline.
-- `ScanScripts/baselinescan.sh` — generate `baseline.ndjson` for diffing.
-- `ScanScripts/diffscan.sh` — run against a baseline and output only new findings.
-- `ScanScripts/inaccessiblescan.sh` — re-scan previously inaccessible URLs with slower settings.
-- `ScanScripts/authscan.sh` — scan using `--auth-flow` (supports IDOR checks).
-- `ScanScripts/sarifscan.sh` — produce SARIF by default.
-- `ScanScripts/split-by-host.sh` — split URL list per host (optional parallel scans).
-- `ScanScripts/scan-and-report.sh` — run a scan and print the latest auto-saved report.
+`ScanScripts/` contains helpers: `quickscan.sh`, `deepscan.sh`, `baselinescan.sh`, `diffscan.sh`, `authscan.sh`, `sarifscan.sh`, `split-by-host.sh`.
 
 ## Documentation
 
@@ -151,42 +101,10 @@ Complete documentation is available in `docs/`. Start with:
 - [Findings & Remediation](docs/findings.md)
 - [HOWTO](HOWTO.md)
 
-## Roadmap & Next Steps
+## Roadmap
 
-### Recently Completed
-
-- ✅ **Roadmap Item 2:** Runtime User-Agent pool from `assets/user_agents.txt` with safe fallback.
-- ✅ **Roadmap Item 3:** Multi-stage Docker image with runtime assets and usage docs.
-- ✅ **WebSocket scanner:** active-checks module for upgrade + origin validation probing.
-- ✅ **Mass Assignment scanner:** dedicated active-checks module for reflected sensitive field injection.
-- ✅ **OAuth2/OIDC scanner:** active-checks module for redirect URI, PKCE metadata, and legacy flow hardening checks.
-- ✅ **Rate Limit scanner:** active-checks module for burst-throttling and IP-header bypass checks.
-- ✅ **CVE template module:** translated Nuclei-style API CVE templates executed through a TOML-compatible catalog (including CVE-2022-22947, CVE-2022-24288, CVE-2020-3452, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232).
-- ✅ **Initial template tooling:** `template-tool import-nuclei` converts compatible Nuclei YAML checks into ApiHunter TOML format.
-
-### Next Priorities
-
-- 🔜 **Template expansion:** grow `assets/cve_templates/*.toml` coverage with additional vetted API CVE probes.
-- 🔜 **Template tooling expansion:** add broader translator coverage (multi-request/raw/header matchers) beyond current GET-focused import helper.
-- 🔜 **Real-data hardening:** keep expanding deterministic fixture coverage in `tests/fixtures/real_cve_payloads/` and parity checks against `tests/fixtures/upstream_nuclei/`.
-- 🔜 **Stealth hardening (no depth/speed regressions):**
-  - remove explicit scanner markers from active payloads/headers (for example `__ah_probe`, `X-AH-*`) while preserving detection semantics
-  - replace obvious CORS probe literals with realistic cross-origin values that keep the same bypass coverage
-  - randomize scanner and probe path ordering to reduce deterministic request fingerprints
-  - make WAF-evasion headers more context-aware/randomized (for example `sec-fetch-*`, `Accept-Language`, `DNT`) without reducing checks
-
-### CVE Hardening Test Strategy
-
-- `tests/cve_templates_real_data.rs` replays captured real-world payload snapshots from `tests/fixtures/real_cve_payloads/` to reduce false positives.
-- `tests/cve_templates_upstream_parity.rs` validates template/source linkage against pinned upstream Nuclei fixtures in `tests/fixtures/upstream_nuclei/`.
-- `tests/template_tooling.rs` verifies importer output shape and matcher translation behavior.
-
-### What To Do Next After Quick Start
-
-1. Run `ScanScripts/quickscan.sh` to get a low-impact baseline quickly.
-2. Generate and keep a baseline with `ScanScripts/baselinescan.sh`, then diff using `ScanScripts/diffscan.sh`.
-3. Add `ScanScripts/sarifscan.sh` to CI so findings surface in code scanning tools.
-4. Use `ScanScripts/authscan.sh` when testing authenticated surfaces or IDOR/BOLA paths.
+**Completed:** WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, Nuclei importer, Docker image  
+**Next:** Expand CVE templates, stealth hardening (remove scanner markers, randomize probes), multi-step template chains
 
 ## Installation
 
@@ -284,308 +202,63 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 
 ## FAQ
 
-### General
+**Q: Why ApiHunter vs Nuclei/ZAP/Burp?**  
+A: API-first design, SPA detection, baseline diffing, 3-tier IDOR, context-aware secrets. Complementary to Nuclei (CVE coverage) and ZAP/Burp (manual testing).
 
-**Q: Why another security scanner?**  
-A: Most scanners are either general-purpose (Nuclei, ZAP) or focus on manual testing (Burp). ApiHunter is purpose-built for **API security in CI/CD pipelines** with deep analysis of modern API patterns (GraphQL, OpenAPI, JWT) and minimal false positives through context-aware validation.
+**Q: Production-safe?**  
+A: Yes. Use `--delay-ms` and lower `--concurrency`. Try `quickscan.sh`.
 
-**Q: Is ApiHunter a replacement for Nuclei/ZAP/Burp?**  
-A: No, it's complementary. Use ApiHunter for **automated API baseline scans** and API-focused active checks in CI/CD, Nuclei for broad community CVE coverage, and ZAP/Burp for manual pentesting. See the [comparison table](#comparison-with-other-tools) for details.
+**Q: Authenticated scans?**  
+A: `--auth-bearer`, `--auth-basic`, or `--auth-flow`. For IDOR: `--auth-flow-b`.
 
-**Q: Can I use this in production?**  
-A: Yes, but use `--delay-ms` and lower `--concurrency` to avoid overwhelming production systems. The `quickscan.sh` profile is designed for production-safe scanning.
+**Q: Speed comparison (1000 endpoints)?**  
+ApiHunter: 3-5min | Nuclei: 5-8min | ZAP: 15-25min
 
-**Q: Does it support authenticated scans?**  
-A: Yes. Use `--auth-bearer`, `--auth-basic`, or `--auth-flow` (JSON-based login flow). For IDOR detection, provide `--auth-flow-b` for a second identity.
+**Q: Slow scan?**  
+Increase `--concurrency` (default: 20), reduce `--delay-ms` (default: 150ms), enable `--adaptive-concurrency`.
 
-### Performance
+**Q: Output formats?**  
+`pretty` (default), `ndjson` (streaming), `sarif` (CI integration).
 
-**Q: How fast is it compared to other tools?**  
-A: On a 1000-endpoint scan with default settings:
-- ApiHunter: ~3-5 minutes (Rust async, adaptive concurrency)
-- Nuclei: ~5-8 minutes (Go parallel)
-- ZAP: ~15-25 minutes (Java, sequential by default)
-- Burp: Manual/interactive (not directly comparable)
-
-**Q: Why is my scan slow?**  
-A: Check these settings:
-- Increase `--concurrency` (default: 20, try 50-100 for faster scans)
-- Reduce `--delay-ms` (default: 150ms, try 50ms for internal networks)
-- Use `--max-endpoints` to limit endpoints per site (default: 50)
-- Enable `--adaptive-concurrency` for automatic rate adjustment
-- Use `--per-host-clients` to avoid connection reuse bottlenecks
-
-**Q: Can I scan multiple targets in parallel?**  
-A: Yes, use `ScanScripts/split-by-host.sh` to split your URL list by host, then run multiple scanner instances in parallel with GNU parallel or xargs.
-
-### False Positives
-
-**Q: How does SPA detection work?**  
-A: ApiHunter sends requests to 3 random canary paths (`/__canary_*`, `/_canary_*`, `/xyzabc*`). If they all return 200 with HTML, it's a SPA with catch-all routing. Subsequent 200+HTML responses are fingerprinted and skipped if they match the SPA shell.
-
-**Q: Can I disable specific checks?**  
-A: Yes. Passive scanner flags: `--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`. Active-check scanner flags: `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
-
-### Output & Integration
-
-**Q: What output formats are supported?**  
-A: Three formats:
-- `pretty` (default): Pretty-printed JSON
-- `ndjson`: Newline-delimited JSON for streaming/parsing
-- `sarif`: SARIF 2.1.0 for GitHub Code Scanning, GitLab, etc.
-
-**Q: How do I integrate with CI/CD?**  
-A: Use exit codes and severity thresholds:
+**Q: CI/CD integration?**  
 ```bash
-# Fail pipeline on MEDIUM+ findings
 ./api-scanner --urls targets.txt --fail-on medium --format sarif --output results.sarif
-if [ $? -eq 1 ] || [ $? -eq 3 ]; then
-  echo "Security findings detected!"
-  exit 1
-fi
 ```
 
-**Q: What's baseline diffing?**  
-A: Generate a baseline scan, then compare future scans to only report **new** findings:
+**Q: Baseline diffing?**  
 ```bash
-# Generate baseline
 ./api-scanner --urls targets.txt --format ndjson --output baseline.ndjson
-
-# Later: scan and diff
 ./api-scanner --urls targets.txt --baseline baseline.ndjson --format ndjson
-# Only outputs findings NOT in baseline
 ```
 
-**Q: Can I stream results in real-time?**  
-A: Yes, use `--stream` with `--format ndjson`:
-```bash
-./api-scanner --urls targets.txt --format ndjson --stream | jq -r '.title'
-```
+**Q: Passive vs active checks?**  
+Passive (default): analyze responses. Active (`--active-checks`): send crafted requests (IDOR, mass-assignment, OAuth, rate-limit, CVE probes).
 
-### Scanners & Checks
+**Q: CORS testing?**  
+Dynamic origin generation: `null`, `https://evil.com`, `https://<target>.evil.com`, `https://evil<target>`. Tests regex bypasses when reflected.
 
-**Q: What's the difference between passive and active checks?**  
-A: 
-- **Passive** (default): Analyze responses without modifying requests (CORS, CSP, secrets, headers)
-- **Active** (`--active-checks`): Send crafted requests to test behavior (IDOR/BOLA, mass-assignment, OAuth/OIDC redirects, websocket origin handling, rate-limiting, CVE template probes)
+**Q: IDOR detection?**  
+3-tier: (1) unauthenticated fetch, (2) ID enumeration (±2), (3) cross-user (`--auth-flow-b`).
 
-**Q: How should I interpret `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`?**  
-A: Browsers block credentialed requests in this configuration, so it is not exploitable with credentials. ApiHunter automatically skips this check and only flags `Access-Control-Allow-Origin: *` without credentials as Low severity. Prioritize origin reflection or regex weaknesses because those can enable credentialed CORS exploitation.
-Common test origins (current scanner): `https://<target>`, `https://<target>.evil.com`, `https://evil<target>`, `https://attacker<target>`, and suffix variants like `https://<target>%60.evil.com`.
+**Q: Secret detection?**  
+AWS/Google/GitHub/Slack/Stripe keys, bearer tokens, DB URLs, private keys. Context-aware validation.
 
-**Q: How does CORS testing work?**  
-A: ApiHunter uses dynamic origin generation based on the target URL:
-1. Extracts the domain from the target URL (e.g., `api.company.com` from `https://api.company.com/endpoint`)
-2. Tests with multiple origins:
-   - `null` origin (file:// context)
-   - Generic attacker origin (`https://evil.com`)
-   - Target origin matching the URL (`https://api.company.com`)
-   - Suffix bypass attempts (`https://api.company.com.evil.com`)
-   - Prefix bypass attempts (`https://evilapi.company.com`, `https://attackerapi.company.com`)
-3. When origin is reflected (excluding same-origin echoes), tests for regex bypasses:
-   - Suffix attacks: `https://api.company.com.evil.com`, `https://api.company.com%60.evil.com`
-   - Prefix attacks: `https://evilapi.company.com`, `https://attackerapi.company.com`
-4. Only flags High severity when bypass succeeds with `Access-Control-Allow-Credentials: true`
+**Q: Cookies?**  
+`--cookies "session=abc"`, `--session-file excalibur.json`, or `--auth-flow login.json`.
 
-This approach discovers actual whitelisted domains and tests for common regex implementation flaws.
+**Q: Proxy?**  
+`--proxy http://proxy.corp.com:8080`
 
-**Q: How does IDOR/BOLA detection work?**  
-A: Three-tier approach:
-1. **Unauthenticated**: Fetch the URL without credentials — if it returns the same data, auth isn't enforced
-2. **ID enumeration**: Walk adjacent IDs (±2) — if multiple return 200, per-object auth may be missing
-3. **Cross-user** (requires `--auth-flow-b`): Fetch with a second identity — if both get identical data, BOLA is confirmed
+**Q: Debug logging?**  
+`RUST_LOG=debug ./api-scanner --urls targets.txt`
 
-**Q: Does it detect secrets in responses?**  
-A: Yes, it scans for:
-- AWS keys (AKIA*, secret keys)
-- Google API keys (AIza*)
-- GitHub tokens (ghp_*)
-- Slack tokens (xox*)
-- Stripe keys (sk_live_*)
-- Bearer tokens, database URLs, private keys
-- Generic API keys and secrets (with context-aware validation)
+**Q: Adaptive concurrency?**  
+AIMD: increases by 1 every 5s, halves on errors (429/503/timeouts). Enable with `--adaptive-concurrency`.
 
-**Q: What GraphQL checks are performed?**  
-A: 
-- Introspection enabled (schema exposure)
-- Sensitive type/field names
-- Field-name suggestions leakage
-- Query batching support
-- Alias amplification probe (DoS signal)
-- GraphiQL/Playground exposure
+**Q: Disable scanners?**  
+`--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`, `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
 
-**Q: What OpenAPI/Swagger checks are performed?**  
-A: 
-- Security scheme analysis (auth requirements)
-- File upload endpoints
-- Deprecated operations
-- Missing security definitions
-
-### Authentication & Sessions
-
-**Q: How do I scan with cookies?**  
-A: Three options:
-```bash
-# Option 1: Direct cookies
-./api-scanner --urls targets.txt --cookies "session=abc123,token=xyz"
-
-# Option 2: Excalibur session export JSON (from your HAR folder)
-./api-scanner --urls targets.txt --session-file excalibur-session-...-cookies.json
-
-# Option 3: Auth flow (login first)
-./api-scanner --urls targets.txt --auth-flow login.json
-```
-
-For Excalibur exports, pair both files directly:
-```bash
-./api-scanner --har session.har --session-file excalibur-session-...-cookies.json
-```
-
-Accepted session file shape (only):
-```json
-{"hosts":{"example.com":{"session":"abc123"}}}
-```
-ApiHunter accepts only this session JSON schema with `--session-file`.
-
-**Q: What's an auth flow file?**  
-A: JSON file defining a pre-scan login sequence:
-```json
-{
-  "steps": [
-    {
-      "method": "POST",
-      "url": "https://api.example.com/login",
-      "body": {"username": "test", "password": "pass"},
-      "extract_cookies": true,
-      "extract_headers": ["Authorization"]
-    }
-  ]
-}
-```
-
-**Q: Can I test for IDOR with two different users?**  
-A: Yes, provide two auth flows:
-```bash
-./api-scanner --urls targets.txt \
-  --auth-flow user1.json \
-  --auth-flow-b user2.json \
-  --active-checks
-```
-
-### Troubleshooting
-
-**Q: I'm getting "connection refused" errors. Why?**  
-A: 
-- Target may be down or blocking your IP
-- Use `--proxy` if you need to route through a proxy
-- Check firewall rules
-- Try `--danger-accept-invalid-certs` for self-signed certificates
-
-**Q: Scan is timing out on some URLs. What should I do?**  
-A: 
-- Increase `--timeout-secs` (default: 8s)
-- Increase `--retries` (default: 1)
-- Use `--filter-timeout` to skip slow targets during pre-filtering
-- Check `--delay-ms` — too low may trigger rate limiting
-
-**Q: How do I scan through a corporate proxy?**  
-A: 
-```bash
-./api-scanner --urls targets.txt --proxy http://proxy.corp.com:8080
-```
-
-**Q: Can I ignore TLS certificate errors?**  
-A: Yes, but only for testing:
-```bash
-./api-scanner --urls targets.txt --danger-accept-invalid-certs
-```
-
-**Q: How do I enable debug logging?**  
-A: Set the `RUST_LOG` environment variable:
-```bash
-RUST_LOG=debug ./api-scanner --urls targets.txt
-# Or for specific modules:
-RUST_LOG=api_scanner::scanner::graphql=trace ./api-scanner --urls targets.txt
-```
-
-### Advanced Usage
-
-**Q: Can I customize HTTP headers?**  
-A: Yes:
-```bash
-./api-scanner --urls targets.txt \
-  --headers "X-API-Key: secret123" \
-  --headers "X-Custom: value"
-```
-
-**Q: How do I rotate User-Agents for WAF evasion?**  
-A: 
-```bash
-./api-scanner --urls targets.txt \
-  --user-agents "Mozilla/5.0...,Chrome/120.0...,Safari/17.0..." \
-  --waf-evasion
-```
-
-**Q: What's adaptive concurrency?**  
-A: AIMD (Additive Increase Multiplicative Decrease) algorithm that automatically adjusts concurrency based on error rates:
-- Starts at `--concurrency` value
-- Increases by 1 every 5 seconds if no errors
-- Halves on errors (429, 503, timeouts)
-- Use `--adaptive-concurrency` to enable
-
-**Q: Can I scan only specific scanners?**  
-A: Yes, disable unwanted scanners:
-```bash
-# Only run CORS and GraphQL scanners
-./api-scanner --urls targets.txt \
-  --no-csp --no-api-security --no-jwt --no-openapi
-```
-
-**Q: How do I filter findings by severity?**  
-A: Use `--min-severity`:
-```bash
-# Only show HIGH and CRITICAL
-./api-scanner --urls targets.txt --min-severity high
-```
-
-**Q: Can I auto-save reports?**  
-A: Yes, reports are auto-saved to `~/Documents/ApiHunterReports/<timestamp>/`. Use `ScanScripts/scan-and-report.sh` to automatically print the latest report after scanning.
-
-### Contributing
-
-**Q: How do I add a new scanner?**  
-A: Implement the `Scanner` trait:
-```rust
-#[async_trait]
-impl Scanner for MyScanner {
-    async fn scan(
-        &self,
-        url: &str,
-        client: &HttpClient,
-        config: &Config,
-    ) -> (Vec<Finding>, Vec<CapturedError>) {
-        // Your logic here
-    }
-}
-```
-See [docs/scanners.md](docs/scanners.md) for details.
-
-**Q: How do I report a bug or request a feature?**  
-A: Open an issue on GitHub with:
-- ApiHunter version (`./api-scanner --version`)
-- Command used
-- Expected vs actual behavior
-- Sample URL (if not sensitive)
-
-**Q: Can I contribute?**  
-A: Yes! PRs welcome for:
-- New scanners
-- False positive fixes
-- Performance improvements
-- Documentation
-- Test coverage
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## License
 

@@ -1162,3 +1162,40 @@
   - `cargo check`
   - `cargo test --test cli --test reports --test integration_runner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Template Tooling Expansion (Phase 29)
+
+## Plan
+- [x] Expand importer request selection to support multi-request Nuclei templates by choosing the first compatible GET request mapping.
+- [x] Parse request headers from Nuclei `raw` blocks when structured `headers` mappings are absent.
+- [x] Translate header-based `word` matchers into ApiHunter `match_headers` constraints when header/value pairs are explicit.
+- [x] Add/adjust template-tool integration tests for multi-request selection, raw-header extraction, and header-matcher translation.
+- [x] Update README/HOWTO importer capability notes, then run formatting + targeted/full tests outside sandbox.
+
+## Review
+- Expanded importer request selection in `src/bin/template-tool.rs`:
+  - added `select_importable_request(...)` to walk `http` request entries and pick the first compatible `GET` request with an extractable path.
+  - preserved explicit failure behavior for non-GET-only templates with the existing error signature.
+- Improved raw request parsing support:
+  - `extract_method(...)` and `extract_path(...)` now iterate raw request blocks instead of only inspecting the first raw item.
+  - `extract_headers(...)` now falls back to parsing headers from `raw` blocks when structured `headers` are missing.
+  - raw-header import skips `Host` and `Content-Length` to avoid brittle target-specific request artifacts.
+- Added matcher translation coverage:
+  - `extract_matchers(...)` now returns `match_headers` and maps `word` matchers with `part: header` / `all_headers` into `NameValue` pairs when tokens are in explicit `Header: Value` form.
+  - wired translated header matchers into output TOML templates (`match_headers` field).
+- Added template-tool integration tests in `tests/template_tooling.rs`:
+  - `import_nuclei_selects_first_compatible_get_request_from_multi_request_template`
+  - `import_nuclei_extracts_headers_from_raw_request_block`
+  - `import_nuclei_translates_header_word_matchers_into_match_headers`
+  - existing conversion/status/non-GET rejection tests remain green.
+- Updated importer capability docs:
+  - `Readme.md` importer scope section now reflects multi-request GET selection, raw-header extraction, and header-word matcher mapping.
+  - `HOWTO.md` importer scope section updated with matching capability notes.
+  - `Readme.md` roadmap wording for template-tooling priority now calls out remaining matcher/request-chain gaps (regex/dsl + multi-step chains) rather than already-delivered raw/header coverage.
+- Validation:
+  - `cargo fmt`
+  - `cargo check`
+  - `cargo test --test template_tooling` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

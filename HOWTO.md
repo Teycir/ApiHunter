@@ -210,11 +210,12 @@ cargo run --bin template-tool -- import-nuclei \
 ```
 
 Current importer scope:
-- GET-only request templates
-- first request path extraction (`path` or first `raw` request line)
-- request headers
+- GET-compatible request import (first compatible request from `http` list)
+- request path extraction (`path` or first `raw` request line)
+- request headers (structured `headers` map or `raw` request header lines)
 - status matchers
 - body word matchers
+- header word matchers with explicit `Header: Value` pairs
 
 ---
 
