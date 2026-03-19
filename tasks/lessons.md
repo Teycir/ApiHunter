@@ -115,3 +115,5 @@
 - Rule: when building auth/probe HTTP clients, always source timeout from `config.politeness.timeout_secs` and add timeout-specific regression coverage.
 - User correction pattern: some review-reported bugs are stale or resolved and should not trigger speculative edits.
 - Rule: re-verify each report item against live code, implement only reproducible gaps, and explicitly document confirmed non-bugs in task review notes.
+- User correction pattern: CVE coverage requests can provide a concrete catalog and expect bulk expansion, not incremental additions.
+- Rule: when a CVE reference catalog is provided, automate import through `template-tool`, record importable/non-importable counts, and update docs with the resulting catalog size.

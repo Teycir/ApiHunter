@@ -24,7 +24,7 @@ This document describes all built-in scanner modules and their detection capabil
 | [Mass Assignment](#mass-assignment-scannermass_assignment) | Active | High-Critical | Reflected fields, persisted changes, privilege escalation |
 | [OAuth/OIDC](#oauth2--oidc-scanneroauth_oidc) | Active | Medium-High | Redirect URI bypass, missing state, PKCE issues, unsafe flows |
 | [Rate Limit](#rate-limit-scannerrate_limit) | Active | Medium | Missing throttling, bypass via IP headers |
-| [CVE Templates](#cve-templates-scannercve_templates) | Active | Varies | Template-driven CVE detection (7 CVEs currently) |
+| [CVE Templates](#cve-templates-scannercve_templates) | Active | Varies | Template-driven CVE detection (168 templates currently) |
 | [WebSocket](#websocket-scannerwebsocket) | Active | Low-Medium | Upgrade acceptance, missing origin validation |
 
 ---
@@ -159,7 +159,9 @@ This scanner currently runs only when `--active-checks` is enabled.
 Template catalog location:
 - `assets/cve_templates/*.toml`
 
-Current translated checks include:
+Current local catalog size: `168` templates.
+
+Curated hardened examples include:
 - `cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed`
 - `cve/cve-2022-24288/airflow-example-dag-params-rce-signal`
 - `cve/cve-2020-3452/cisco-asa-ftd-path-traversal-signal`

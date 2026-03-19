@@ -105,7 +105,7 @@ ApiHunter includes 11 built-in scanner modules. See [docs/scanners.md](docs/scan
 | **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
 | **Rate Limit** | Active | Missing rate limiting (burst probes), missing Retry-After headers, IP header spoofing bypass (X-Forwarded-For) |
 | **WebSocket** | Active | WebSocket upgrade acceptance on common paths, missing origin validation, unauthenticated WebSocket connections |
-| **CVE Templates** | Active | Template-driven CVE detection (CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288), baseline vs bypass differential matching |
+| **CVE Templates** | Active | Template-driven CVE detection from `assets/cve_templates/*.toml` (168 templates currently), baseline vs bypass differential matching |
 
 **Passive scanners** run by default and analyze responses without sending crafted requests.  
 **Active scanners/checks** require `--active-checks` and send potentially invasive probes (IDOR/BOLA, mutation, bypass tests).  
@@ -188,7 +188,7 @@ IDOR/BOLA lives under the `API Security` scanner (there is no dedicated `--no-id
   - Nuclei YAML import support
   - Baseline vs bypass differential matching
   - Host+template deduplication
-  - Translated checks: CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288
+  - Current local catalog: 168 templates (includes curated hardened checks such as CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288)
 
 ### Discovery & Enumeration
 - **Endpoint Discovery**:

@@ -1887,3 +1887,32 @@
   - `cargo run --quiet -- --help`
   - `cargo run --quiet --bin template-tool -- --help`
   - `test -f targets/cve-regression-real-public.txt && ls ScanScripts | rg "inaccessiblescan.sh|split-by-host.sh|quickscan.sh"`
+
+---
+
+# Task: CVE Catalog Expansion from User Reference Doc (2026-03-19)
+
+## Plan
+- [x] Extract candidate CVE IDs from `/home/teycir/Téléchargements/apihunter_cve_catalog.docx`.
+- [x] Import additional upstream Nuclei CVE templates with `template-tool` into `assets/cve_templates/*.toml`.
+- [x] Keep only scanner-compatible templates (GET-based, parser-safe) and avoid duplicates with existing local templates.
+- [x] Update docs to reflect expanded CVE coverage and template count.
+- [x] Run CVE-focused tests outside sandbox and record validation outcomes.
+
+## Review
+- Source extraction:
+  - Parsed `/home/teycir/Téléchargements/apihunter_cve_catalog.docx` via `word/document.xml` text extraction.
+  - Candidate IDs processed: `266` (catalog text mentions).
+- Import pipeline:
+  - Bulk fetched upstream templates from `projectdiscovery/nuclei-templates` (`http/cves/<year>/CVE-...yaml`).
+  - Imported successfully: `161` additional templates into `assets/cve_templates/`.
+  - Existing preserved templates: `7`.
+  - Current local CVE template catalog size: `168`.
+  - Fetch failures: `1` (`CVE-2022-22955`, no upstream file at canonical CVE path).
+  - Import failures: `102` (primarily non-GET templates, rejected by `template-tool` policy).
+- Documentation updates:
+  - `Readme.md`: CVE scanner/module wording now reflects template-catalog coverage (`168` templates).
+  - `docs/scanners.md`: quick-reference and CVE section updated to reflect current catalog size.
+- Validation (outside sandbox):
+  - `cargo test --test cve_templates_scanner --test cve_templates_runtime_ext --test cve_templates_upstream_parity --test cve_templates_real_data`
+  - Result: passed (`19/19` tests across the four suites).
