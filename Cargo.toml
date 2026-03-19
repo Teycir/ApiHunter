@@ -2,7 +2,7 @@
 name = "apihunter"
 version = "0.1.0"
 edition = "2021"
-default-run = "api-scanner"
+default-run = "apihunter"
 
 [lib]
 name = "api_scanner"
@@ -11,10 +11,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "apihunter"
 path = "src/main.rs"
-
-[[bin]]
-name = "api-scanner"
-path = "src/bin/api-scanner.rs"
 
 [dependencies]
 # Async runtime

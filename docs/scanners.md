@@ -190,7 +190,7 @@ Local true-positive mapping:
 
 Example true-positive regression run:
 ```bash
-./target/debug/api-scanner \
+./target/debug/apihunter \
   --urls targets/cve-regression-vulhub-local.txt \
   --no-filter --no-discovery --active-checks \
   --no-cors --no-csp --no-graphql --no-jwt --no-openapi \

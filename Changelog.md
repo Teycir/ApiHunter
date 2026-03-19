@@ -188,6 +188,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Main CLI lifecycle/status warnings now use `tracing` instead of ad-hoc `eprintln!`, so `--quiet` and `RUST_LOG` apply consistently
 - URL accessibility prefilter now treats any HTTP response as reachable and only classifies connect/timeout failures as inaccessible
 - Startup input validation now fast-fails on missing/unreadable `--auth-flow` / `--auth-flow-b` files
+- CLI binary naming is now canonicalized to `apihunter` only (removed legacy `api-scanner` alias target and updated release artifacts/docs)
 
 ### Fixed
 - **Critical Error Handling**:

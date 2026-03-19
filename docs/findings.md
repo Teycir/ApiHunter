@@ -198,7 +198,7 @@ jq 'select(.severity == "CRITICAL")' results.ndjson
 
 SARIF output is suitable for GitHub Code Scanning and other enterprise platforms:
 ```bash
-./api-scanner --urls ./targets.txt --format sarif --output results.sarif
+./apihunter --urls ./targets.txt --format sarif --output results.sarif
 ```
 
 Upload to GitHub:
@@ -215,7 +215,7 @@ github-cli security code-scanning upload-sarif results.sarif
 
 Use in CI/CD:
 ```bash
-./api-scanner --urls ./targets.txt --fail-on critical
+./apihunter --urls ./targets.txt --fail-on critical
 EXIT=$?
 if (( EXIT )); then
   echo "Critical findings detected!"

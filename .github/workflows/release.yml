@@ -30,8 +30,8 @@ jobs:
       - name: Build and upload
         uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: api-scanner
+          bin: apihunter
           target: ${{ matrix.target }}
-          archive: api-scanner-${{ matrix.target }}
+          archive: apihunter-${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           use-zigbuild: ${{ matrix.use_zigbuild }}

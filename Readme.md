@@ -23,15 +23,13 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) usin
 - Project/repository: `ApiHunter`
 - Cargo package: `apihunter`
 - Library crate: `api_scanner`
-- CLI binaries:
-  - `api-scanner` (compatibility alias, default for `cargo run`)
-  - `apihunter`
+- CLI binary: `apihunter` (default for `cargo run`)
 
 ## Repository Flow
 
 ```mermaid
 flowchart LR
-    A[CLI<br/>api-scanner] --> B[main.rs<br/>parse args + build config]
+    A[CLI<br/>apihunter] --> B[main.rs<br/>parse args + build config]
     D[Input Sources<br/>--urls / --stdin / --har] --> E[Pre-filter + Discovery]
     B --> C[HttpClient + Config]
     E --> F[runner.rs<br/>orchestration]
@@ -341,10 +339,10 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
 cargo build --release
 
 # Scan URLs from a file (newline-delimited)
-./target/release/api-scanner --urls ./targets/targets.txt --format ndjson --output ./results.ndjson
+./target/release/apihunter --urls ./targets/targets.txt --format ndjson --output ./results.ndjson
 
 # Or scan URLs from stdin
-cat ./targets/targets.txt | ./target/release/api-scanner --stdin --min-severity medium
+cat ./targets/targets.txt | ./target/release/apihunter --stdin --min-severity medium
 ```
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
@@ -571,13 +569,13 @@ Increase `--concurrency` (default: 20), reduce `--delay-ms` (default: 150ms), en
 
 **Q: CI/CD integration?**  
 ```bash
-./api-scanner --urls targets.txt --fail-on medium --format sarif --output results.sarif
+./apihunter --urls targets.txt --fail-on medium --format sarif --output results.sarif
 ```
 
 **Q: Baseline diffing?**  
 ```bash
-./api-scanner --urls targets.txt --format ndjson --output baseline.ndjson
-./api-scanner --urls targets.txt --baseline baseline.ndjson --format ndjson
+./apihunter --urls targets.txt --format ndjson --output baseline.ndjson
+./apihunter --urls targets.txt --baseline baseline.ndjson --format ndjson
 ```
 
 **Q: Passive vs active checks?**  
@@ -599,7 +597,7 @@ AWS/Google/GitHub/Slack/Stripe keys, bearer tokens, DB URLs, private keys. Conte
 `--proxy http://proxy.corp.com:8080`
 
 **Q: Debug logging?**  
-`RUST_LOG=debug ./api-scanner --urls targets.txt`
+`RUST_LOG=debug ./apihunter --urls targets.txt`
 
 **Q: Adaptive concurrency?**  
 AIMD: increases by 1 every 5s, halves on errors (429/503/timeouts). Enable with `--adaptive-concurrency`.

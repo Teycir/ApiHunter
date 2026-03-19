@@ -1549,3 +1549,28 @@
   - `cargo fmt --all --check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Canonical CLI Binary Name (`apihunter`) (Phase 39)
+
+## Plan
+- [x] Remove the legacy `api-scanner` binary target and keep only `apihunter` in Cargo metadata.
+- [x] Update release workflow packaging to publish only `apihunter` artifacts.
+- [x] Update user-facing docs/examples to use `apihunter` command paths.
+- [x] Run `fmt`, strict `clippy`, and full tests outside sandbox to confirm CI health.
+- [x] Document outcomes in changelog and lessons.
+
+## Review
+- Cargo/runtime naming:
+  - Updated `Cargo.toml` to `default-run = "apihunter"`.
+  - Removed legacy `[[bin]]` target for `api-scanner`.
+  - Deleted compatibility wrapper binary `src/bin/api-scanner.rs`.
+- Release workflow:
+  - Updated `.github/workflows/release.yml` to publish `apihunter` binary/artifact names.
+- Docs/examples:
+  - Updated command examples in `Readme.md`, `HOWTO.md`, `docs/findings.md`, and `docs/scanners.md` from `api-scanner` to `apihunter`.
+- Validation:
+  - `cargo fmt --all --check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test` (outside sandbox, full suite)

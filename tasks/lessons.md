@@ -67,3 +67,5 @@
 - Rule: keep env-lock guards alive for the full async test body (not just setup) whenever tests set/remove global environment variables.
 - User correction pattern: CLI entrypoint logging can regress by bypassing tracing, even when scanner internals are clean.
 - Rule: treat `main.rs` lifecycle output like library/runtime logs by default (`tracing`), and reserve raw `eprintln!/println!` only for explicitly intentional UX output.
+- User preference: use a single canonical CLI binary name to reduce operational confusion.
+- Rule: when asked to standardize command naming, remove legacy binary aliases from Cargo/release workflows and update docs/examples in the same change.
