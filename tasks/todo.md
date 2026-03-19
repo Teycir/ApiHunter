@@ -2118,3 +2118,26 @@
 - Integrity + smoke verification:
   - `sha256sum` generated: `0c53b2d3b567073d3b64afd32a4bfd5b88a4cc9af8114d09b9d0db22e878aa4d`
   - packaged binary smoke test passed: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu/apihunter --help`
+
+---
+
+# Task: Add `make release` Target (2026-03-19)
+
+## Plan
+- [x] Create a root `Makefile` with a `release` target.
+- [x] Ensure target builds `apihunter`, creates `dist/` archive, and writes `.sha256`.
+- [x] Run `make release` and record produced artifact paths.
+
+## Review
+- Added root `Makefile` with `release` target that:
+  - builds `apihunter` in release mode,
+  - computes `VERSION` and host `TARGET`,
+  - stages `apihunter`, `README.md`, `CHANGELOG.md`, and `LICENSE`,
+  - creates `dist/apihunter-v<version>-<target>.tar.gz`,
+  - writes `dist/apihunter-v<version>-<target>.tar.gz.sha256`.
+- Environment compatibility hardening:
+  - adjusted make shell flags to avoid `nounset` (`PS1`) startup noise in this shell environment.
+- Validation:
+  - `make release` passed.
+  - Output artifact: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`
+  - Output checksum: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256`
