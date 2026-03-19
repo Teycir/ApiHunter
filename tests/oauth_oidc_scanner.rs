@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
@@ -57,11 +57,24 @@ async fn oauth_redirect_uri_probe_detects_untrusted_callback() {
 
     Mock::given(method("GET"))
         .and(path("/oauth/authorize"))
-        .and(query_param("redirect_uri", "https://evil.example/callback"))
-        .respond_with(ResponseTemplate::new(302).insert_header(
-            "Location",
-            "https://evil.example/callback?code=abc&state=ah_state_probe_7f3a",
-        ))
+        .respond_with(|request: &wiremock::Request| {
+            let mut redirect_uri = None;
+            let mut state = None;
+            for (k, v) in request.url.query_pairs() {
+                if k == "redirect_uri" {
+                    redirect_uri = Some(v.into_owned());
+                } else if k == "state" {
+                    state = Some(v.into_owned());
+                }
+            }
+
+            let location = format!(
+                "{}?code=abc&state={}",
+                redirect_uri.unwrap_or_else(|| "https://app.example.net/callback".to_string()),
+                state.unwrap_or_else(|| "missing".to_string())
+            );
+            ResponseTemplate::new(302).insert_header("Location", location)
+        })
         .mount(&server)
         .await;
 

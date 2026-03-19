@@ -14,6 +14,7 @@
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
+use rand::seq::SliceRandom;
 use regex::Regex;
 use std::{collections::HashMap, sync::Arc};
 use tracing::debug;
@@ -1035,11 +1036,16 @@ async fn check_debug_endpoints(
     spa_fingerprint: Option<(usize, u64)>,
 ) {
     let base = url.trim_end_matches('/');
+    let mut endpoints = DEBUG_ENDPOINTS.iter().collect::<Vec<_>>();
+    {
+        let mut rng = rand::thread_rng();
+        endpoints.shuffle(&mut rng);
+    }
 
     let critical_keywords = ["env", "config", "secret", "password", "credential", "key"];
     let high_keywords = ["actuator", "pprof", "phpinfo", "profiler", "clockwork"];
 
-    for ep in DEBUG_ENDPOINTS {
+    for ep in endpoints {
         let probe = format!("{base}{}", ep.path);
         let resp = match client.get(&probe).await {
             Ok(r) => r,
@@ -1162,10 +1168,14 @@ async fn check_directory_listing(
     findings: &mut Vec<Finding>,
     errors: &mut Vec<CapturedError>,
 ) {
-    let probe_paths = ["/", "/static/", "/assets/", "/uploads/", "/files/"];
+    let mut probe_paths = vec!["/", "/static/", "/assets/", "/uploads/", "/files/"];
+    {
+        let mut rng = rand::thread_rng();
+        probe_paths.shuffle(&mut rng);
+    }
     let base = url.trim_end_matches('/');
 
-    for path in &probe_paths {
+    for path in probe_paths {
         let probe = format!("{base}{path}");
         let resp = match client.get(&probe).await {
             Ok(r) => r,

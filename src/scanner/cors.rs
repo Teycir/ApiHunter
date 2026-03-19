@@ -1,7 +1,9 @@
 // src/scanner/cors.rs
 
 use async_trait::async_trait;
+use rand::seq::SliceRandom;
 use reqwest::header::HeaderValue;
+use std::collections::HashSet;
 
 use crate::{
     config::Config,
@@ -20,8 +22,8 @@ impl CorsScanner {
     }
 }
 
-static REGEX_BYPASS_SUFFIXES: &[&str] = &[".evil.com", "%60.evil.com"];
-static REGEX_BYPASS_PREFIXES: &[&str] = &["evil", "attacker"];
+static REGEX_BYPASS_SUFFIXES: &[&str] = &[".cdn-edge.net", "%60.cdn-edge.net"];
+static REGEX_BYPASS_PREFIXES: &[&str] = &["cdn", "img"];
 
 fn extract_domain_from_url(url: &str) -> Option<String> {
     url.split("://")
@@ -32,7 +34,7 @@ fn extract_domain_from_url(url: &str) -> Option<String> {
 }
 
 fn generate_probe_origins(url: &str) -> Vec<String> {
-    let mut origins = vec!["null".to_string(), "https://evil.com".to_string()];
+    let mut origins = vec!["null".to_string(), "https://cdn.example.net".to_string()];
 
     if let Some(domain) = extract_domain_from_url(url) {
         let scheme = if url.starts_with("https://") {
@@ -41,8 +43,17 @@ fn generate_probe_origins(url: &str) -> Vec<String> {
             "http"
         };
         origins.push(format!("{}://{}", scheme, domain));
-        origins.push(format!("{}://{}.evil.com", scheme, domain));
-        origins.push(format!("{}://evil{}", scheme, domain));
+        origins.push(format!("{}://app.{}", scheme, domain));
+        origins.push(format!("{}://cdn.{}", scheme, domain));
+        origins.push(format!("{}://www.{}", scheme, domain));
+    }
+
+    // Keep probe set unique and randomize order to avoid deterministic fingerprints.
+    let mut seen = HashSet::new();
+    origins.retain(|origin| seen.insert(origin.clone()));
+    if origins.len() > 1 {
+        let mut rng = rand::thread_rng();
+        origins.shuffle(&mut rng);
     }
 
     origins
@@ -283,7 +294,7 @@ impl Scanner for CorsScanner {
 
         // Active preflight method exposure check (opt-in).
         if config.active_checks {
-            let origin = "https://evil.com";
+            let origin = "https://cdn.example.net";
             let mut extra = reqwest::header::HeaderMap::new();
             extra.insert("Origin", HeaderValue::from_static(origin));
             extra.insert(

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
@@ -54,20 +54,9 @@ fn test_config(active_checks: bool) -> Config {
 #[tokio::test]
 async fn websocket_upgrade_and_origin_bypass_detected() {
     let server = MockServer::start().await;
-    let same_origin = server.uri();
 
     Mock::given(method("GET"))
         .and(path("/ws"))
-        .and(header("origin", same_origin.as_str()))
-        .respond_with(
-            ResponseTemplate::new(101).insert_header("Sec-WebSocket-Accept", "test-accept"),
-        )
-        .mount(&server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/ws"))
-        .and(header("origin", "https://evil.example"))
         .respond_with(
             ResponseTemplate::new(101).insert_header("Sec-WebSocket-Accept", "test-accept"),
         )

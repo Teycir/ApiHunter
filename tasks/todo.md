@@ -779,8 +779,66 @@
 # Task: No-Brainer Stealth Improvements (Phase 18)
 
 ## Plan
-- [ ] Remove obvious mass-assignment scanner fingerprints (`__ah_probe`, `X-AH-*`).
-- [ ] Randomize deterministic scanner/probe ordering without reducing probe count.
-- [ ] Improve WAF evasion header realism with lightweight randomization.
-- [ ] Update tests for stealth behavior changes.
-- [ ] Run targeted and full tests outside sandbox.
+- [x] Remove obvious mass-assignment scanner fingerprints (`__ah_probe`, `X-AH-*`).
+- [x] Randomize deterministic scanner/probe ordering without reducing probe count.
+- [x] Improve WAF evasion header realism with lightweight randomization.
+- [x] Update tests for stealth behavior changes.
+- [x] Run targeted and full tests outside sandbox.
+
+## Review
+- Removed obvious mass-assignment markers while preserving baseline/confirm logic:
+  - `src/scanner/mass_assignment.rs` no longer sends `__ah_probe`.
+  - baseline/confirm reads now use standard GET requests without `X-AH-MA-Stage`.
+  - reflected-field detection still keys on `is_admin`, `role`, and `permissions`.
+- Reduced deterministic fingerprinting without reducing probe count:
+  - `src/runner.rs`: scanner registry order is shuffled per run.
+  - `src/scanner/graphql.rs`: GraphQL path probe order is shuffled per run.
+  - `src/discovery/common_paths.rs`: common-path probe list is shuffled after dedup.
+  - `src/scanner/cors.rs`: probe origin list is deduped and shuffled.
+- Improved low-cost header realism in `src/waf.rs`:
+  - randomized `Accept-Language`.
+  - optional `DNT`.
+  - context-leaning `sec-fetch-*` values.
+  - retained low overhead and existing UA rotation behavior.
+- Updated tests for marker/header removal:
+  - `tests/mass_assignment_scanner.rs` payload fixtures no longer include `__ah_probe`.
+  - replaced stage-header-based baseline/confirm mocks with ordered GET responses via atomic call counting.
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test mass_assignment_scanner --test cors_scanner --test integration_runner --test waf_user_agents`
+  - `cargo test`
+
+---
+
+# Task: Stealth Hardening Pass 2 (Phase 19)
+
+## Plan
+- [x] Randomize/remove fixed probe literals in OAuth and WebSocket active checks.
+- [x] Replace remaining obvious CORS bypass literals with neutral equivalents.
+- [x] Randomize fixed-order endpoint/path/template iteration in API-security and CVE template scanner.
+- [x] Rotate rate-limit spoofed header values using reserved test ranges.
+- [x] Update impacted tests and run targeted + full tests outside sandbox.
+
+## Review
+- OAuth/OIDC stealth hardening (`src/scanner/oauth_oidc.rs`):
+  - replaced fixed `state`/`client_id` with per-run random tokens.
+  - replaced fixed redirect probe with randomized realistic callback domains.
+- WebSocket stealth hardening (`src/scanner/websocket.rs`):
+  - replaced fixed cross-origin probe with randomized realistic origin set.
+  - randomized `Sec-WebSocket-Key` per probe request.
+  - shuffled websocket candidate path order per run.
+- CORS literal cleanup (`src/scanner/cors.rs`):
+  - replaced remaining obvious bypass literals (`evil`, `attacker`) with neutral equivalents while preserving bypass-shape coverage.
+- API Security + CVE ordering randomization:
+  - `src/scanner/api_security.rs`: shuffled debug endpoint and directory listing probe order.
+  - `src/scanner/cve_templates.rs`: shuffled template execution order per host scan.
+- Rate-limit spoof variation (`src/scanner/rate_limit.rs`):
+  - spoofed IP now rotates across reserved documentation networks (`203.0.113.0/24`, `198.51.100.0/24`, `192.0.2.0/24`).
+- Test updates:
+  - `tests/oauth_oidc_scanner.rs`: authorize mock now echoes dynamic `redirect_uri` and `state`.
+  - `tests/websocket_scanner.rs`: removed fixed attacker-origin matcher dependency.
+  - `tests/rate_limit_scanner.rs`: bypass detection now keys on spoof-header presence rather than a single fixed IP literal.
+- Validation (outside sandbox):
+  - `cargo fmt`
+  - `cargo test --test oauth_oidc_scanner --test websocket_scanner --test rate_limit_scanner --test cors_scanner --test cve_templates_scanner --test integration_runner`
+  - `cargo test`

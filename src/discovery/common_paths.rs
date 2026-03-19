@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use futures::stream::{self, StreamExt};
+use rand::seq::SliceRandom;
 use tracing::{debug, warn};
 
 use crate::{error::CapturedError, http_client::HttpClient};
@@ -115,12 +116,16 @@ impl<'a> CommonPathDiscovery<'a> {
     pub async fn run(&self) -> (HashSet<String>, Vec<CapturedError>) {
         let base = self.base_url.trim_end_matches('/');
 
-        // Merge built-in + external wordlist, deduplicate
-        let mut all_paths: Vec<&str> = COMMON_PATHS.to_vec();
-        let extra_refs: Vec<&str> = self.extra.iter().map(|s| s.as_str()).collect();
-        all_paths.extend(extra_refs);
+        // Merge built-in + external wordlist, deduplicate, and shuffle to
+        // avoid deterministic probing fingerprints.
+        let mut all_paths: Vec<String> = COMMON_PATHS.iter().map(|p| (*p).to_string()).collect();
+        all_paths.extend(self.extra.iter().cloned());
         all_paths.sort_unstable();
         all_paths.dedup();
+        if all_paths.len() > 1 {
+            let mut rng = rand::thread_rng();
+            all_paths.shuffle(&mut rng);
+        }
 
         let results = stream::iter(all_paths)
             .map(|path| {
@@ -143,7 +148,7 @@ impl<'a> CommonPathDiscovery<'a> {
                     // Treat anything except 404/410 as "exists"
                     if resp.status != 404 && resp.status != 410 {
                         debug!("[common_paths] {} => {}", url, resp.status);
-                        found.insert(path.to_string());
+                        found.insert(path);
                     }
                 }
                 Err(e) => {

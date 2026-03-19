@@ -1,6 +1,7 @@
 // src/scanner/graphql.rs
 
 use async_trait::async_trait;
+use rand::seq::SliceRandom;
 use serde_json::{json, Value};
 use tracing::debug;
 
@@ -94,7 +95,10 @@ impl Scanner for GraphqlScanner {
         candidates.push(url.to_string());
         if !already_gql {
             let base = url.trim_end_matches('/');
-            for path in GQL_PATHS {
+            let mut paths: Vec<&str> = GQL_PATHS.to_vec();
+            let mut rng = rand::thread_rng();
+            paths.shuffle(&mut rng);
+            for path in paths {
                 candidates.push(format!("{base}{path}"));
             }
         }

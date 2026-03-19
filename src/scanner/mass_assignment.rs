@@ -45,7 +45,7 @@ impl Scanner for MassAssignmentScanner {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
 
-        let baseline_elevated = match fetch_elevated_fields(client, url, "baseline").await {
+        let baseline_elevated = match fetch_elevated_fields(client, url).await {
             Ok(fields) => Some(fields),
             Err(e) => {
                 errors.push(e);
@@ -54,7 +54,6 @@ impl Scanner for MassAssignmentScanner {
         };
 
         let payload = json!({
-            "__ah_probe": "1",
             "is_admin": true,
             "role": "admin",
             "permissions": ["*"]
@@ -89,7 +88,7 @@ impl Scanner for MassAssignmentScanner {
         if !reflected.is_empty() {
             let mut confirmed_fields = Vec::new();
             if let Some(before_elevated) = baseline_elevated.as_ref() {
-                match fetch_elevated_fields(client, url, "confirm").await {
+                match fetch_elevated_fields(client, url).await {
                     Ok(after_elevated) => {
                         let before: HashSet<&'static str> =
                             before_elevated.iter().copied().collect();
@@ -161,7 +160,7 @@ fn is_likely_mutation_target(url: &str) -> bool {
 
 fn reflected_probe_fields(body: &str) -> Vec<&'static str> {
     let mut out = Vec::new();
-    for key in ["__ah_probe", "is_admin", "role", "permissions"] {
+    for key in ["is_admin", "role", "permissions"] {
         let needle = format!("\"{key}\"");
         if body.contains(&needle) {
             out.push(key);
@@ -173,10 +172,8 @@ fn reflected_probe_fields(body: &str) -> Vec<&'static str> {
 async fn fetch_elevated_fields(
     client: &HttpClient,
     url: &str,
-    stage: &str,
 ) -> Result<Vec<&'static str>, CapturedError> {
-    let extra = vec![("X-AH-MA-Stage".to_string(), stage.to_string())];
-    let resp = client.get_with_headers(url, &extra).await?;
+    let resp = client.get(url).await?;
 
     if resp.status >= 400 {
         return Ok(Vec::new());

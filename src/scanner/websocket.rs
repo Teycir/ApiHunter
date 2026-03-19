@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use base64::Engine as _;
+use rand::{seq::SliceRandom, RngCore};
 use url::Url;
 
 use crate::{
@@ -25,6 +27,19 @@ static WS_PATHS: &[&str] = &[
     "/socket.io/?EIO=4&transport=websocket",
     "/graphql",
 ];
+
+fn random_cross_origin_probe() -> &'static str {
+    const ORIGINS: &[&str] = &[
+        "https://app.example.net",
+        "https://cdn.example.net",
+        "https://portal.example.org",
+    ];
+    let mut rng = rand::thread_rng();
+    ORIGINS
+        .choose(&mut rng)
+        .copied()
+        .unwrap_or("https://app.example.net")
+}
 
 #[async_trait]
 impl Scanner for WebSocketScanner {
@@ -76,8 +91,8 @@ impl Scanner for WebSocketScanner {
                 ),
             );
 
-            let evil_origin = "https://evil.example";
-            match websocket_probe(client, &candidate, evil_origin).await {
+            let cross_origin = random_cross_origin_probe();
+            match websocket_probe(client, &candidate, cross_origin).await {
                 Ok(resp) if is_upgrade_success(&resp) => {
                     findings.push(
                         Finding::new(
@@ -85,11 +100,11 @@ impl Scanner for WebSocketScanner {
                             "websocket/origin-not-validated",
                             "WebSocket origin validation may be missing",
                             Severity::Medium,
-                            "Endpoint accepted WebSocket upgrades for an attacker-controlled origin.",
+                            "Endpoint accepted WebSocket upgrades for a cross-origin request.",
                             "websocket",
                         )
                         .with_evidence(format!(
-                            "GET {candidate}\nOrigin: {evil_origin}\nStatus: {}\nSec-WebSocket-Accept: {}",
+                            "GET {candidate}\nOrigin: {cross_origin}\nStatus: {}\nSec-WebSocket-Accept: {}",
                             resp.status,
                             resp.header("sec-websocket-accept").unwrap_or("-")
                         ))
@@ -137,6 +152,10 @@ fn websocket_candidates(seed: &str) -> Option<(String, Vec<String>)> {
 
     candidates.sort();
     candidates.dedup();
+    if candidates.len() > 1 {
+        let mut rng = rand::thread_rng();
+        candidates.shuffle(&mut rng);
+    }
 
     Some((origin, candidates))
 }
@@ -146,14 +165,15 @@ async fn websocket_probe(
     url: &str,
     origin: &str,
 ) -> Result<crate::http_client::HttpResponse, CapturedError> {
+    let mut key_bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut key_bytes);
+    let ws_key = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+
     let headers = vec![
         ("Connection".to_string(), "Upgrade".to_string()),
         ("Upgrade".to_string(), "websocket".to_string()),
         ("Sec-WebSocket-Version".to_string(), "13".to_string()),
-        (
-            "Sec-WebSocket-Key".to_string(),
-            "dGhlIHNhbXBsZSBub25jZQ==".to_string(),
-        ),
+        ("Sec-WebSocket-Key".to_string(), ws_key),
         ("Origin".to_string(), origin.to_string()),
     ];
 

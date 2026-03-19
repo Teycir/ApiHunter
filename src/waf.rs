@@ -35,35 +35,45 @@ impl WafEvasion {
     /// Build a realistic-looking HeaderMap for WAF evasion
     pub fn evasion_headers() -> HeaderMap {
         let mut map = HeaderMap::new();
+        let mut rng = rand::thread_rng();
         let ua = Self::random_user_agent();
 
         if let Ok(value) = HeaderValue::from_str(&ua) {
             map.insert(HeaderName::from_static("user-agent"), value);
         }
 
-        let pairs: &[(&str, &str)] = &[
-            (
-                "accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            ),
-            ("accept-language", "en-US,en;q=0.5"),
-            ("accept-encoding", "gzip, deflate, br"),
-            ("dnt", "1"),
-            ("connection", "keep-alive"),
-            ("upgrade-insecure-requests", "1"),
-            ("sec-fetch-dest", "document"),
-            ("sec-fetch-mode", "navigate"),
-            ("sec-fetch-site", "none"),
-            ("cache-control", "max-age=0"),
-        ];
+        insert_header(&mut map, "accept", "application/json,text/plain,*/*;q=0.9");
+        insert_header(&mut map, "accept-encoding", "gzip, deflate, br");
+        insert_header(&mut map, "connection", "keep-alive");
+        insert_header(&mut map, "cache-control", "no-cache");
+        insert_header(&mut map, "pragma", "no-cache");
 
-        for (k, v) in pairs {
-            if let (Ok(name), Ok(value)) = (
-                HeaderName::from_bytes(k.as_bytes()),
-                HeaderValue::from_str(v),
-            ) {
-                map.insert(name, value);
-            }
+        let accept_languages = [
+            "en-US,en;q=0.9",
+            "en-GB,en;q=0.8",
+            "en-US,en;q=0.7,fr;q=0.3",
+        ];
+        if let Some(lang) = accept_languages.choose(&mut rng) {
+            insert_header(&mut map, "accept-language", lang);
+        }
+
+        // Most API probes are XHR/fetch-like rather than top-level document loads.
+        let fetch_dest = ["empty", "document"];
+        let fetch_mode = ["cors", "navigate"];
+        let fetch_site = ["same-origin", "same-site", "none"];
+        if let Some(v) = fetch_dest.choose(&mut rng) {
+            insert_header(&mut map, "sec-fetch-dest", v);
+        }
+        if let Some(v) = fetch_mode.choose(&mut rng) {
+            insert_header(&mut map, "sec-fetch-mode", v);
+        }
+        if let Some(v) = fetch_site.choose(&mut rng) {
+            insert_header(&mut map, "sec-fetch-site", v);
+        }
+
+        // DNT is inconsistently present in real traffic.
+        if rng.gen_bool(0.7) {
+            insert_header(&mut map, "dnt", "1");
         }
 
         map
@@ -96,4 +106,13 @@ fn load_user_agent_pool() -> Vec<String> {
     }
 
     entries
+}
+
+fn insert_header(map: &mut HeaderMap, key: &str, value: &str) {
+    if let (Ok(name), Ok(value)) = (
+        HeaderName::from_bytes(key.as_bytes()),
+        HeaderValue::from_str(value),
+    ) {
+        map.insert(name, value);
+    }
 }

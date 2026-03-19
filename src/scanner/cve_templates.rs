@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use dashmap::DashSet;
+use rand::seq::SliceRandom;
 use serde::Deserialize;
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 use url::Url;
@@ -207,7 +208,13 @@ impl Scanner for CveTemplateScanner {
             base.push_str(&port.to_string());
         }
 
-        for tmpl in self.templates.iter() {
+        let mut ordered_templates = self.templates.iter().collect::<Vec<_>>();
+        if ordered_templates.len() > 1 {
+            let mut rng = rand::thread_rng();
+            ordered_templates.shuffle(&mut rng);
+        }
+
+        for tmpl in ordered_templates {
             if !template_context_matches(tmpl, &target_path) {
                 continue;
             }

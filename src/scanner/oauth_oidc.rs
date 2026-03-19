@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use rand::{distributions::Alphanumeric, seq::SliceRandom, Rng};
 use reqwest::header::LOCATION;
 use serde_json::Value;
 use std::time::Duration;
@@ -94,6 +95,29 @@ fn openid_well_known_url(parsed: &Url) -> Option<String> {
     Some(format!("{base}/.well-known/openid-configuration"))
 }
 
+fn random_probe_token(len: usize) -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .map(char::from)
+        .map(|c| c.to_ascii_lowercase())
+        .take(len)
+        .collect()
+}
+
+fn random_redirect_probe() -> String {
+    const PROBES: &[&str] = &[
+        "https://app.example.net/callback",
+        "https://cdn.example.net/oauth/callback",
+        "https://portal.example.org/auth/callback",
+    ];
+    let mut rng = rand::thread_rng();
+    PROBES
+        .choose(&mut rng)
+        .copied()
+        .unwrap_or("https://app.example.net/callback")
+        .to_string()
+}
+
 async fn probe_authorize_redirect(
     target_url: &str,
     config: &Config,
@@ -108,16 +132,17 @@ async fn probe_authorize_redirect(
     probe.set_query(None);
     probe.set_fragment(None);
 
-    let state_probe = "ah_state_probe_7f3a";
-    let redirect_probe = "https://evil.example/callback";
+    let state_probe = format!("st_{}", random_probe_token(10));
+    let client_probe = format!("apihunter-{}", random_probe_token(8));
+    let redirect_probe = random_redirect_probe();
 
     probe
         .query_pairs_mut()
         .append_pair("response_type", "code")
-        .append_pair("client_id", "apihunter-probe")
-        .append_pair("redirect_uri", redirect_probe)
+        .append_pair("client_id", &client_probe)
+        .append_pair("redirect_uri", &redirect_probe)
         .append_pair("scope", "openid profile")
-        .append_pair("state", state_probe);
+        .append_pair("state", &state_probe);
 
     let resp = match authorize_probe_without_redirects(config, &probe).await {
         Ok(r) => r,
@@ -132,7 +157,7 @@ async fn probe_authorize_redirect(
     };
     let location_l = location.to_ascii_lowercase();
 
-    if !location_l.starts_with(redirect_probe) {
+    if !location_l.starts_with(&redirect_probe) {
         return (findings, errors);
     }
 

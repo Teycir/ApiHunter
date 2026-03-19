@@ -84,11 +84,10 @@ async fn ip_header_bypass_is_reported_when_baseline_hits_429() {
     Mock::given(method("GET"))
         .and(path("/api/users"))
         .respond_with(|request: &wiremock::Request| {
-            let xff = request
-                .headers
-                .get("x-forwarded-for")
-                .and_then(|v| v.to_str().ok());
-            if xff == Some("203.0.113.10") {
+            let has_spoof_headers = request.headers.get("x-forwarded-for").is_some()
+                && request.headers.get("x-real-ip").is_some()
+                && request.headers.get("forwarded").is_some();
+            if has_spoof_headers {
                 ResponseTemplate::new(200).set_body_string("{\"ok\":true}")
             } else {
                 ResponseTemplate::new(429).set_body_string("{\"error\":\"rate limited\"}")

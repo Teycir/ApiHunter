@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use dashmap::DashSet;
+use rand::Rng;
 use std::{collections::HashMap, sync::Arc};
 use url::Url;
 
@@ -26,6 +27,16 @@ impl RateLimitScanner {
 
 const BURST_REQUESTS: usize = 12;
 const BYPASS_REQUESTS: usize = 3;
+
+fn random_reserved_ipv4() -> String {
+    let mut rng = rand::thread_rng();
+    let block = match rng.gen_range(0..3) {
+        0 => "203.0.113",
+        1 => "198.51.100",
+        _ => "192.0.2",
+    };
+    format!("{block}.{}", rng.gen_range(1..=254))
+}
 
 #[derive(Default)]
 struct BurstStats {
@@ -91,12 +102,13 @@ impl Scanner for RateLimitScanner {
                 );
             }
 
+            let spoof_ip = random_reserved_ipv4();
             let bypass_headers = vec![
-                ("X-Forwarded-For".to_string(), "203.0.113.10".to_string()),
-                ("X-Real-IP".to_string(), "203.0.113.10".to_string()),
+                ("X-Forwarded-For".to_string(), spoof_ip.clone()),
+                ("X-Real-IP".to_string(), spoof_ip.clone()),
                 (
                     "Forwarded".to_string(),
-                    "for=203.0.113.10;proto=https".to_string(),
+                    format!("for={spoof_ip};proto=https"),
                 ),
             ];
             let bypass = burst_gets(

@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
@@ -60,7 +63,7 @@ async fn reflected_sensitive_fields_are_reported() {
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/json")
                 .set_body_string(
-                    r#"{"ok":true,"__ah_probe":"1","is_admin":true,"role":"admin","permissions":["*"]}"#,
+                    r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
                 ),
         )
         .mount(&server)
@@ -86,14 +89,25 @@ async fn reflected_sensitive_fields_are_reported() {
 async fn persisted_sensitive_fields_are_reported_as_high_severity() {
     let server = MockServer::start().await;
 
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
     Mock::given(method("GET"))
         .and(path("/users"))
-        .and(header("x-ah-ma-stage", "baseline"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "application/json")
-                .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#),
-        )
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#)
+            } else {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(
+                        r#"{"user":{"id":1,"is_admin":true,"role":"admin","permissions":["*"]}}"#,
+                    )
+            }
+        })
         .mount(&server)
         .await;
 
@@ -103,20 +117,7 @@ async fn persisted_sensitive_fields_are_reported_as_high_severity() {
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/json")
                 .set_body_string(
-                    r#"{"ok":true,"__ah_probe":"1","is_admin":true,"role":"admin","permissions":["*"]}"#,
-                ),
-        )
-        .mount(&server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/users"))
-        .and(header("x-ah-ma-stage", "confirm"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "application/json")
-                .set_body_string(
-                    r#"{"user":{"id":1,"is_admin":true,"role":"admin","permissions":["*"]}}"#,
+                    r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
                 ),
         )
         .mount(&server)

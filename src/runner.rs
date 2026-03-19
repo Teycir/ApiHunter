@@ -14,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use rand::seq::SliceRandom;
 use tokio::{
     sync::{mpsc, Semaphore},
     task::JoinSet,
@@ -352,6 +353,10 @@ fn build_scanners(
 
     if scanners.is_empty() {
         eprintln!("Warning: All scanners disabled");
+    } else if scanners.len() > 1 {
+        // Reduce deterministic scanner ordering fingerprints across runs.
+        let mut rng = rand::thread_rng();
+        scanners.shuffle(&mut rng);
     }
 
     scanners
