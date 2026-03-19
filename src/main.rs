@@ -55,6 +55,8 @@ async fn main() {
 
 async fn run(cli: Cli) -> Result<i32> {
     let start = Instant::now();
+    validate_startup_inputs(&cli)?;
+    emit_security_hygiene_warnings(&cli);
 
     // ── 1. Load URLs ─────────────────────────────────────────────────────────
     let raw_urls = load_urls(&cli)?;
@@ -140,6 +142,11 @@ async fn run(cli: Cli) -> Result<i32> {
             api_security: !cli.no_api_security,
             jwt: !cli.no_jwt,
             openapi: !cli.no_openapi,
+            mass_assignment: !cli.no_mass_assignment,
+            oauth_oidc: !cli.no_oauth_oidc,
+            rate_limit: !cli.no_rate_limit,
+            cve_templates: !cli.no_cve_templates,
+            websocket: !cli.no_websocket,
         },
     });
 
@@ -214,6 +221,7 @@ async fn run(cli: Cli) -> Result<i32> {
             scanned: 0,
             skipped: 0,
             scanner_ver: env!("CARGO_PKG_VERSION"),
+            runtime_metrics: runner::RuntimeMetrics::default(),
         });
     }
 
@@ -347,6 +355,105 @@ fn build_default_headers(
         }
     }
     Ok(out)
+}
+
+fn validate_startup_inputs(cli: &Cli) -> Result<()> {
+    if cli.timeout_secs == 0 {
+        bail!("--timeout-secs must be greater than 0");
+    }
+    if !cli.no_filter && cli.filter_timeout == 0 {
+        bail!("--filter-timeout must be greater than 0 when URL filtering is enabled");
+    }
+    if cli.concurrency == 0 {
+        bail!("--concurrency must be greater than 0");
+    }
+
+    if let Some(token) = &cli.auth_bearer {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            bail!("--auth-bearer cannot be empty");
+        }
+        if trimmed != token || token.chars().any(char::is_whitespace) {
+            bail!("--auth-bearer must not contain whitespace");
+        }
+    }
+
+    if let Some(creds) = &cli.auth_basic {
+        let Some((user, pass)) = creds.split_once(':') else {
+            bail!("--auth-basic must use USER:PASS format");
+        };
+        if user.is_empty() || pass.is_empty() {
+            bail!("--auth-basic must include non-empty USER and PASS");
+        }
+    }
+
+    Ok(())
+}
+
+fn emit_security_hygiene_warnings(cli: &Cli) {
+    if cli.concurrency > 500 {
+        warn!(
+            "--concurrency={} is very high and may overload your scanner host or target systems.",
+            cli.concurrency
+        );
+    }
+
+    if cli.retries > 5 {
+        warn!(
+            "--retries={} may significantly increase request volume on unstable targets.",
+            cli.retries
+        );
+    }
+
+    for raw in &cli.headers {
+        let mut parts = raw.splitn(2, ':');
+        let name = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+        let value = parts.next().unwrap_or("").trim();
+        if value.is_empty() {
+            continue;
+        }
+
+        if looks_sensitive_header_name(&name) {
+            warn!(
+                "Sensitive header '{}' provided on CLI; shell history may expose plaintext secrets.",
+                name
+            );
+        }
+    }
+
+    for raw in &cli.cookies {
+        let mut parts = raw.splitn(2, '=');
+        let name = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+        let value = parts.next().unwrap_or("").trim();
+        if value.is_empty() {
+            continue;
+        }
+        if looks_sensitive_cookie_name(&name) {
+            warn!(
+                "Sensitive cookie '{}' provided on CLI; shell history may expose plaintext secrets.",
+                name
+            );
+        }
+    }
+}
+
+fn looks_sensitive_header_name(name: &str) -> bool {
+    const KEYS: &[&str] = &[
+        "authorization",
+        "x-api-key",
+        "api-key",
+        "x-auth-token",
+        "x-access-token",
+        "cookie",
+        "token",
+        "secret",
+    ];
+    KEYS.iter().any(|k| name.contains(k))
+}
+
+fn looks_sensitive_cookie_name(name: &str) -> bool {
+    const KEYS: &[&str] = &["session", "token", "auth", "jwt", "secret"];
+    KEYS.iter().any(|k| name.contains(k))
 }
 
 fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {

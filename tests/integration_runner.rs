@@ -15,7 +15,7 @@ use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
     reports::{ReportConfig, ReportFormat, Reporter, Severity},
-    runner,
+    runner::{self, RuntimeMetrics},
 };
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -58,6 +58,11 @@ fn test_config() -> Config {
             api_security: true,
             jwt: true,
             openapi: true,
+            mass_assignment: true,
+            oauth_oidc: true,
+            rate_limit: true,
+            cve_templates: true,
+            websocket: true,
         },
         quiet: false,
     }
@@ -119,6 +124,16 @@ async fn cors_wildcard_origin_detected() {
         "expected at least one CORS finding; got: {:#?}",
         result.findings
     );
+    assert!(
+        result
+            .metrics
+            .scanner_findings
+            .get("cors")
+            .copied()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(result.metrics.http_requests >= 1);
 }
 
 #[tokio::test]
@@ -706,6 +721,7 @@ mod reporter_tests {
             elapsed: std::time::Duration::from_millis(420),
             scanned: 1,
             skipped: 0,
+            metrics: RuntimeMetrics::default(),
         };
 
         reporter.write_run_result(&result);

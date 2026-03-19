@@ -19,7 +19,7 @@ use tokio::{
     sync::{mpsc, Semaphore},
     task::JoinSet,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 use url::Url;
 
 use crate::{
@@ -56,7 +56,30 @@ pub struct RunResult {
     pub scanned: usize,
     /// How many URLs were skipped (cap or dedup).
     pub skipped: usize,
+    /// Runtime metrics captured during the run.
+    pub metrics: RuntimeMetrics,
 }
+
+/// Runtime metrics emitted in report metadata.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RuntimeMetrics {
+    /// Total HTTP requests sent (includes retry attempts).
+    pub http_requests: u64,
+    /// Total retry attempts performed by the transport layer.
+    pub http_retries: u64,
+    /// Finding counts grouped by scanner name.
+    pub scanner_findings: BTreeMap<String, usize>,
+    /// Error counts grouped by scanner name.
+    pub scanner_errors: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct ScannerRunStats {
+    findings: usize,
+    errors: usize,
+}
+
+type ScannerStatsMap = BTreeMap<String, ScannerRunStats>;
 
 /// Entry point called from `main`.
 pub async fn run(
@@ -71,6 +94,12 @@ pub async fn run(
 
     // ── 1. Normalise + deduplicate ────────────────────────────────────────────
     let (unique_seeds, skipped_dedup) = dedup(urls);
+    info!(
+        seeds = unique_seeds.len(),
+        discovery_enabled = !config.no_discovery,
+        active_checks = config.active_checks,
+        "Scan lifecycle: seeds prepared"
+    );
 
     // ── 2. Discovery phase with per-site cap ────────────────────────────────
     let (discovered, mut discovery_errors) = if config.no_discovery {
@@ -94,6 +123,11 @@ pub async fn run(
     merged.extend(discovered);
     let (work_list, skipped_merged) = dedup(merged);
 
+    info!(
+        discovered = work_list.len(),
+        skipped_dedup, skipped_merged, "Scan lifecycle: discovery merged"
+    );
+
     let skipped_cap = 0; // No global cap anymore, handled per-site
 
     let scanned = work_list.len();
@@ -110,6 +144,13 @@ pub async fn run(
     // ── 5. Shared state ───────────────────────────────────────────────────────
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let scanners = build_scanners(&config, http_client_b.clone());
+    let scanner_names: Vec<&str> = scanners.iter().map(|s| s.name).collect();
+    info!(
+        scanner_count = scanners.len(),
+        scanners = ?scanner_names,
+        concurrency = config.concurrency,
+        "Scan lifecycle: scanner registry ready"
+    );
 
     // Progress tracking
     let tracker = Arc::new(ProgressTracker::with_config(ProgressConfig {
@@ -126,6 +167,7 @@ pub async fn run(
     // mpsc channels — workers send back results; main task collects
     let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
     let (error_tx, mut error_rx) = mpsc::unbounded_channel::<Vec<CapturedError>>();
+    let (scanner_stats_tx, mut scanner_stats_rx) = mpsc::unbounded_channel::<ScannerStatsMap>();
 
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
@@ -142,6 +184,7 @@ pub async fn run(
         let scanners = scanners.clone();
         let ftx = finding_tx.clone();
         let etx = error_tx.clone();
+        let stx = scanner_stats_tx.clone();
         let cfg = Arc::clone(&config);
         let rpt = Arc::clone(&reporter);
         let progress_handle = tracker.handle();
@@ -155,7 +198,7 @@ pub async fn run(
                 }
             };
 
-            let (findings, _errors) = scan_url_with_results(
+            let (findings, _errors, scanner_stats) = scan_url_with_results(
                 url.clone(),
                 &client,
                 &scanners,
@@ -165,6 +208,10 @@ pub async fn run(
                 etx.clone(),
             )
             .await;
+
+            if !scanner_stats.is_empty() {
+                let _ = stx.send(scanner_stats);
+            }
 
             // Build summary message for detailed logging
             let mut msg = url.clone();
@@ -207,10 +254,12 @@ pub async fn run(
     // Drop the sender halves we kept in main; workers hold their own clones.
     drop(finding_tx);
     drop(error_tx);
+    drop(scanner_stats_tx);
 
     // ── 7. Collect results while workers run ──────────────────────────────────
     let mut findings: Vec<Finding> = Vec::new();
     let mut errors: Vec<CapturedError> = Vec::new();
+    let mut scanner_stats: ScannerStatsMap = BTreeMap::new();
     errors.append(&mut discovery_errors);
 
     loop {
@@ -227,6 +276,9 @@ pub async fn run(
             Some(batch) = error_rx.recv() => {
                 errors.extend(batch);
             }
+            Some(batch) = scanner_stats_rx.recv() => {
+                merge_scanner_stats(&mut scanner_stats, batch);
+            }
             else => break,
         }
     }
@@ -239,6 +291,28 @@ pub async fn run(
     dedup_errors(&mut errors);
 
     let elapsed = start.elapsed();
+    let primary_http_metrics = http_client.runtime_metrics();
+    let secondary_http_metrics = http_client_b
+        .as_ref()
+        .map(|client| client.runtime_metrics())
+        .unwrap_or_default();
+
+    let mut scanner_findings = BTreeMap::new();
+    let mut scanner_errors = BTreeMap::new();
+    for (name, stats) in scanner_stats {
+        scanner_findings.insert(name.clone(), stats.findings);
+        scanner_errors.insert(name, stats.errors);
+    }
+
+    info!(
+        findings = findings.len(),
+        errors = errors.len(),
+        scanned,
+        skipped,
+        elapsed_ms = elapsed.as_millis(),
+        "Scan lifecycle: completed"
+    );
+
     eprintln!(
         "Scan finished: {} | Findings: {} | Scanned: {} | Elapsed: {:.2}s",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -253,6 +327,14 @@ pub async fn run(
         elapsed,
         scanned,
         skipped,
+        metrics: RuntimeMetrics {
+            http_requests: primary_http_metrics.requests_sent
+                + secondary_http_metrics.requests_sent,
+            http_retries: primary_http_metrics.retries_performed
+                + secondary_http_metrics.retries_performed,
+            scanner_findings,
+            scanner_errors,
+        },
     }
 }
 
@@ -261,30 +343,39 @@ pub async fn run(
 async fn scan_url_with_results(
     url: String,
     client: &HttpClient,
-    scanners: &[Arc<dyn Scanner>],
+    scanners: &[RegisteredScanner],
     config: &Config,
     reporter: &Reporter,
     ftx: mpsc::UnboundedSender<Vec<Finding>>,
     etx: mpsc::UnboundedSender<Vec<CapturedError>>,
-) -> (Vec<Finding>, Vec<CapturedError>) {
+) -> (Vec<Finding>, Vec<CapturedError>, ScannerStatsMap) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 
-    let mut scanner_set: JoinSet<(Vec<Finding>, Vec<CapturedError>)> = JoinSet::new();
+    let mut scanner_set: JoinSet<(String, Vec<Finding>, Vec<CapturedError>)> = JoinSet::new();
     let mut all_findings = Vec::new();
     let mut all_errors = Vec::new();
+    let mut scanner_stats: ScannerStatsMap = BTreeMap::new();
 
     for scanner in scanners {
-        let s = Arc::clone(scanner);
+        let scanner_name = scanner.name.to_string();
+        let s = Arc::clone(&scanner.scanner);
         let u = url.clone();
         let client = client.clone();
         let cfg = config.clone();
 
-        scanner_set.spawn(async move { s.scan(&u, &client, &cfg).await });
+        scanner_set.spawn(async move {
+            let (findings, errors) = s.scan(&u, &client, &cfg).await;
+            (scanner_name, findings, errors)
+        });
     }
 
     while let Some(result) = scanner_set.join_next().await {
         match result {
-            Ok((mut f, e)) => {
+            Ok((scanner_name, mut f, e)) => {
+                let stats = scanner_stats.entry(scanner_name).or_default();
+                stats.findings += f.len();
+                stats.errors += e.len();
+
                 for finding in &mut f {
                     if finding.url.is_empty() {
                         finding.url = url.clone();
@@ -312,7 +403,7 @@ async fn scan_url_with_results(
         }
     }
 
-    (all_findings, all_errors)
+    (all_findings, all_errors, scanner_stats)
 }
 
 // ── Scanner registry ───────────────────────────────────────────────────────────
@@ -320,36 +411,76 @@ async fn scan_url_with_results(
 fn build_scanners(
     config: &Config,
     http_client_b: Option<Arc<HttpClient>>,
-) -> Vec<Arc<dyn Scanner>> {
-    let mut scanners: Vec<Arc<dyn Scanner>> = Vec::new();
+) -> Vec<RegisteredScanner> {
+    let mut scanners: Vec<RegisteredScanner> = Vec::new();
 
     if config.toggles.cors {
-        scanners.push(Arc::new(CorsScanner::new(config)));
+        scanners.push(RegisteredScanner::new(
+            "cors",
+            Arc::new(CorsScanner::new(config)),
+        ));
     }
     if config.toggles.csp {
-        scanners.push(Arc::new(CspScanner::new(config)));
+        scanners.push(RegisteredScanner::new(
+            "csp",
+            Arc::new(CspScanner::new(config)),
+        ));
     }
     if config.toggles.graphql {
-        scanners.push(Arc::new(GraphqlScanner::new(config)));
+        scanners.push(RegisteredScanner::new(
+            "graphql",
+            Arc::new(GraphqlScanner::new(config)),
+        ));
     }
     if config.toggles.api_security {
-        scanners.push(Arc::new(ApiSecurityScanner::new(
-            config,
-            http_client_b.clone(),
-        )));
+        scanners.push(RegisteredScanner::new(
+            "api_security",
+            Arc::new(ApiSecurityScanner::new(config, http_client_b.clone())),
+        ));
     }
     if config.toggles.jwt {
-        scanners.push(Arc::new(JwtScanner::new(config)));
+        scanners.push(RegisteredScanner::new(
+            "jwt",
+            Arc::new(JwtScanner::new(config)),
+        ));
     }
     if config.toggles.openapi {
-        scanners.push(Arc::new(OpenApiScanner::new(config)));
+        scanners.push(RegisteredScanner::new(
+            "openapi",
+            Arc::new(OpenApiScanner::new(config)),
+        ));
     }
     if config.active_checks {
-        scanners.push(Arc::new(MassAssignmentScanner::new(config)));
-        scanners.push(Arc::new(OAuthOidcScanner::new(config)));
-        scanners.push(Arc::new(RateLimitScanner::new(config)));
-        scanners.push(Arc::new(CveTemplateScanner::new(config)));
-        scanners.push(Arc::new(WebSocketScanner::new(config)));
+        if config.toggles.mass_assignment {
+            scanners.push(RegisteredScanner::new(
+                "mass_assignment",
+                Arc::new(MassAssignmentScanner::new(config)),
+            ));
+        }
+        if config.toggles.oauth_oidc {
+            scanners.push(RegisteredScanner::new(
+                "oauth_oidc",
+                Arc::new(OAuthOidcScanner::new(config)),
+            ));
+        }
+        if config.toggles.rate_limit {
+            scanners.push(RegisteredScanner::new(
+                "rate_limit",
+                Arc::new(RateLimitScanner::new(config)),
+            ));
+        }
+        if config.toggles.cve_templates {
+            scanners.push(RegisteredScanner::new(
+                "cve_templates",
+                Arc::new(CveTemplateScanner::new(config)),
+            ));
+        }
+        if config.toggles.websocket {
+            scanners.push(RegisteredScanner::new(
+                "websocket",
+                Arc::new(WebSocketScanner::new(config)),
+            ));
+        }
     }
 
     if scanners.is_empty() {
@@ -361,6 +492,18 @@ fn build_scanners(
     }
 
     scanners
+}
+
+#[derive(Clone)]
+struct RegisteredScanner {
+    name: &'static str,
+    scanner: Arc<dyn Scanner>,
+}
+
+impl RegisteredScanner {
+    fn new(name: &'static str, scanner: Arc<dyn Scanner>) -> Self {
+        Self { name, scanner }
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -553,4 +696,12 @@ fn dedup_errors(errors: &mut Vec<CapturedError>) {
             error.message.clone(),
         ))
     });
+}
+
+fn merge_scanner_stats(target: &mut ScannerStatsMap, batch: ScannerStatsMap) {
+    for (name, stats) in batch {
+        let entry = target.entry(name).or_default();
+        entry.findings += stats.findings;
+        entry.errors += stats.errors;
+    }
 }

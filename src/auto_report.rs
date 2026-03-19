@@ -92,7 +92,35 @@ fn generate_markdown_summary(
     ));
     md.push_str(&format!("- **URLs Scanned**: {}\n", doc.meta.scanned));
     md.push_str(&format!("- **URLs Skipped**: {}\n", doc.meta.skipped));
+    md.push_str(&format!(
+        "- **HTTP Requests**: {}\n",
+        doc.meta.runtime_metrics.http_requests
+    ));
+    md.push_str(&format!(
+        "- **HTTP Retries**: {}\n",
+        doc.meta.runtime_metrics.http_retries
+    ));
     md.push_str(&format!("- **Min Severity Filter**: {}\n\n", min_severity));
+
+    if !doc.meta.runtime_metrics.scanner_findings.is_empty() {
+        md.push_str("### Runtime Scanner Counters\n\n");
+        md.push_str("| Scanner | Findings | Errors |\n");
+        md.push_str("|---------|----------|--------|\n");
+        for (scanner, finding_count) in &doc.meta.runtime_metrics.scanner_findings {
+            let error_count = doc
+                .meta
+                .runtime_metrics
+                .scanner_errors
+                .get(scanner)
+                .copied()
+                .unwrap_or(0);
+            md.push_str(&format!(
+                "| `{}` | {} | {} |\n",
+                scanner, finding_count, error_count
+            ));
+        }
+        md.push('\n');
+    }
 
     // Summary
     md.push_str("## Summary\n\n");
@@ -191,6 +219,31 @@ fn generate_scan_log(result: &RunResult) -> String {
     log.push_str(&format!("URLs Scanned: {}\n", result.scanned));
     log.push_str(&format!("URLs Skipped: {}\n", result.skipped));
     log.push_str(&format!("Total Findings: {}\n\n", result.findings.len()));
+    log.push_str(&format!(
+        "HTTP Requests: {}\n",
+        result.metrics.http_requests
+    ));
+    log.push_str(&format!(
+        "HTTP Retries: {}\n\n",
+        result.metrics.http_retries
+    ));
+
+    if !result.metrics.scanner_findings.is_empty() {
+        log.push_str("Scanner Counters:\n");
+        for (scanner, finding_count) in &result.metrics.scanner_findings {
+            let error_count = result
+                .metrics
+                .scanner_errors
+                .get(scanner)
+                .copied()
+                .unwrap_or(0);
+            log.push_str(&format!(
+                "  - {}: findings={}, errors={}\n",
+                scanner, finding_count, error_count
+            ));
+        }
+        log.push('\n');
+    }
 
     // All findings with full details
     if !result.findings.is_empty() {

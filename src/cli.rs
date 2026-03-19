@@ -199,6 +199,26 @@ pub struct Cli {
     #[arg(long)]
     pub no_openapi: bool,
 
+    /// Disable the Mass Assignment scanner (active checks).
+    #[arg(long)]
+    pub no_mass_assignment: bool,
+
+    /// Disable the OAuth/OIDC scanner (active checks).
+    #[arg(long)]
+    pub no_oauth_oidc: bool,
+
+    /// Disable the Rate Limit scanner (active checks).
+    #[arg(long)]
+    pub no_rate_limit: bool,
+
+    /// Disable the CVE Template scanner (active checks).
+    #[arg(long)]
+    pub no_cve_templates: bool,
+
+    /// Disable the WebSocket scanner (active checks).
+    #[arg(long)]
+    pub no_websocket: bool,
+
     // ── Reporting threshold ───────────────────────────────────────────────────
     /// Minimum severity to include in findings output.
     #[arg(long, value_name = "LEVEL")]

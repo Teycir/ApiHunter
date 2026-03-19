@@ -1109,3 +1109,56 @@
 - Validation (tests run outside sandbox):
   - `cargo fmt`
   - `cargo test`
+
+---
+
+# Task: Valid+Partial Gap Closure (Phase 28)
+
+## Plan
+- [x] Add explicit startup config validation + security warnings (timeouts, concurrency, auth token/header hygiene).
+- [x] Improve observability with structured scan lifecycle logs and adaptive concurrency change logs.
+- [x] Add runtime metrics snapshots (HTTP request/retry counts and per-scanner finding/error counters) and expose them in run/report metadata.
+- [x] Add individual active-scanner CLI toggles (mass-assignment, oauth/oidc, rate-limit, websocket, CVE templates).
+- [x] Add/adjust tests/docs for new toggles and metadata fields, then run full validation outside sandbox.
+
+## Review
+- Added explicit startup validation and hygiene warnings in `src/main.rs`:
+  - hard validation for invalid runtime knobs (`--timeout-secs`, `--filter-timeout`, `--concurrency` zero cases),
+  - strict auth input checks (`--auth-bearer` whitespace/empty, `--auth-basic` `USER:PASS` format),
+  - warning signals for high-risk runtime settings and sensitive CLI-injected headers/cookies.
+- Added active-check scanner toggles end-to-end:
+  - CLI flags in `src/cli.rs`:
+    - `--no-mass-assignment`
+    - `--no-oauth-oidc`
+    - `--no-rate-limit`
+    - `--no-cve-templates`
+    - `--no-websocket`
+  - Config wiring in `src/config.rs` and `src/main.rs` (`ScannerToggles` + CLI mapping).
+  - Runner gating in `src/runner.rs` so each active scanner is independently switchable.
+- Improved observability:
+  - structured lifecycle logs added in `src/runner.rs` for scan setup, scanner registry readiness, and completion.
+  - adaptive concurrency increase/decrease transitions now emit structured logs in `src/http_client.rs`.
+- Added runtime metrics snapshots and report metadata exposure:
+  - HTTP transport counters in `src/http_client.rs`:
+    - `requests_sent`
+    - `retries_performed`
+  - per-scanner runtime counters in `src/runner.rs`:
+    - findings by scanner
+    - errors by scanner
+  - report metadata extension in `src/reports.rs`:
+    - `meta.runtime_metrics` now includes HTTP + per-scanner counters.
+  - auto report markdown/log enrichment in `src/auto_report.rs` with runtime counter sections.
+- Tests updated for new fields/behavior:
+  - `tests/cli.rs`: new active-toggle parsing coverage and expanded `ScannerToggles` mapping assertions.
+  - `tests/integration_runner.rs`: `RuntimeMetrics` fixture updates and runtime counter assertion in CORS integration run.
+  - `tests/reports.rs`: metadata assertions for `meta.runtime_metrics`.
+  - all `ScannerToggles` test configs updated across scanner test files to include newly added toggle fields.
+- Docs updated:
+  - `Readme.md` CLI reference + FAQ for new active scanner flags, plus runtime-metrics feature callout.
+  - `HOWTO.md` targeted active-check command now includes new active scanner disable flags.
+  - `docs/configuration.md` includes new active scanner toggle fields.
+- Validation:
+  - `cargo fmt`
+  - `cargo check`
+  - `cargo test --test cli --test reports --test integration_runner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

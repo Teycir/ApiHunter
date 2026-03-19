@@ -21,7 +21,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
-use crate::{error::CapturedError, runner::RunResult};
+use crate::{
+    error::CapturedError,
+    runner::{RunResult, RuntimeMetrics},
+};
 
 // ── SARIF output ──────────────────────────────────────────────────────────────
 
@@ -288,6 +291,7 @@ pub struct ReportMeta {
     pub scanned: usize,
     pub skipped: usize,
     pub scanner_ver: &'static str,
+    pub runtime_metrics: RuntimeMetrics,
 }
 
 /// Counts by severity — useful at a glance without reading all findings.
@@ -627,6 +631,7 @@ pub fn build_document(result: &RunResult) -> ReportDocument {
             scanned: result.scanned,
             skipped: result.skipped,
             scanner_ver: env!("CARGO_PKG_VERSION"),
+            runtime_metrics: result.metrics.clone(),
         },
         summary,
         findings: result.findings.clone(),

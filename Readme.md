@@ -26,6 +26,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 - 🔌 **Pluggable scanner modules** — implement `Scanner` and drop in
 - 🛡️ **WAF evasion** — UA rotation, politeness delays, retry logic
 - 📊 **NDJSON + SARIF output** for pipelines and CI integration
+- 📈 **Runtime metrics in report metadata** (HTTP request/retry counters + per-scanner counts)
 - 🔒 **Proxy support** and TLS control
 - 🚦 **Exit-code bitmask** for scripting (`0x01` findings, `0x02` errors)
 - 🧾 **JWT checks** — alg=none, weak HS256 secrets, long-lived tokens
@@ -258,6 +259,11 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--no-api-security` | off | Disable the API security scanner |
 | `--no-jwt` | off | Disable the JWT scanner |
 | `--no-openapi` | off | Disable the OpenAPI scanner |
+| `--no-mass-assignment` | off | Disable the Mass Assignment scanner (active checks) |
+| `--no-oauth-oidc` | off | Disable the OAuth/OIDC scanner (active checks) |
+| `--no-rate-limit` | off | Disable the Rate Limit scanner (active checks) |
+| `--no-cve-templates` | off | Disable the CVE template scanner (active checks) |
+| `--no-websocket` | off | Disable the WebSocket scanner (active checks) |
 
 *You must provide exactly one of `--urls`, `--stdin`, or `--har`.
 
@@ -318,7 +324,7 @@ A: Yes, use `ScanScripts/split-by-host.sh` to split your URL list by host, then 
 A: ApiHunter sends requests to 3 random canary paths (`/__canary_*`, `/_canary_*`, `/xyzabc*`). If they all return 200 with HTML, it's a SPA with catch-all routing. Subsequent 200+HTML responses are fingerprinted and skipped if they match the SPA shell.
 
 **Q: Can I disable specific checks?**  
-A: Yes, use scanner flags: `--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`.
+A: Yes. Passive scanner flags: `--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`. Active-check scanner flags: `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
 
 ### Output & Integration
 

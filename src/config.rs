@@ -82,6 +82,11 @@ pub struct ScannerToggles {
     pub api_security: bool,
     pub jwt: bool,
     pub openapi: bool,
+    pub mass_assignment: bool,
+    pub oauth_oidc: bool,
+    pub rate_limit: bool,
+    pub cve_templates: bool,
+    pub websocket: bool,
 }
 
 /// Network politeness knobs.

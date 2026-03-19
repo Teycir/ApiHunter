@@ -48,6 +48,11 @@ fn test_config() -> Config {
             api_security: false,
             jwt: false,
             openapi: false,
+            mass_assignment: false,
+            oauth_oidc: false,
+            rate_limit: false,
+            cve_templates: false,
+            websocket: false,
         },
         quiet: false,
     }

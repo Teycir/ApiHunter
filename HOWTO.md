@@ -191,7 +191,8 @@ printf "https://target.example.com/ws\n" | ./target/release/api-scanner \
   --stdin \
   --active-checks \
   --no-discovery \
-  --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi
+  --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi \
+  --no-mass-assignment --no-oauth-oidc --no-rate-limit --no-cve-templates
 ```
 
 ---

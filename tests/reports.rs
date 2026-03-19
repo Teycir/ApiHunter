@@ -11,7 +11,7 @@ use api_scanner::reports::{
     dedup_findings, exit_code, filter_findings, load_baseline_keys, Finding, ReportConfig,
     ReportFormat, ReportSummary, Reporter, Severity,
 };
-use api_scanner::runner::RunResult;
+use api_scanner::runner::{RunResult, RuntimeMetrics};
 
 // ── Severity ordering ────────────────────────────────────────────────────────
 
@@ -241,6 +241,10 @@ fn reporter_writes_pretty_json_to_file() {
     assert!(doc.get("findings").is_some());
     assert!(doc.get("summary").is_some());
     assert_eq!(doc["summary"]["total"], 1);
+    assert_eq!(doc["meta"]["runtime_metrics"]["http_requests"], 0);
+    assert_eq!(doc["meta"]["runtime_metrics"]["http_retries"], 0);
+    assert!(doc["meta"]["runtime_metrics"]["scanner_findings"].is_object());
+    assert!(doc["meta"]["runtime_metrics"]["scanner_errors"].is_object());
 }
 
 #[test]
@@ -378,5 +382,6 @@ fn mock_run_result() -> RunResult {
         elapsed: Duration::from_millis(420),
         scanned: 1,
         skipped: 0,
+        metrics: RuntimeMetrics::default(),
     }
 }

@@ -108,6 +108,26 @@ fn scanner_toggle_flags() {
 }
 
 #[test]
+fn active_scanner_toggle_flags() {
+    let cli = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--no-mass-assignment",
+        "--no-oauth-oidc",
+        "--no-rate-limit",
+        "--no-cve-templates",
+        "--no-websocket",
+    ])
+    .unwrap();
+
+    assert!(cli.no_mass_assignment);
+    assert!(cli.no_oauth_oidc);
+    assert!(cli.no_rate_limit);
+    assert!(cli.no_cve_templates);
+    assert!(cli.no_websocket);
+}
+
+#[test]
 fn waf_evasion_implied_by_user_agents() {
     let cli = Cli::try_parse_from([
         "scanner",
@@ -437,6 +457,11 @@ fn toggles_all_on_by_default() {
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
+        mass_assignment: !cli.no_mass_assignment,
+        oauth_oidc: !cli.no_oauth_oidc,
+        rate_limit: !cli.no_rate_limit,
+        cve_templates: !cli.no_cve_templates,
+        websocket: !cli.no_websocket,
     };
     assert!(toggles.cors);
     assert!(toggles.csp);
@@ -444,11 +469,24 @@ fn toggles_all_on_by_default() {
     assert!(toggles.api_security);
     assert!(toggles.jwt);
     assert!(toggles.openapi);
+    assert!(toggles.mass_assignment);
+    assert!(toggles.oauth_oidc);
+    assert!(toggles.rate_limit);
+    assert!(toggles.cve_templates);
+    assert!(toggles.websocket);
 }
 
 #[test]
 fn toggles_selectively_disabled() {
-    let cli = Cli::try_parse_from(["scanner", "--stdin", "--no-cors", "--no-graphql"]).unwrap();
+    let cli = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--no-cors",
+        "--no-graphql",
+        "--no-mass-assignment",
+        "--no-websocket",
+    ])
+    .unwrap();
     let toggles = ScannerToggles {
         cors: !cli.no_cors,
         csp: !cli.no_csp,
@@ -456,6 +494,11 @@ fn toggles_selectively_disabled() {
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
+        mass_assignment: !cli.no_mass_assignment,
+        oauth_oidc: !cli.no_oauth_oidc,
+        rate_limit: !cli.no_rate_limit,
+        cve_templates: !cli.no_cve_templates,
+        websocket: !cli.no_websocket,
     };
     assert!(!toggles.cors);
     assert!(toggles.csp);
@@ -463,4 +506,9 @@ fn toggles_selectively_disabled() {
     assert!(toggles.api_security);
     assert!(toggles.jwt);
     assert!(toggles.openapi);
+    assert!(!toggles.mass_assignment);
+    assert!(toggles.oauth_oidc);
+    assert!(toggles.rate_limit);
+    assert!(toggles.cve_templates);
+    assert!(!toggles.websocket);
 }

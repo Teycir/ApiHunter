@@ -14,9 +14,17 @@ use reqwest::{
     Client, Method, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
-use tracing::debug;
+use tracing::{debug, info};
 use url::Url;
 
 // Optional auth credential support
@@ -30,6 +38,13 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     pub body: String,
     pub url: String,
+}
+
+/// Runtime transport counters captured during scan execution.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct HttpRuntimeMetrics {
+    pub requests_sent: u64,
+    pub retries_performed: u64,
 }
 
 #[allow(dead_code)]
@@ -80,6 +95,8 @@ pub struct HttpClient {
     session_store: Option<Arc<Mutex<SessionStore>>>,
     session_path: Option<PathBuf>,
     adaptive: Option<Arc<AdaptiveLimiter>>,
+    request_count: Arc<AtomicU64>,
+    retry_count: Arc<AtomicU64>,
     /// Optional live credential for auth flow injection.
     live_credential: Option<Arc<LiveCredential>>,
     /// Header names to strip for unauthenticated probes.
@@ -134,19 +151,30 @@ impl AdaptiveLimiter {
 
     async fn decrease(&self) {
         let mut held = self.held.lock().await;
-        let target = self.max.saturating_sub(held.len());
-        if target <= self.min {
+        let current = self.max.saturating_sub(held.len());
+        if current <= self.min {
             return;
         }
         if let Ok(permit) = self.semaphore.clone().try_acquire_owned() {
             held.push(permit);
+            let new_limit = self.max.saturating_sub(held.len());
+            info!(
+                old_limit = current,
+                new_limit, "Adaptive concurrency decreased"
+            );
         }
     }
 
     async fn increase(&self) {
         let mut held = self.held.lock().await;
+        let current = self.max.saturating_sub(held.len());
         if let Some(permit) = held.pop() {
             drop(permit);
+            let new_limit = self.max.saturating_sub(held.len());
+            info!(
+                old_limit = current,
+                new_limit, "Adaptive concurrency increased"
+            );
         }
     }
 }
@@ -257,6 +285,8 @@ impl HttpClient {
             } else {
                 None
             },
+            request_count: Arc::new(AtomicU64::new(0)),
+            retry_count: Arc::new(AtomicU64::new(0)),
             live_credential: None,
             unauth_strip_headers,
         })
@@ -274,6 +304,13 @@ impl HttpClient {
 
     pub fn get_cached_spec(&self, url: &str) -> Option<String> {
         self.spec_cache.get(url).map(|v| v.value().clone())
+    }
+
+    pub fn runtime_metrics(&self) -> HttpRuntimeMetrics {
+        HttpRuntimeMetrics {
+            requests_sent: self.request_count.load(Ordering::Relaxed),
+            retries_performed: self.retry_count.load(Ordering::Relaxed),
+        }
     }
 
     // ------------------------------------------------------------------ //
@@ -314,10 +351,12 @@ impl HttpClient {
 
         for attempt in 0..attempts {
             if attempt > 0 {
+                self.retry_count.fetch_add(1, Ordering::Relaxed);
                 let backoff = retry_backoff(attempt);
                 tokio::time::sleep(backoff).await;
             }
 
+            self.request_count.fetch_add(1, Ordering::Relaxed);
             match self
                 .send_once(
                     method.clone(),
@@ -556,6 +595,7 @@ impl HttpClient {
             headers.remove(name);
         }
 
+        self.request_count.fetch_add(1, Ordering::Relaxed);
         let response = client.execute(req).await.map_err(|e| {
             debug!("[GET {url}] send error (no auth): {e}");
             CapturedError::new("http::get_without_auth", Some(url.to_string()), &e)

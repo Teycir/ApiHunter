@@ -64,6 +64,11 @@ fn test_config_custom(active_checks: bool, dry_run: bool, timeout_secs: u64) -> 
             api_security: false,
             jwt: false,
             openapi: false,
+            mass_assignment: false,
+            oauth_oidc: false,
+            rate_limit: false,
+            cve_templates: false,
+            websocket: false,
         },
         quiet: false,
     }

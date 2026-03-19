@@ -119,6 +119,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Generic secret validation guards
 
 ### Changed
+- **Code Quality & Reliability**:
+  - Replaced panic-prone `expect()` calls with proper error handling in HTTP client and main initialization
+  - Improved semaphore acquisition error handling to prevent scanner crashes
+  - Enhanced cookie parsing clarity using `split_once()` instead of iterator unwraps
+  - Added comprehensive panic safety review across all unwrap/expect usage
 - Unified default UA sourcing: `cli::default_user_agents()` now uses `WafEvasion::user_agent_pool()`
 - Removed inline mass-assignment probe from `api_security` scanner (now dedicated module)
 - Removed inline rate-limit probe from `api_security` scanner (now dedicated module)
@@ -141,6 +146,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - HAR import now filters for likely API/business endpoints (excludes static/CDN)
 
 ### Fixed
+- **Critical Error Handling**:
+  - Fixed silent failures in CORS bypass probes that could hide security issues
+  - Fixed IDOR range walk incorrectly counting network errors (status=0) as successes
+  - Fixed JWT algorithm confusion errors being silently swallowed via `.ok()?`
+  - Fixed rate limit checks failing silently when all requests error
+  - Fixed SPA detection errors not being logged for debugging
 - Docker build: added OpenSSL build dependencies in builder image
 - CVE-2022-22947 overmatch on APISIX dashboard HTML content (now requires Spring-specific tokens)
 - SPA detection logic for catch-all routing false positives
@@ -150,6 +161,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Secret detection false positives with additional validation
 - Error array response detection to reduce false positives
 - Severity serde expectation in tests
+
+### Performance
+- **Mass Assignment Scanner Optimizations**:
+  - Skip baseline GET request for write-only endpoints (POST/PUT/PATCH)
+  - Avoid double JSON parsing by reusing parsed baseline response
+  - Use static strings instead of format!() allocations for common patterns
+  - Early exit when all injected fields are found in response
+  - Optimize string operations with capacity pre-allocation
+  - Skip confirmation GET when baseline fails (no state to verify)
+  - Use Arc cloning instead of full string clones for shared data
+  - Batch field checks to reduce iteration overhead
+
+### Documentation
+- **Code Analysis & Technical Debt**:
+  - Documented 12 critical test coverage gaps in mass assignment scanner tests
+  - Identified 8 performance optimization opportunities with no recall impact
+  - Catalogued 12 major refactoring opportunities for code reusability across scanners
+  - Comprehensive error handling audit across all scanner modules
+  - Complete panic safety analysis of all unwrap/expect calls
+  - Identified additional improvement areas: logging, config validation, resource cleanup, false positive reduction, security hardening, UX, output formats, and testing gaps
 
 ---
 

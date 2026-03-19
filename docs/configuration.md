@@ -45,6 +45,11 @@ Durations are in milliseconds unless noted.
 | `adaptive_concurrency` | `bool` | `false` | Adaptive concurrency (AIMD) |
 | `no_jwt` | `bool` | `false` | Disable JWT scanner |
 | `no_openapi` | `bool` | `false` | Disable OpenAPI scanner |
+| `no_mass_assignment` | `bool` | `false` | Disable Mass Assignment scanner (active checks) |
+| `no_oauth_oidc` | `bool` | `false` | Disable OAuth/OIDC scanner (active checks) |
+| `no_rate_limit` | `bool` | `false` | Disable Rate Limit scanner (active checks) |
+| `no_cve_templates` | `bool` | `false` | Disable CVE template scanner (active checks) |
+| `no_websocket` | `bool` | `false` | Disable WebSocket scanner (active checks) |
 
 *You must provide exactly one of `--urls`, `--stdin`, or `--har`.
 HAR parsing is API-focused by default: static/CDN entries are filtered out automatically.
