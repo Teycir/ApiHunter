@@ -69,3 +69,5 @@
 - Rule: treat `main.rs` lifecycle output like library/runtime logs by default (`tracing`), and reserve raw `eprintln!/println!` only for explicitly intentional UX output.
 - User preference: use a single canonical CLI binary name to reduce operational confusion.
 - Rule: when asked to standardize command naming, remove legacy binary aliases from Cargo/release workflows and update docs/examples in the same change.
+- User correction pattern: repeated review passes can keep reporting issues that are already fixed in `main.rs` startup paths.
+- Rule: when a reported startup bug is already fixed, add/refresh focused CLI regression tests in `tests/` so future review passes have executable proof, not only code inspection.

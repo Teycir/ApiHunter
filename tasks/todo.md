@@ -1574,3 +1574,22 @@
   - `cargo fmt --all --check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Startup Input Regression Lock (Phase 40)
+
+## Plan
+- [x] Re-verify reported `main.rs` startup issues against current source before patching.
+- [x] Add startup regression tests under `tests/` for empty cookie-value acceptance and missing auth-flow fast-fail.
+- [x] Run targeted tests outside sandbox and record results.
+
+## Review
+- Verification outcomes:
+  - `src/main.rs::parse_cookies(...)` already rejects only empty cookie names and accepts empty values.
+  - `src/main.rs::validate_startup_inputs(...)` already validates `--auth-flow` and `--auth-flow-b` via `validate_auth_flow_path(...)` (exists/file/readable).
+- Added `tests/startup_inputs.rs`:
+  - `empty_cookie_values_are_accepted`: proves `--cookies session=` does not fail startup parsing.
+  - `auth_flow_path_is_validated_before_runtime`: proves missing `--auth-flow` path fails fast with `file not found`.
+- Validation:
+  - `cargo test --test startup_inputs` (outside sandbox): `2 passed; 0 failed`.
