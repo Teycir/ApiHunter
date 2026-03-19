@@ -66,34 +66,6 @@ async fn run(cli: Cli) -> Result<i32> {
         return Ok(0);
     }
 
-    // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
-    let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
-        info!(total = raw_urls.len(), "Filtering URL accessibility");
-        let (accessible, inaccessible) =
-            filter_accessible_urls(&raw_urls, cli.filter_timeout, cli.delay_ms).await;
-        info!(
-            accessible = accessible.len(),
-            inaccessible = inaccessible.len(),
-            "URL accessibility filtering complete"
-        );
-        (accessible, inaccessible)
-    } else {
-        (raw_urls, Vec::new())
-    };
-
-    if filtered_urls.is_empty() {
-        warn!("No accessible URLs remaining after filtering.");
-        if !inaccessible_urls.is_empty() {
-            for url in &inaccessible_urls {
-                info!(url = %url, "Filtered as inaccessible");
-            }
-        }
-        return Ok(0);
-    }
-
-    print_banner(&cli, filtered_urls.len());
-    info!("Started discovering endpoints");
-
     // ── 2. Build Config ──────────────────────────────────────────────────────
     let max_endpoints = if cli.max_endpoints == 0 {
         usize::MAX
@@ -149,6 +121,34 @@ async fn run(cli: Cli) -> Result<i32> {
             websocket: !cli.no_websocket,
         },
     });
+
+    // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
+    let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
+        info!(total = raw_urls.len(), "Filtering URL accessibility");
+        let (accessible, inaccessible) =
+            filter_accessible_urls(&raw_urls, cli.filter_timeout, config.as_ref()).await;
+        info!(
+            accessible = accessible.len(),
+            inaccessible = inaccessible.len(),
+            "URL accessibility filtering complete"
+        );
+        (accessible, inaccessible)
+    } else {
+        (raw_urls, Vec::new())
+    };
+
+    if filtered_urls.is_empty() {
+        warn!("No accessible URLs remaining after filtering.");
+        if !inaccessible_urls.is_empty() {
+            for url in &inaccessible_urls {
+                info!(url = %url, "Filtered as inaccessible");
+            }
+        }
+        return Ok(0);
+    }
+
+    print_banner(&cli, filtered_urls.len());
+    info!("Started discovering endpoints");
 
     if config.danger_accept_invalid_certs {
         warn!("TLS certificate validation is disabled (--danger-accept-invalid-certs). This is insecure for production scans.");
@@ -284,7 +284,8 @@ async fn run(cli: Cli) -> Result<i32> {
         task.shutdown().await;
     }
 
-    let _elapsed = start.elapsed();
+    let elapsed = start.elapsed();
+    info!(elapsed_ms = elapsed.as_millis(), "Run lifecycle: completed");
 
     // Log filtered URLs for operator visibility (subject to log level / --quiet).
     if !inaccessible_urls.is_empty() {
@@ -508,17 +509,12 @@ fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
 async fn filter_accessible_urls(
     urls: &[String],
     timeout_secs: u64,
-    delay_ms: u64,
+    config: &Config,
 ) -> (Vec<String>, Vec<String>) {
     use futures::stream::{self, StreamExt};
-    use tokio::{sync::Mutex, time::Duration};
+    use tokio::sync::Mutex;
 
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .connect_timeout(Duration::from_secs(2))
-        .redirect(reqwest::redirect::Policy::limited(3))
-        .build()
-    {
+    let client = match build_filter_client(config, timeout_secs) {
         Ok(c) => c,
         Err(e) => {
             warn!("Failed to build URL filter client: {e}");
@@ -535,6 +531,7 @@ async fn filter_accessible_urls(
             let client = client.clone();
             let url = url.clone();
             let host_last_request = Arc::clone(&host_last_request);
+            let delay_ms = config.politeness.delay_ms;
             async move {
                 enforce_filter_host_delay(host_last_request.as_ref(), &url, delay_ms).await;
                 let is_accessible = match client.get(&url).send().await {
@@ -562,6 +559,63 @@ async fn filter_accessible_urls(
     }
 
     (accessible, inaccessible)
+}
+
+fn build_filter_client(
+    config: &Config,
+    timeout_secs: u64,
+) -> Result<reqwest::Client, reqwest::Error> {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+    use tokio::time::Duration;
+
+    let mut default_headers = HeaderMap::new();
+    for (k, v) in &config.default_headers {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
+            default_headers.insert(name, value);
+        }
+    }
+
+    if !config.cookies.is_empty() {
+        let cookie_value = config
+            .cookies
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let key = HeaderName::from_static("cookie");
+        if let Some(existing) = default_headers.get(&key).cloned() {
+            let mut combined = existing.to_str().unwrap_or("").to_string();
+            if !combined.is_empty() {
+                combined.push_str("; ");
+            }
+            combined.push_str(&cookie_value);
+            if let Ok(value) = HeaderValue::from_str(&combined) {
+                default_headers.insert(key, value);
+            }
+        } else if let Ok(value) = HeaderValue::from_str(&cookie_value) {
+            default_headers.insert(key, value);
+        }
+    }
+
+    let mut builder = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .connect_timeout(Duration::from_secs(2))
+        .danger_accept_invalid_certs(config.danger_accept_invalid_certs)
+        .redirect(reqwest::redirect::Policy::limited(3));
+
+    if !default_headers.is_empty() {
+        builder = builder.default_headers(default_headers);
+    }
+
+    if let Some(proxy_url) = &config.proxy {
+        builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
+    }
+
+    builder.build()
 }
 
 async fn enforce_filter_host_delay(

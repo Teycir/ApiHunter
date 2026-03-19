@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use wiremock::{
     matchers::{method, path},
-    Mock, MockServer, ResponseTemplate,
+    Mock, MockServer, Request, Respond, ResponseTemplate,
 };
 
 use api_scanner::{
@@ -79,6 +79,24 @@ fn test_reporter() -> Arc<Reporter> {
         })
         .expect("reporter"),
     )
+}
+
+struct ReflectOriginCorsResponder;
+
+impl Respond for ReflectOriginCorsResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let origin = request
+            .headers
+            .get("origin")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("https://cdn.example.net");
+
+        ResponseTemplate::new(200)
+            .insert_header("Access-Control-Allow-Origin", origin)
+            .insert_header("Access-Control-Allow-Credentials", "true")
+            .insert_header("Content-Type", "text/html")
+            .set_body_string("<html><body>ok</body></html>")
+    }
 }
 
 // ─── CORS tests ───────────────────────────────────────────────────────────────
@@ -839,6 +857,76 @@ async fn canonicalise_dedups_query_parameter_order_variants() {
 
     assert_eq!(result.scanned, 1, "query-order variants should deduplicate");
     assert_eq!(result.skipped, 1, "one duplicate URL should be skipped");
+}
+
+#[tokio::test]
+async fn stream_mode_flushes_unique_findings_only() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("OPTIONS"))
+        .respond_with(ReflectOriginCorsResponder)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ReflectOriginCorsResponder)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.no_discovery = true;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.toggles.mass_assignment = false;
+    cfg.toggles.oauth_oidc = false;
+    cfg.toggles.rate_limit = false;
+    cfg.toggles.cve_templates = false;
+    cfg.toggles.websocket = false;
+    cfg.stream_findings = true;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+    let out = tempfile::NamedTempFile::new().unwrap();
+
+    let reporter = Arc::new(
+        Reporter::new(ReportConfig {
+            format: ReportFormat::Ndjson,
+            output_path: Some(out.path().to_path_buf()),
+            print_summary: false,
+            quiet: true,
+            stream: true,
+        })
+        .unwrap(),
+    );
+
+    let _ = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        Arc::clone(&reporter),
+        false,
+    )
+    .await;
+    reporter.finalize();
+
+    let content = std::fs::read_to_string(out.path()).unwrap();
+    let reflected_count = content
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|v| v["check"] == "cors/reflected-origin")
+        .count();
+
+    assert!(
+        reflected_count >= 1,
+        "expected reflected-origin finding in stream output, got:\n{content}"
+    );
+    assert_eq!(
+        reflected_count, 1,
+        "stream mode should emit each finding key once, got:\n{content}"
+    );
 }
 
 // ─── Reporter unit-level tests ────────────────────────────────────────────────

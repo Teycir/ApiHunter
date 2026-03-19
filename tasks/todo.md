@@ -1593,3 +1593,44 @@
   - `auth_flow_path_is_validated_before_runtime`: proves missing `--auth-flow` path fails fast with `file not found`.
 - Validation:
   - `cargo test --test startup_inputs` (outside sandbox): `2 passed; 0 failed`.
+
+---
+
+# Task: Pre-Filter/Retry/Stream Dedup Correctness Sweep (Phase 41)
+
+## Plan
+- [x] Reproduce and patch URL pre-filter transport mismatch so accessibility checks honor config transport settings (proxy, TLS override, default headers, cookies).
+- [x] Remove dead elapsed assignment in `main.rs` and surface elapsed runtime via structured logging.
+- [x] Restrict HTTP retry-status policy to transient-safe codes (`429`, `500`, `502`, `503`, `504`).
+- [x] Prevent duplicate NDJSON stream lines by deduplicating findings before `flush_finding` during streaming.
+- [x] Add regression tests in `tests/` for proxy-aware pre-filter path, retry-status policy, and stream dedup behavior.
+- [x] Run targeted tests outside sandbox and document results.
+
+## Review
+- `main.rs` pre-filter transport parity:
+  - Built scan `Config` before pre-filtering and passed config into `filter_accessible_urls(...)`.
+  - Added `build_filter_client(...)` to apply config transport settings to pre-filter requests:
+    - proxy (`--proxy`),
+    - TLS override (`--danger-accept-invalid-certs`),
+    - default headers,
+    - cookie header merge from configured cookies.
+- `main.rs` elapsed cleanup:
+  - Replaced dead `_elapsed` assignment with structured completion log:
+    - `info!(elapsed_ms = ..., "Run lifecycle: completed")`.
+- Retry policy tightening (`src/http_client.rs`):
+  - `should_retry_status(...)` now retries only `429`, `500`, `502`, `503`, `504`.
+- Streaming dedup fix (`src/runner.rs`):
+  - Added run-wide stream dedup guard keyed by `(url, check)` behind `Arc<Mutex<HashSet<...>>>`.
+  - `flush_finding` now emits only first-seen keys during stream mode, preventing duplicate NDJSON lines before end-of-run dedup.
+- Added regression coverage in `tests/`:
+  - `tests/startup_inputs.rs`:
+    - `accessibility_filter_uses_configured_proxy` validates pre-filter uses configured proxy path.
+  - `tests/http_client_retry_policy.rs`:
+    - `retries_503_responses`,
+    - `does_not_retry_501_responses`.
+  - `tests/integration_runner.rs`:
+    - `stream_mode_flushes_unique_findings_only` ensures stream output does not emit duplicate `check` entries for same URL.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test startup_inputs --test http_client_retry_policy --test integration_runner` (outside sandbox): all passed (`26 passed; 0 failed`).
+  - `cargo test` (outside sandbox, full suite): all passed.

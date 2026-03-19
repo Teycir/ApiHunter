@@ -17,7 +17,7 @@ use std::{
 
 use rand::seq::SliceRandom;
 use tokio::{
-    sync::{mpsc, Semaphore},
+    sync::{mpsc, Mutex, Semaphore},
     task::JoinSet,
 };
 use tracing::{debug, error, info, warn};
@@ -177,6 +177,7 @@ pub async fn run(
     let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
     let (error_tx, mut error_rx) = mpsc::unbounded_channel::<Vec<CapturedError>>();
     let (scanner_stats_tx, mut scanner_stats_rx) = mpsc::unbounded_channel::<ScannerStatsMap>();
+    let stream_seen: Arc<Mutex<HashSet<(String, String)>>> = Arc::new(Mutex::new(HashSet::new()));
 
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
@@ -196,6 +197,7 @@ pub async fn run(
         let stx = scanner_stats_tx.clone();
         let cfg = Arc::clone(&config);
         let rpt = Arc::clone(&reporter);
+        let stream_seen = Arc::clone(&stream_seen);
         let progress_handle = tracker.handle();
 
         join_set.spawn(async move {
@@ -213,8 +215,8 @@ pub async fn run(
                 &scanners,
                 &cfg,
                 &rpt,
-                ftx.clone(),
-                etx.clone(),
+                (ftx.clone(), etx.clone()),
+                stream_seen,
             )
             .await;
 
@@ -342,8 +344,11 @@ async fn scan_url_with_results(
     scanners: &[RegisteredScanner],
     config: &Config,
     reporter: &Reporter,
-    ftx: mpsc::UnboundedSender<Vec<Finding>>,
-    etx: mpsc::UnboundedSender<Vec<CapturedError>>,
+    channels: (
+        mpsc::UnboundedSender<Vec<Finding>>,
+        mpsc::UnboundedSender<Vec<CapturedError>>,
+    ),
+    stream_seen: Arc<Mutex<HashSet<(String, String)>>>,
 ) -> (UrlScanSummary, ScannerStatsMap) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 
@@ -391,19 +396,25 @@ async fn scan_url_with_results(
                     }
                 }
                 if reporter.stream_enabled() {
+                    let mut seen = stream_seen.lock().await;
                     for finding in &f {
-                        reporter.flush_finding(finding);
+                        if seen.insert((finding.url.clone(), finding.check.clone())) {
+                            reporter.flush_finding(finding);
+                        }
                     }
                 }
                 if !f.is_empty() {
+                    let (ftx, _) = &channels;
                     let _ = ftx.send(f);
                 }
                 if !e.is_empty() {
+                    let (_, etx) = &channels;
                     let _ = etx.send(e);
                 }
             }
             Err(join_err) => {
                 let ce = CapturedError::internal(format!("Scanner panic on {url}: {join_err}"));
+                let (_, etx) = &channels;
                 let _ = etx.send(vec![ce]);
             }
         }

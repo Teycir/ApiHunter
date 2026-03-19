@@ -816,7 +816,7 @@ fn build_unauth_strip_headers(raws: &[String]) -> ScannerResult<Vec<HeaderName>>
 }
 
 fn should_retry_status(status: u16) -> bool {
-    status == 429 || (500..600).contains(&status)
+    matches!(status, 429 | 500 | 502 | 503 | 504)
 }
 
 fn retry_backoff(attempt: u32) -> Duration {

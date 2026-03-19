@@ -71,3 +71,7 @@
 - Rule: when asked to standardize command naming, remove legacy binary aliases from Cargo/release workflows and update docs/examples in the same change.
 - User correction pattern: repeated review passes can keep reporting issues that are already fixed in `main.rs` startup paths.
 - Rule: when a reported startup bug is already fixed, add/refresh focused CLI regression tests in `tests/` so future review passes have executable proof, not only code inspection.
+- User correction pattern: pre-scan connectivity filters can drift from runtime transport behavior and cause false seed drops.
+- Rule: keep pre-filter HTTP client settings transport-parity with runtime config (proxy, TLS override, default headers, cookies) and add CLI-level regression coverage for proxy paths.
+- User correction pattern: stream-time reporting can violate end-of-run dedup guarantees in concurrent pipelines.
+- Rule: when streaming findings, enforce a run-wide uniqueness guard on the same dedup key used for final reporting to prevent duplicate NDJSON lines.
