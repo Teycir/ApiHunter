@@ -52,7 +52,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 | **JWT Analysis** | ✅ alg=none, weak secrets, expiry | ⚠️ Via templates | ⚠️ Limited | ✅ Via extensions | ❌ |
 | **IDOR/BOLA Detection** | ✅ 3-tier (unauth/range/cross-user) | ⚠️ Manual templates | ⚠️ Limited | ✅ Manual testing | ❌ |
 | **Secret Detection** | ✅ Context-aware (frontend vs backend) | ⚠️ Regex-based | ⚠️ Basic | ⚠️ Basic | ❌ |
-| **Active Checks** | ✅ Opt-in (IDOR, mass-assignment, rate-limit) | ✅ Template-based | ✅ Active scan | ✅ Active scan | ✅ Fuzzing |
+| **Active Checks** | ✅ Opt-in (IDOR, mass-assignment, OAuth/OIDC, websocket, rate-limit, CVE templates) | ✅ Template-based | ✅ Active scan | ✅ Active scan | ✅ Fuzzing |
 | **WAF Evasion** | ✅ UA rotation, delays, retries, adaptive timing | ⚠️ Basic | ⚠️ Limited | ✅ Good | ⚠️ Basic |
 | **CI/CD Integration** | ✅ NDJSON, SARIF, exit codes | ✅ JSON, SARIF | ⚠️ XML reports | ⚠️ XML/JSON | ✅ JSON |
 | **Baseline Diffing** | ✅ Built-in | ❌ External tools | ❌ | ❌ | ❌ |
@@ -75,7 +75,7 @@ Benefit: faster feedback loops, fewer false positives, and security findings you
 - **IDOR/BOLA detection**: 3-tier approach (unauthenticated/ID enumeration/cross-user) with dual-identity support
 
 **When to use Nuclei instead:**
-- You need community-maintained CVE templates
+- You need broader community-maintained CVE template coverage than the current ApiHunter catalog
 - You prefer YAML-based extensibility over code
 - You're scanning for known vulnerabilities rather than API misconfigurations
 
@@ -102,6 +102,27 @@ cat ./targets/targets.txt | ./target/release/api-scanner --stdin --min-severity 
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
 
+## Template Tooling (Nuclei -> ApiHunter TOML)
+
+ApiHunter ships a companion binary, `template-tool`, for importing compatible Nuclei API CVE templates:
+
+```bash
+cargo run --bin template-tool -- import-nuclei \
+  --input tests/fixtures/upstream_nuclei/CVE-2022-24288.yaml \
+  --output assets/cve_templates/cve-2022-24288.toml \
+  --check-suffix airflow-example-dag-params-rce-signal \
+  --context-hints /airflow,/admin,/dags,/code
+```
+
+Current importer scope:
+- GET-only request templates
+- first request path extraction (`path` or first `raw` request line)
+- request headers
+- status matchers
+- body word matchers
+
+See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) for additional examples.
+
 ## Scan Scripts
 
 Helper scripts live in `ScanScripts/`:
@@ -124,6 +145,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Documentation Index](docs/INDEX.md)
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
+- [Auth Flow](docs/auth-flow.md)
 - [Scanners](docs/scanners.md)
 - [Findings & Remediation](docs/findings.md)
 - [HOWTO](HOWTO.md)
@@ -138,13 +160,25 @@ Complete documentation is available in `docs/`. Start with:
 - ✅ **Mass Assignment scanner:** dedicated active-checks module for reflected sensitive field injection.
 - ✅ **OAuth2/OIDC scanner:** active-checks module for redirect URI, PKCE metadata, and legacy flow hardening checks.
 - ✅ **Rate Limit scanner:** active-checks module for burst-throttling and IP-header bypass checks.
-- ✅ **CVE template module:** translated Nuclei-style API CVE templates executed through a TOML-compatible catalog.
+- ✅ **CVE template module:** translated Nuclei-style API CVE templates executed through a TOML-compatible catalog (including CVE-2022-22947, CVE-2022-24288, CVE-2020-3452, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232).
 - ✅ **Initial template tooling:** `template-tool import-nuclei` converts compatible Nuclei YAML checks into ApiHunter TOML format.
 
 ### Next Priorities
 
 - 🔜 **Template expansion:** grow `assets/cve_templates/*.toml` coverage with additional vetted API CVE probes.
 - 🔜 **Template tooling expansion:** add broader translator coverage (multi-request/raw/header matchers) beyond current GET-focused import helper.
+- 🔜 **Real-data hardening:** keep expanding deterministic fixture coverage in `tests/fixtures/real_cve_payloads/` and parity checks against `tests/fixtures/upstream_nuclei/`.
+- 🔜 **Stealth hardening (no depth/speed regressions):**
+  - remove explicit scanner markers from active payloads/headers (for example `__ah_probe`, `X-AH-*`) while preserving detection semantics
+  - replace obvious CORS probe literals with realistic cross-origin values that keep the same bypass coverage
+  - randomize scanner and probe path ordering to reduce deterministic request fingerprints
+  - make WAF-evasion headers more context-aware/randomized (for example `sec-fetch-*`, `Accept-Language`, `DNT`) without reducing checks
+
+### CVE Hardening Test Strategy
+
+- `tests/cve_templates_real_data.rs` replays captured real-world payload snapshots from `tests/fixtures/real_cve_payloads/` to reduce false positives.
+- `tests/cve_templates_upstream_parity.rs` validates template/source linkage against pinned upstream Nuclei fixtures in `tests/fixtures/upstream_nuclei/`.
+- `tests/template_tooling.rs` verifies importer output shape and matcher translation behavior.
 
 ### What To Do Next After Quick Start
 
@@ -249,7 +283,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 A: Most scanners are either general-purpose (Nuclei, ZAP) or focus on manual testing (Burp). ApiHunter is purpose-built for **API security in CI/CD pipelines** with deep analysis of modern API patterns (GraphQL, OpenAPI, JWT) and minimal false positives through context-aware validation.
 
 **Q: Is ApiHunter a replacement for Nuclei/ZAP/Burp?**  
-A: No, it's complementary. Use ApiHunter for **automated API baseline scans** in CI/CD, Nuclei for CVE detection, and ZAP/Burp for manual pentesting. See the [comparison table](#comparison-with-other-tools) for details.
+A: No, it's complementary. Use ApiHunter for **automated API baseline scans** and API-focused active checks in CI/CD, Nuclei for broad community CVE coverage, and ZAP/Burp for manual pentesting. See the [comparison table](#comparison-with-other-tools) for details.
 
 **Q: Can I use this in production?**  
 A: Yes, but use `--delay-ms` and lower `--concurrency` to avoid overwhelming production systems. The `quickscan.sh` profile is designed for production-safe scanning.
@@ -326,7 +360,7 @@ A: Yes, use `--stream` with `--format ndjson`:
 **Q: What's the difference between passive and active checks?**  
 A: 
 - **Passive** (default): Analyze responses without modifying requests (CORS, CSP, secrets, headers)
-- **Active** (`--active-checks`): Send crafted requests to test behavior (IDOR, mass-assignment, rate-limiting)
+- **Active** (`--active-checks`): Send crafted requests to test behavior (IDOR/BOLA, mass-assignment, OAuth/OIDC redirects, websocket origin handling, rate-limiting, CVE template probes)
 
 **Q: How should I interpret `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`?**  
 A: Browsers block credentialed requests in this configuration, so it is not exploitable with credentials. ApiHunter automatically skips this check and only flags `Access-Control-Allow-Origin: *` without credentials as Low severity. Prioritize origin reflection or regex weaknesses because those can enable credentialed CORS exploitation.

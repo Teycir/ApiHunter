@@ -730,3 +730,57 @@
   - `cargo fmt`
   - `cargo test --test template_tooling --test cve_templates_scanner --test cve_templates_upstream_parity --test cve_templates_real_data`
   - `cargo test`
+
+---
+
+# Task: README Missing Items Patch (Phase 16)
+
+## Plan
+- [x] Patch stale Nuclei positioning language to reflect ApiHunter CVE template support.
+- [x] Add explicit `template-tool` usage section with importer scope.
+- [x] Add CVE hardening test strategy notes (`real_data`, `upstream_parity`, tooling tests).
+- [x] Add missing docs link to `docs/auth-flow.md`.
+- [x] Update active-check and CVE coverage wording for consistency with current scanners.
+
+## Review
+- Updated `Readme.md` comparison and FAQ text to clarify tool complementarity and current CVE coverage posture.
+- Added a dedicated `Template Tooling (Nuclei -> ApiHunter TOML)` section with runnable command and importer scope.
+- Added a `CVE Hardening Test Strategy` section documenting real payload replay tests and upstream parity checks.
+- Added `Auth Flow` to the documentation index list in README.
+- Updated CVE template module bullet to include current translated checks (including CVE-2020-3452).
+- Verification commands:
+  - `rg -n "Template Tooling|CVE Hardening Test Strategy|Auth Flow|community-maintained CVE templates|active checks" Readme.md`
+
+---
+
+# Task: Roadmap Extraction from STEALTH_IMPROVEMENTS (Phase 17)
+
+## Plan
+- [x] Read `STEALTH_IMPROVEMENTS.md` and extract only items with no depth/speed quality regressions.
+- [x] Exclude proposals that explicitly trade off coverage or performance (sampling, decoy traffic, traffic shaping, heavy delays).
+- [x] Add accepted items to `Readme.md` roadmap as a dedicated stealth-hardening lane.
+
+## Review
+- Added a new roadmap bullet in `Readme.md` under `Next Priorities`:
+  - `Stealth hardening (no depth/speed regressions)`
+- Included only low-risk, no-regression items from `STEALTH_IMPROVEMENTS.md`:
+  - remove explicit scanner markers (`__ah_probe`, `X-AH-*`) while preserving semantics
+  - replace obvious CORS probe literals with realistic values while keeping bypass coverage
+  - randomize scanner and probe-path ordering
+  - make WAF-evasion headers context-aware/randomized without reducing checks
+- Explicitly excluded trade-off ideas from this extraction:
+  - probe sampling / max-probes-per-check
+  - decoy traffic injection
+  - traffic shaping modes that slow scans
+  - heavy inter-probe delays that reduce throughput
+
+---
+
+# Task: No-Brainer Stealth Improvements (Phase 18)
+
+## Plan
+- [ ] Remove obvious mass-assignment scanner fingerprints (`__ah_probe`, `X-AH-*`).
+- [ ] Randomize deterministic scanner/probe ordering without reducing probe count.
+- [ ] Improve WAF evasion header realism with lightweight randomization.
+- [ ] Update tests for stealth behavior changes.
+- [ ] Run targeted and full tests outside sandbox.
