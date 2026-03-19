@@ -16,7 +16,7 @@
 ---
 
 Async, modular API security scanner for API baseline testing and regression detection.  
-Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
+Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Security) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
 ## Naming
 
@@ -36,7 +36,7 @@ flowchart LR
     C --> F
 
     F --> G1[Passive scanners<br/>CORS/CSP/GraphQL/JWT/OpenAPI/API Security]
-    F --> G2[Active scanners<br/>IDOR/Mass Assignment/OAuth/OIDC<br/>Rate Limit/WebSocket/CVE Templates]
+    F --> G2[Active scanners<br/>API Security (IDOR/BOLA), Mass Assignment<br/>OAuth/OIDC, Rate Limit, WebSocket, CVE Templates]
 
     I[template-tool<br/>Nuclei YAML -> TOML] --> H[assets/cve_templates/*.toml]
     H --> G2
@@ -91,7 +91,7 @@ flowchart LR
 
 ## Scanner Modules
 
-ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
+ApiHunter includes 11 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
 
 | Scanner | Type | What It Detects |
 |---------|------|----------------|
@@ -100,16 +100,16 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
 | **GraphQL** | Passive | Introspection enabled, sensitive schema fields (user/password/token types), field suggestions (schema leakage), query batching, alias amplification (DoS), GraphiQL/Playground exposure |
 | **JWT** | Passive | alg=none tokens, weak HS256 secrets (wordlist-based), missing/excessive expiry, sensitive claims in payload, algorithm confusion vulnerabilities |
 | **OpenAPI** | Passive | Missing security schemes, operations without auth requirements, file upload endpoints, deprecated operations still present, unsecured sensitive endpoints |
-| **API Security** | Passive | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints |
+| **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, and active IDOR/BOLA checks |
 | **Mass Assignment** | Active | Reflected sensitive fields (is_admin, role, permissions), persisted state changes, privilege escalation via field injection |
 | **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
 | **Rate Limit** | Active | Missing rate limiting (burst probes), missing Retry-After headers, IP header spoofing bypass (X-Forwarded-For) |
 | **WebSocket** | Active | WebSocket upgrade acceptance on common paths, missing origin validation, unauthenticated WebSocket connections |
 | **CVE Templates** | Active | Template-driven CVE detection (CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288), baseline vs bypass differential matching |
-| **Secret Detection** | Passive | AWS keys (AKIA*), Google API keys (AIza*), GitHub tokens (ghp_*), Slack tokens (xox*), Stripe keys (sk_live_*), database URLs, private keys, bearer tokens (context-aware validation) |
 
 **Passive scanners** run by default and analyze responses without sending crafted requests.  
-**Active scanners** require `--active-checks` flag and send potentially invasive probes (IDOR, mutation, bypass tests).
+**Active scanners/checks** require `--active-checks` and send potentially invasive probes (IDOR/BOLA, mutation, bypass tests).  
+IDOR/BOLA lives under the `API Security` scanner (there is no dedicated `--no-idor` flag; use `--no-api-security` to disable it).
 
 ## Features
 
@@ -159,7 +159,7 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
   - Error message disclosure
 
 ### Active Security Testing (--active-checks)
-- **IDOR/BOLA Detection** (3-tier approach):
+- **API Security IDOR/BOLA Checks** (3-tier approach):
   - Unauthenticated access testing
   - ID enumeration (±2 range walk)
   - Cross-user authorization bypass (dual-identity)
@@ -295,10 +295,13 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
 - **Scan Profiles**:
   - quickscan.sh (fast, low-impact)
   - deepscan.sh (comprehensive, active checks)
+  - inaccessiblescan.sh (re-check previously inaccessible targets with slower settings)
   - baselinescan.sh (generate baseline)
   - diffscan.sh (compare against baseline)
   - authscan.sh (authenticated scanning)
   - sarifscan.sh (CI/CD integration)
+  - scan-and-report.sh (run scan + print latest report path)
+  - split-by-host.sh (split targets by host and optionally fan out scans)
 
 ## Comparison with Other Tools
 
@@ -339,10 +342,10 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
 cargo build --release
 
 # Scan URLs from a file (newline-delimited)
-./target/release/apihunter --urls ./targets/targets.txt --format ndjson --output ./results.ndjson
+./target/release/apihunter --urls ./targets/cve-regression-real-public.txt --format ndjson --output ./results.ndjson
 
 # Or scan URLs from stdin
-cat ./targets/targets.txt | ./target/release/apihunter --stdin --min-severity medium
+cat ./targets/cve-regression-real-public.txt | ./target/release/apihunter --stdin --min-severity medium
 ```
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
@@ -433,6 +436,7 @@ See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) and [d
 - **diffscan.sh** - Compare against baseline and report only new findings
 - **authscan.sh** - Authenticated scan with auth flows (requires `--auth-flow`, enables active checks, WAF evasion, retries: 2, timeout: 15s, delay: 150ms)
 - **sarifscan.sh** - Output SARIF format for CI/CD integration
+- **inaccessiblescan.sh** - Re-scan previously inaccessible URLs with conservative retry/timeouts
 - **scan-and-report.sh** - Run scan and print latest auto-saved report location
 - **split-by-host.sh** - Split URL list into per-host files and optionally scan them in parallel
 
@@ -440,28 +444,28 @@ See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) and [d
 
 ```bash
 # Quick scan from file
-./ScanScripts/quickscan.sh targets/targets.txt
+./ScanScripts/quickscan.sh targets/cve-regression-real-public.txt
 
 # Deep scan from stdin
-cat targets.txt | ./ScanScripts/deepscan.sh --stdin
+cat targets/cve-regression-real-public.txt | ./ScanScripts/deepscan.sh --stdin
 
 # Generate baseline
-./ScanScripts/baselinescan.sh targets.txt
+./ScanScripts/baselinescan.sh targets/cve-regression-real-public.txt
 
 # Compare against baseline
-./ScanScripts/diffscan.sh targets.txt baseline.ndjson
+./ScanScripts/diffscan.sh targets/cve-regression-real-public.txt baseline.ndjson
 
 # Authenticated scan
-./ScanScripts/authscan.sh targets.txt --auth-flow auth.json
+./ScanScripts/authscan.sh targets/cve-regression-real-public.txt --auth-flow auth.json
 
 # SARIF output for GitHub Code Scanning
-./ScanScripts/sarifscan.sh targets.txt
+./ScanScripts/sarifscan.sh targets/cve-regression-real-public.txt
 
 # Split by host and scan in parallel
-./ScanScripts/split-by-host.sh targets.txt --scan-cmd ./ScanScripts/quickscan.sh --jobs 4
+./ScanScripts/split-by-host.sh targets/cve-regression-real-public.txt --scan-cmd ./ScanScripts/quickscan.sh --jobs 4
 ```
 
-All scripts support `--stdin` for piped input and accept additional CLI flags as trailing arguments.
+All wrapper scripts except `split-by-host.sh` support `--stdin` and trailing ApiHunter flags.
 
 ## Documentation
 
@@ -501,7 +505,7 @@ Run a scan from files in your current directory:
 
 ```bash
 docker run --rm -v "$PWD:/work" apihunter:local \
-  --urls /work/targets/targets.txt \
+  --urls /work/targets/cve-regression-real-public.txt \
   --format ndjson \
   --output /work/results.ndjson
 ```
@@ -538,7 +542,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--auth-basic` | none | Add HTTP Basic auth (`user:pass`) |
 | `--auth-flow` | none | JSON auth flow file (pre-scan login) |
 | `--auth-flow-b` | none | Second auth flow for cross-user IDOR checks |
-| `--unauth-strip-headers` | default list | Extra header names to strip for unauth probes |
+| `--unauth-strip-headers` | none | Extra header names to strip for unauth probes |
 | `--session-file` | none | Load/save cookies from Excalibur session JSON (`{"hosts": {...}}`) |
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
@@ -564,8 +568,8 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 
 | Code | Meaning |
 |---|---|
-| `0` | Clean — no findings, no errors |
-| `1` | One or more findings produced |
+| `0` | No findings at/above `--fail-on` threshold and no errors |
+| `1` | One or more findings at/above `--fail-on` threshold |
 | `2` | One or more scanners captured errors |
 | `3` | Both findings and errors |
 
@@ -596,7 +600,7 @@ A: Yes. Use `--delay-ms` and lower `--concurrency`. Try `quickscan.sh`.
 A: `--auth-bearer`, `--auth-basic`, or `--auth-flow`. For IDOR: `--auth-flow-b`.
 
 **Q: Speed comparison (1000 endpoints)?**  
-ApiHunter: 3-5min | Nuclei: 5-8min | ZAP: 15-25min
+Depends on endpoint latency, retries, target behavior, and enabled checks. Use `--concurrency`, `--delay-ms`, and `--active-checks` to tune throughput vs impact.
 
 **Q: Slow scan?**  
 Increase `--concurrency` (default: 20), reduce `--delay-ms` (default: 150ms), enable `--adaptive-concurrency`.
@@ -606,13 +610,13 @@ Increase `--concurrency` (default: 20), reduce `--delay-ms` (default: 150ms), en
 
 **Q: CI/CD integration?**  
 ```bash
-./apihunter --urls targets.txt --fail-on medium --format sarif --output results.sarif
+./target/release/apihunter --urls targets/cve-regression-real-public.txt --fail-on medium --format sarif --output results.sarif
 ```
 
 **Q: Baseline diffing?**  
 ```bash
-./apihunter --urls targets.txt --format ndjson --output baseline.ndjson
-./apihunter --urls targets.txt --baseline baseline.ndjson --format ndjson
+./target/release/apihunter --urls targets/cve-regression-real-public.txt --format ndjson --output baseline.ndjson
+./target/release/apihunter --urls targets/cve-regression-real-public.txt --baseline baseline.ndjson --format ndjson
 ```
 
 **Q: Passive vs active checks?**  
@@ -634,7 +638,7 @@ AWS/Google/GitHub/Slack/Stripe keys, bearer tokens, DB URLs, private keys. Conte
 `--proxy http://proxy.corp.com:8080`
 
 **Q: Debug logging?**  
-`RUST_LOG=debug ./apihunter --urls targets.txt`
+`RUST_LOG=debug ./target/release/apihunter --urls targets/cve-regression-real-public.txt`
 
 **Q: Adaptive concurrency?**  
 AIMD: increases by 1 every 5s, halves on errors (429/503/timeouts). Enable with `--adaptive-concurrency`.

@@ -1862,3 +1862,28 @@
   - `cargo fmt`
   - `cargo test --test api_security_scanner --test auth_flow` (outside sandbox): passed.
   - `cargo test --test cve_templates_scanner` (outside sandbox): passed.
+
+---
+
+# Task: README Accuracy and Completeness Pass (2026-03-19)
+
+## Plan
+- [x] Verify README claims against current CLI surface (`cargo run -- --help`) and scanner registry.
+- [x] Fix scanner taxonomy/count mismatches and clarify IDOR/BOLA ownership.
+- [x] Correct CLI/exit-code documentation drift and stale command paths.
+- [x] Align script coverage notes with current `ScanScripts/` contents.
+- [x] Re-validate referenced local command paths and summarize outcomes.
+
+## Review
+- Updated `Readme.md` to reflect the current implementation:
+  - Scanner modules corrected to `11` and scanner table clarified (`API Security` now explicitly covers secret exposure + active IDOR/BOLA checks).
+  - Added explicit note that there is no standalone `--no-idor` flag (`--no-api-security` disables those checks).
+  - Added missing `inaccessiblescan.sh` profile and corrected script behavior note (`split-by-host.sh` is the exception for `--stdin`).
+  - Corrected CLI reference drift (`--unauth-strip-headers` default is `none`).
+  - Corrected exit-code semantics (`1` means findings at/above `--fail-on`, not any finding).
+  - Replaced stale/non-existent example target paths with existing repo targets.
+  - Updated FAQ command examples to use the actual built binary path.
+- Verification commands:
+  - `cargo run --quiet -- --help`
+  - `cargo run --quiet --bin template-tool -- --help`
+  - `test -f targets/cve-regression-real-public.txt && ls ScanScripts | rg "inaccessiblescan.sh|split-by-host.sh|quickscan.sh"`
