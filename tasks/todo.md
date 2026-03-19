@@ -1,3 +1,28 @@
+# Task: CI Audit Integration Permission Fix (Phase 21)
+
+## Plan
+- [x] Confirm failing CI stage and root cause from workflow/action logs.
+- [x] Update CI workflow audit step to avoid "Resource not accessible by integration" failures.
+- [x] Verify workflow file validity and document expected behavior for push vs PR events.
+
+## Review
+- Root cause confirmed in `.github/workflows/ci.yml`:
+  - `rustsec/audit-check@v1` runs with default token permissions.
+  - action attempts integration writes (checks/issues metadata) and can fail with:
+    - `Error: Resource not accessible by integration`
+  - this blocks CI despite `cargo-audit` reporting no vulnerabilities.
+- Workflow patch in `.github/workflows/ci.yml`:
+  - added explicit job token permissions (`contents: read`, `checks: write`, `issues: write`) for audit integration.
+  - upgraded RustSec action from `rustsec/audit-check@v1` to `rustsec/audit-check@v2.0.0`.
+  - split audit execution by trust boundary:
+    - trusted events (push / same-repo PR): run `audit-check` with `GITHUB_TOKEN`.
+    - fork PRs: run direct `cargo audit` fallback (no integration writes).
+- Verification:
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml parse ok"'` ✅
+  - workflow now prevents integration write failures from blocking fork PR audits.
+
+---
+
 # Task: CI/CD MSRV Clippy Fix (Phase 20)
 
 ## Plan

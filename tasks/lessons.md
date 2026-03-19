@@ -129,3 +129,5 @@
 - Rule: treat root-path CVE probes as host-scoped checks and ignore context-path hints for those templates.
 - User correction pattern: contributors can be unsure what `tests/` actually validates when strategy is only implied by file names.
 - Rule: maintain a dedicated testing strategy doc (`docs/testing.md`) with an explicit test matrix (unit/scanner, integration, fixture, mock-server, live-target manual scope), and keep README + docs index linked to it.
+- User correction pattern: CI dependency-audit steps can fail from integration permission limits even when vulnerabilities are absent.
+- Rule: for GitHub RustSec audit workflows, declare explicit token permissions and provide a fork-safe `cargo audit` fallback to avoid `Resource not accessible by integration` blockers.
