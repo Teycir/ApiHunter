@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use api_scanner::auth::{spawn_refresh_task, AuthFlow, InjectAs, LiveCredential};
-use tokio::sync::RwLock;
+use arc_swap::ArcSwap;
 
 #[tokio::test]
 async fn refresh_task_can_be_cancelled_immediately() {
@@ -10,7 +10,7 @@ async fn refresh_task_can_be_cancelled_immediately() {
         refresh_interval_secs: 3600,
     };
     let cred = Arc::new(LiveCredential {
-        value: Arc::new(RwLock::new("token".to_string())),
+        value: Arc::new(ArcSwap::from_pointee("token".to_string())),
         refresh_value: None,
         inject_as: InjectAs::Bearer,
         refresh_lead_secs: 3600,

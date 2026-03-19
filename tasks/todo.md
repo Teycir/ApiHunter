@@ -1380,3 +1380,56 @@
   - `cargo fmt`
   - `cargo test --test auth_refresh --test scanner_names --test integration_runner --test jwt_scanner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Naming + Auth Credential Storage Continuation (Phase 34)
+
+## Plan
+- [x] Complete the `LiveCredential` storage migration to lock-free reads using `ArcSwap<String>`.
+- [x] Remove obsolete async awaits from credential read/apply paths after the storage migration.
+- [x] Update affected tests to the new credential storage type.
+- [x] Finalize package naming surface (`apihunter`) while preserving `api-scanner` CLI compatibility.
+- [x] Sync README/changelog notes with the above behavior.
+- [x] Run formatting and targeted/full tests outside sandbox.
+
+## Review
+- Completed auth credential storage refactor in `src/auth.rs`:
+  - `LiveCredential.value` now uses `Arc<ArcSwap<String>>`.
+  - `LiveCredential::current()` and `LiveCredential::apply_to()` are now synchronous.
+  - Refresh task now stores new token values with `cred.value.store(...)` and no lock acquisition on request path.
+- Updated `src/http_client.rs` to use synchronous credential application (`cred.apply_to(...)`).
+- Updated `tests/auth_refresh.rs` to construct `LiveCredential` with `ArcSwap::from_pointee(...)`.
+- Finalized naming surface:
+  - `Cargo.toml` package name is `apihunter`.
+  - Added `default-run = "api-scanner"` to preserve existing `cargo run` behavior.
+  - Kept both CLI binaries (`api-scanner` and `apihunter`) mapped to `src/main.rs` for compatibility.
+- Documentation/changelog sync:
+  - `Readme.md` naming section now reflects `apihunter` package and dual binary names.
+  - `Changelog.md` includes package rename and lock-free auth credential storage notes.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test auth_refresh --test cli --test integration_runner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Zero-Warning Binary Target Cleanup (Phase 35)
+
+## Plan
+- [x] Remove Cargo duplicate-target warnings by ensuring `apihunter` and `api-scanner` binaries do not share the same target path.
+- [x] Preserve CLI compatibility for both binary names (`apihunter` and `api-scanner`) and keep default run behavior unchanged.
+- [x] Run formatter and full test suite outside sandbox and verify warning removal.
+
+## Review
+- Updated binary target layout in `Cargo.toml`:
+  - kept `apihunter` binary on `src/main.rs`,
+  - moved `api-scanner` binary target to `src/bin/api-scanner.rs`.
+- Added compatibility wrapper `src/bin/api-scanner.rs` that reuses the main entrypoint via `include!("../main.rs");`.
+- Behavior verification:
+  - `cargo run -- --help` runs `api-scanner` (default-run) with no duplicate-target warning.
+  - `cargo run --bin apihunter -- --help` works.
+  - `cargo run --bin api-scanner -- --help` works.
+- Validation:
+  - `cargo fmt`
+  - `cargo test` (outside sandbox, full suite)

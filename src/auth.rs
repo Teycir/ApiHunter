@@ -6,6 +6,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use anyhow::{bail, Context, Result};
+use arc_swap::ArcSwap;
 use jsonpath_rust::JsonPathFinder;
 use reqwest::{
     cookie::Jar,
@@ -82,7 +83,7 @@ fn default_refresh_secs() -> u64 {
 #[derive(Debug, Clone)]
 pub struct LiveCredential {
     /// The primary credential value (token, cookie value…).
-    pub value: Arc<RwLock<String>>,
+    pub value: Arc<ArcSwap<String>>,
     /// Optional refresh token.
     pub refresh_value: Option<Arc<RwLock<String>>>,
     /// How to apply it.
@@ -108,13 +109,13 @@ impl RefreshTaskHandle {
 
 impl LiveCredential {
     /// Read the current token value.
-    pub async fn current(&self) -> String {
-        self.value.read().await.clone()
+    pub fn current(&self) -> String {
+        self.value.load().as_ref().clone()
     }
 
     /// Apply this credential to a HeaderMap (called per-request in HttpClient).
-    pub async fn apply_to(&self, map: &mut HeaderMap) {
-        let val = self.current().await;
+    pub fn apply_to(&self, map: &mut HeaderMap) {
+        let val = self.current();
         match &self.inject_as {
             InjectAs::Bearer => {
                 if let Ok(v) = HeaderValue::from_str(&format!("Bearer {val}")) {
@@ -209,7 +210,7 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
         // Apply the previous step's credential to subsequent steps
         if let Some(ref cred) = last_credential {
             let mut map = HeaderMap::new();
-            cred.apply_to(&mut map).await;
+            cred.apply_to(&mut map);
             req = req.headers(map);
         }
 
@@ -260,7 +261,7 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
             info!("Auth flow: credential obtained (refresh in {refresh_interval}s)");
 
             last_credential = Some(LiveCredential {
-                value: Arc::new(RwLock::new(token)),
+                value: Arc::new(ArcSwap::from_pointee(token)),
                 refresh_value,
                 inject_as: inject_as.clone(),
                 refresh_lead_secs: refresh_interval,
@@ -294,8 +295,8 @@ pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) -> RefreshT
             info!("Auth flow: refreshing credential…");
             match execute_flow(&flow).await {
                 Ok(new_cred) => {
-                    let new_val = new_cred.current().await;
-                    *cred.value.write().await = new_val.clone();
+                    let new_val = new_cred.current();
+                    cred.value.store(Arc::new(new_val));
                     info!("Auth flow: credential refreshed successfully");
                 }
                 Err(e) => {

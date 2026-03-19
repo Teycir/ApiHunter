@@ -28,6 +28,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `--adaptive-concurrency` flag for AIMD-based concurrency adjustment
 - `--per-host-clients` flag for per-host HTTP client pools
 - `--unauth-strip-headers` for configuring headers to strip in unauth probes
+- `--no-auto-report` flag to disable automatic local report persistence to `~/Documents/ApiHunterReports/`
+- `apihunter` CLI binary alias (alongside `api-scanner`)
 - Automatic report saving to `~/Documents/ApiHunterReports/<timestamp>/`
   - `findings.json` with full structured findings
   - `summary.md` with markdown-formatted report
@@ -95,6 +97,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `tests/waf_user_agents.rs` for UA pool integrity
   - `tests/session_file_formats.rs` for Excalibur session format
   - `tests/http_client_unauth.rs` for unauthenticated client behavior
+  - `tests/auth_refresh.rs` for auth refresh lifecycle and graceful shutdown
+  - `tests/scanner_names.rs` for Scanner::name() trait method validation
+  - `tests/integration_runner.rs` for IDOR severity scaling with success breadth
 - `RunResult::dummy` test helper under `#[cfg(test)]`
 - Integration tests via `wiremock`: CORS, CSP, GraphQL, API-security, endpoint cap, deduplication, panicking-scanner recovery, aggregation
 - CLI integration tests: exit-code bitmask, `--quiet`, `--summary`, `--output-path` vs stdout, `--min-severity` filtering
@@ -139,6 +144,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Added deterministic scanner ordering in tests (prevents flaky test failures from random shuffle)
   - Added `Scanner::name()` trait method and refactored runner registry to consume trait-owned scanner identities
   - Added auth refresh lifecycle handles with cooperative cancellation (`CancellationToken`) and graceful shutdown at run end
+  - Fixed init_tracing to respect quiet mode (use error level when quiet)
+  - Improved URL accessibility filter: treat all non-5xx responses as reachable (not just 2xx/3xx)
+  - Add per-host delay enforcement during prefilter phase using existing --delay-ms
+  - Scale IDOR range-walk severity dynamically: 2 successes = Medium, 3 = High, 4+ = Critical
 - **JWT Scanner Enhancements**:
   - Improved RS256→HS256 algorithm confusion attack with proper RSA modulus extraction
   - Added `extract_rsa_modulus_from_jwk` to parse JWK `n` parameter (base64url-decoded RSA modulus)
@@ -147,6 +156,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Added error reporting when key material extraction fails
   - Fixed test to use `jwk` instead of invalid `x5c` stub
 - Unified default UA sourcing: `cli::default_user_agents()` now uses `WafEvasion::user_agent_pool()`
+- Cargo package renamed to `apihunter` while preserving `api-scanner` CLI compatibility
 - Removed inline mass-assignment probe from `api_security` scanner (now dedicated module)
 - Removed inline rate-limit probe from `api_security` scanner (now dedicated module)
 - CVE template scanner now loads only from `assets/cve_templates/*.toml` (removed fallback catalog)
@@ -163,6 +173,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Endpoint cap now applies per-site instead of globally
 - CSP missing header severity downgraded from Medium to Low
 - WAF evasion now enforces delay per-host instead of globally
+- Auth live credential storage switched to `ArcSwap<String>` (lock-free reads in request path)
+- Binary target paths split (`apihunter` vs `api-scanner`) to eliminate duplicate-target Cargo warnings
 - Improved code idioms and flexibility across multiple modules (clippy fixes)
 - Simplified session file format to only support Excalibur cookies JSON
 - HAR import now filters for likely API/business endpoints (excludes static/CDN)

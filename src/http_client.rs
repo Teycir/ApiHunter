@@ -450,7 +450,7 @@ impl HttpClient {
 
         // Apply live credential from auth flow
         if let Some(ref cred) = self.live_credential {
-            cred.apply_to(&mut combined_headers).await;
+            cred.apply_to(&mut combined_headers);
         }
 
         if !combined_headers.is_empty() {

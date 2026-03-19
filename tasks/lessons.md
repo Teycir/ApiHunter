@@ -57,3 +57,5 @@
 - Rule: keep scanner identity as trait-owned metadata (`Scanner::name`) and derive registry/logging labels from the trait, not duplicated registration strings.
 - User correction pattern: background refresh tasks need explicit lifecycle control to avoid silent leaks in library/CLI integrations.
 - Rule: every spawned long-lived background task should return a shutdown handle and support cooperative cancellation; call shutdown on normal program exit.
+- User correction pattern: build/release readiness requires zero Cargo warnings, not just passing tests.
+- Rule: when introducing aliases/renames for binaries, ensure each Cargo target has a unique source path so `cargo run`/`cargo test` stay warning-free.

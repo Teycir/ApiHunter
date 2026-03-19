@@ -21,9 +21,11 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) usin
 ## Naming
 
 - Project/repository: `ApiHunter`
-- Cargo package: `api-scanner`
+- Cargo package: `apihunter`
 - Library crate: `api_scanner`
-- CLI binary: `api-scanner`
+- CLI binaries:
+  - `api-scanner` (compatibility alias, default for `cargo run`)
+  - `apihunter`
 
 ## Repository Flow
 
