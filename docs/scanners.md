@@ -59,6 +59,72 @@ This keeps scanner output machine-consumable for NDJSON/SARIF pipelines while pr
 
 ---
 
+## False-Positive Expectation Model
+
+ApiHunter does not claim one universal FP percentage across all environments.
+Different target architectures, auth boundaries, and WAF behavior can change outcomes substantially.
+
+Use these tendency bands for planning:
+
+- **Low**: scanner includes multiple validation guards; findings are usually actionable with manual confirmation.
+- **Medium**: findings are often useful, but environment context regularly changes exploitability.
+- **High**: scanner is intentionally sensitive and can produce operational noise without environment scoping.
+
+The table below combines what each module checks, what finding IDs look like, and the expected FP tendency.
+
+---
+
+## Module Check Catalog
+
+| Module | What is checked | Finding IDs (examples/patterns) | FP tendency | Main FP drivers |
+|--------|------------------|----------------------------------|-------------|-----------------|
+| CORS | ACAO wildcard/reflection/null, regex bypass probes, preflight method exposure, missing `Vary: Origin` | `cors/wildcard-no-credentials`, `cors/reflected-origin`, `cors/null-origin`, `cors/regex-bypass-suffix`, `cors/regex-bypass-prefix`, `cors/preflight-unsafe-methods`, `cors/missing-vary-origin` | Medium | Reflection on non-sensitive/public endpoints; permissive CORS intended for public APIs |
+| CSP | Missing CSP, missing required directives, unsafe source directives, bypassable script CDNs, missing frame-ancestors | `csp/missing`, `csp/missing-directive/<directive>`, `csp/unsafe-source/<token>`, `csp/bypassable-cdn`, `csp/missing-frame-ancestors`, `csp/report-only` | Low-Medium | Transitional CSP rollout, report-only deployments, contexts that require script flexibility |
+| GraphQL | Introspection, sensitive schema names, field suggestions, batching support, alias amplification, IDE exposure | `graphql/introspection-enabled`, `graphql/sensitive-schema-fields`, `graphql/field-suggestions`, `graphql/batching-enabled`, `graphql/alias-amplification`, `graphql/playground-exposed`, `graphql/endpoint-detected` | Medium | Public/demo schemas, intentionally enabled playground in lower environments |
+| API Security | Secret patterns in body, stack/error disclosure, TRACE/write methods, debug/admin endpoint exposure, directory listing, missing `security.txt`, hardening header checks, active IDOR/BOLA | `api_security/secret-in-response/<slug>`, `api_security/error-disclosure/<slug>`, `api_security/http-method/trace-enabled`, `api_security/http-method/write-methods-enabled`, `api_security/debug-endpoint<path>`, `api_security/directory-listing<path>`, `api_security/security-txt/missing`, `api_security/headers/<slug>`, `api_security/headers/<slug>-weak`, `api_security/unauthenticated-access`, `api_security/partial-unauth-access`, `api_security/idor-id-enumerable`, `api_security/idor-cross-user` | Medium | Public status/debug routes in non-prod; frontend keys flagged as potential secrets; expected unauth behavior for public resources |
+| JWT | `alg=none`, suspicious `kid`, sensitive claims, missing/long expiry, weak HS256 secret checks, RS256/HS256 confusion probe (active) | `jwt/alg-none`, `jwt/suspicious-kid`, `jwt/sensitive-claims`, `jwt/no-exp`, `jwt/long-lived`, `jwt/weak-secret`, `jwt/alg-confusion` | Low-Medium | Test/demo tokens, intentionally long-lived service tokens, non-security JWT usage patterns |
+| OpenAPI | Missing security schemes, operations without security requirements, upload surfaces, deprecated operations | `openapi/no-security-schemes`, `openapi/unauthenticated-operations`, `openapi/file-upload`, `openapi/deprecated-operations` | Medium | Specs lagging behind backend auth enforcement; mixed public/private operations in shared specs |
+| Mass Assignment (active) | Sensitive field injection reflection and persistence confirmation, dry-run signal | `mass_assignment/reflected-fields`, `mass_assignment/persisted-state-change`, `mass_assignment/dry-run` | Low-Medium | Echoed request bodies mistaken for persistence if follow-up state context is weak |
+| OAuth/OIDC (active) | Redirect URI validation, `state` round-trip, PKCE metadata presence/strength, implicit and password grant exposure | `oauth/redirect-uri-not-validated`, `oauth/state-not-returned`, `oauth/pkce-metadata-missing`, `oauth/pkce-s256-not-supported`, `oauth/pkce-plain-supported`, `oauth/implicit-flow-enabled`, `oauth/ropc-grant-enabled` | Medium | Lab IdP configs intentionally permissive; metadata not matching runtime policy |
+| Rate Limit (active) | Burst throttling response, missing `Retry-After`, spoofed IP header bypass attempts | `rate_limit/not-detected`, `rate_limit/missing-retry-after`, `rate_limit/ip-header-bypass`, `rate_limit/check-failed` | Medium-High | Long-window throttles not triggered by short bursts; CDN/gateway shielding app-level controls |
+| CVE Templates (active) | Template-driven CVE probes with status/body/header matchers, optional preflight, optional baseline-vs-confirm differential | `cve/<cve-id>/<template-slug>` (from template catalog) | Medium | Generic fingerprint overlap, broad context hints, target path mismatch to actual vulnerable surface |
+| WebSocket (active) | Upgrade acceptance and attacker-origin acceptance on common WS paths | `websocket/upgrade-endpoint`, `websocket/origin-not-validated` | Medium | Public anonymous sockets intentionally allowed; origin checks delegated upstream |
+
+---
+
+## Measuring False-Positive Rate In Your Environment
+
+Use your own staging/production-like target set to get actionable FP rates:
+
+1. Run a baseline scan and keep raw NDJSON.
+2. Triage findings into `confirmed` vs `false_positive`.
+3. Compute per-module FP rate from the triage labels.
+
+Example workflow:
+
+```bash
+./target/release/apihunter \
+  --urls targets/cve-regression-real-public.txt \
+  --format ndjson \
+  --output /tmp/apihunter_findings.ndjson
+
+# Example triage file schema:
+# {"check":"cors/reflected-origin","scanner":"cors","triage":"false_positive"}
+# {"check":"jwt/alg-none","scanner":"jwt","triage":"confirmed"}
+
+jq -r 'select(.triage=="false_positive") | .scanner' /tmp/triage.ndjson \
+  | sort | uniq -c
+
+jq -r '.scanner' /tmp/triage.ndjson | sort | uniq -c
+```
+
+Recommended reporting metric:
+- `fp_rate(scanner) = false_positives(scanner) / total_triaged_findings(scanner)`
+
+Track this over time after gateway/WAF/auth changes to catch scanner noise drift early.
+
+---
+
 ## CORS (`scanner::cors`)
 
 Checks for overly permissive `Access-Control-Allow-Origin` responses.

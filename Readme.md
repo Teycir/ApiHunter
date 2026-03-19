@@ -149,6 +149,7 @@ These notes summarize how findings are emitted and what typically causes noise:
 | CVE Templates | `cve/<id>/<check>` with template evidence | Fingerprint collision on generic endpoints | Vulnerable path/context not reached from seed URLs |
 
 For check-by-check detail and remediation guidance, see [docs/scanners.md](docs/scanners.md) and [docs/findings.md](docs/findings.md).
+The scanner docs now include a source-aligned [Module Check Catalog](docs/scanners.md#module-check-catalog) and [False-Positive Expectation Model](docs/scanners.md#false-positive-expectation-model).
 
 ## Features
 

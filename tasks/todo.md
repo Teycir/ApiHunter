@@ -1277,7 +1277,7 @@
 ## Review
 - Naming clarity:
   - Added an explicit naming section in `Readme.md` (project vs package vs lib vs binary) to remove ambiguity.
-  - No `webscan` references were found in the current repo state.
+  - No legacy project name references were found in the current repo state.
 - Logging + quiet mode:
   - `init_tracing(quiet)` now uses default `error` in quiet mode and `info` otherwise (while still honoring `RUST_LOG` overrides).
 - URL prefilter behavior:
@@ -2022,7 +2022,7 @@
 # Task: Documentation Consistency & Security Posture Polish (2026-03-19)
 
 ## Plan
-- [x] Reconcile naming/docs surface and remove any stale `webscan`/placeholder install references.
+- [x] Reconcile naming/docs surface and remove any stale legacy project name/placeholder install references.
 - [x] Expand README scanner documentation with concrete finding format examples and module-level guidance pointers.
 - [x] Add explicit testing-strategy documentation (unit vs integration vs fixture coverage).
 - [x] Add explicit security posture notes for proxy+TLS behavior, `--danger-accept-invalid-certs`, and WAF-evasion legal/ethical usage.
@@ -2032,7 +2032,7 @@
 
 ## Review
 - Reconciled naming/install surface:
-  - Confirmed no `webscan` references and no placeholder install URL (`github.com/you/...`) remain.
+  - Confirmed no legacy project name references and no placeholder install URL (`github.com/you/...`) remain.
   - Installation section uses `git clone https://github.com/Teycir/ApiHunter`.
 - README enhancements (`Readme.md`):
   - Added GitHub metadata recommendations (description/website/topics) for discoverability.
@@ -2054,4 +2054,67 @@
 - Verification:
   - `cargo fmt --all` passed.
   - `cargo test --test cli --test startup_inputs` passed (`43/43`).
-  - `rg -n "webscan|github\\.com/you/" Readme.md docs HOWTO.md src tests` returned no hits.
+  - `rg -n "github\\.com/you/" Readme.md docs HOWTO.md src tests` returned no hits.
+
+---
+
+# Task: Scanner Module Documentation Depth (2026-03-19)
+
+## Plan
+- [x] Add a dedicated per-module check catalog in `docs/scanners.md` with concrete check ID examples.
+- [x] Add explicit false-positive expectation guidance (tendency bands + common causes) for each scanner module.
+- [x] Document how operators can measure environment-specific FP rate from NDJSON output.
+- [x] Add a README pointer to the expanded scanner module documentation section.
+- [x] Verify docs consistency with scanner check IDs in source and record validation commands.
+
+## Review
+- Expanded scanner-module documentation in `docs/scanners.md`:
+  - Added `False-Positive Expectation Model` section with explicit tendency-band semantics.
+  - Added a full `Module Check Catalog` table mapping each scanner to:
+    - exact checks performed,
+    - concrete finding ID examples/patterns (source-aligned),
+    - FP tendency,
+    - common FP drivers.
+  - Added `Measuring False-Positive Rate In Your Environment` with NDJSON triage workflow and formula.
+- Updated `Readme.md` scanner section with direct pointers to:
+  - `docs/scanners.md#module-check-catalog`
+  - `docs/scanners.md#false-positive-expectation-model`
+- Validation commands:
+  - `rg -n "False-Positive Expectation Model|Module Check Catalog|Measuring False-Positive Rate" docs/scanners.md Readme.md`
+  - check-ID spot verification against scanner source:
+    - `cors/wildcard-no-credentials`
+    - `csp/missing`
+    - `graphql/introspection-enabled`
+    - `api_security/idor-cross-user`
+    - `jwt/alg-none`
+    - `openapi/no-security-schemes`
+    - `mass_assignment/persisted-state-change`
+    - `oauth/redirect-uri-not-validated`
+    - `rate_limit/not-detected`
+    - `websocket/upgrade-endpoint`
+
+---
+
+# Task: Produce Release Artifact (2026-03-19)
+
+## Plan
+- [x] Build release binary for current host target.
+- [x] Package binary + essential docs into a distributable archive under `dist/`.
+- [x] Generate SHA256 checksum for integrity verification.
+- [x] Smoke-test artifact binary (`--help`) and record outputs.
+
+## Review
+- Built release binary:
+  - `cargo build --release --bin apihunter`
+  - produced `target/release/apihunter` (`apihunter 0.1.0`)
+- Produced Linux host artifact bundle:
+  - `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`
+  - checksum file: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256`
+- Archive contents:
+  - `apihunter`
+  - `README.md`
+  - `CHANGELOG.md`
+  - `LICENSE`
+- Integrity + smoke verification:
+  - `sha256sum` generated: `0c53b2d3b567073d3b64afd32a4bfd5b88a4cc9af8114d09b9d0db22e878aa4d`
+  - packaged binary smoke test passed: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu/apihunter --help`
