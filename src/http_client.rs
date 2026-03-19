@@ -18,7 +18,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -81,6 +81,7 @@ const DEFAULT_UNAUTH_STRIP_HEADERS: &[&str] = &[
 #[derive(Clone)]
 pub struct HttpClient {
     inner: Client,
+    no_redirect_inner: Client,
     unauth_inner: Client,
     client_config: ClientConfig,
     unauth_client_config: ClientConfig,
@@ -108,7 +109,8 @@ struct AdaptiveLimiter {
     semaphore: Arc<Semaphore>,
     max: usize,
     min: usize,
-    held: Mutex<Vec<OwnedSemaphorePermit>>,
+    held: Arc<Mutex<Vec<OwnedSemaphorePermit>>>,
+    decrease_scheduled: Arc<AtomicBool>,
     success_streak: std::sync::atomic::AtomicUsize,
 }
 
@@ -118,7 +120,8 @@ impl AdaptiveLimiter {
             semaphore: Arc::new(Semaphore::new(max)),
             max,
             min: 1,
-            held: Mutex::new(Vec::new()),
+            held: Arc::new(Mutex::new(Vec::new())),
+            decrease_scheduled: Arc::new(AtomicBool::new(false)),
             success_streak: std::sync::atomic::AtomicUsize::new(0),
         }
     }
@@ -162,7 +165,45 @@ impl AdaptiveLimiter {
                 old_limit = current,
                 new_limit, "Adaptive concurrency decreased"
             );
+            return;
         }
+        drop(held);
+
+        // When the limiter is saturated, try_acquire fails even though we still
+        // need to reduce future concurrency. Queue a single background reduction
+        // that acquires and parks the next available permit.
+        if self.decrease_scheduled.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let semaphore = Arc::clone(&self.semaphore);
+        let held = Arc::clone(&self.held);
+        let decrease_scheduled = Arc::clone(&self.decrease_scheduled);
+        let max = self.max;
+        let min = self.min;
+        tokio::spawn(async move {
+            let permit = match semaphore.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    decrease_scheduled.store(false, Ordering::Release);
+                    return;
+                }
+            };
+
+            let mut held = held.lock().await;
+            let current = max.saturating_sub(held.len());
+            if current > min {
+                held.push(permit);
+                let new_limit = max.saturating_sub(held.len());
+                info!(
+                    old_limit = current,
+                    new_limit, "Adaptive concurrency decreased"
+                );
+            } else {
+                drop(permit);
+            }
+            decrease_scheduled.store(false, Ordering::Release);
+        });
     }
 
     async fn increase(&self) {
@@ -237,6 +278,7 @@ impl HttpClient {
         };
 
         let inner = build_client(&client_config)?;
+        let no_redirect_inner = build_client_no_redirect(&client_config)?;
         let unauth_client_config = ClientConfig {
             default_headers: HeaderMap::new(),
             ..client_config.clone()
@@ -263,6 +305,7 @@ impl HttpClient {
 
         Ok(Self {
             inner,
+            no_redirect_inner,
             unauth_inner,
             client_config,
             unauth_client_config,
@@ -478,13 +521,7 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
-        let client = build_client_no_redirect(&self.client_config).map_err(|e| {
-            CapturedError::from_str(
-                "http::client_no_redirect",
-                Some(url.to_string()),
-                e.to_string(),
-            )
-        })?;
+        let client = self.no_redirect_inner.clone();
         let mut req = client.request(method.clone(), url);
 
         if self.waf_enabled {
@@ -739,6 +776,71 @@ impl HttpClient {
 
     /// GET request without the live credential (used for unauthenticated comparison in IDOR checks).
     pub async fn get_without_auth(&self, url: &str) -> Result<HttpResponse, CapturedError> {
+        let _adaptive_permit = if let Some(adaptive) = &self.adaptive {
+            match adaptive.acquire().await {
+                Ok(permit) => Some(permit),
+                Err(e) => {
+                    debug!("[GET {url}] adaptive limiter acquire failed: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        self.enforce_host_delay(url).await;
+
+        if self.waf_enabled && self.delay_ms > 0 {
+            let min_secs = self.delay_ms as f64 / 1000.0;
+            let max_secs = min_secs * 3.0;
+            WafEvasion::random_delay(min_secs, max_secs).await;
+        }
+
+        let attempts = self.retries + 1;
+        let mut last_err: Option<CapturedError> = None;
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                self.retry_count.fetch_add(1, Ordering::Relaxed);
+                tokio::time::sleep(retry_backoff(attempt)).await;
+            }
+
+            self.request_count.fetch_add(1, Ordering::Relaxed);
+            match self.send_once_without_auth(url).await {
+                Ok(resp) => {
+                    if let Some(adaptive) = &self.adaptive {
+                        if should_retry_status(resp.status) {
+                            adaptive.on_backoff().await;
+                        } else {
+                            adaptive.on_success().await;
+                        }
+                    }
+                    if should_retry_status(resp.status) && attempt + 1 < attempts {
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    if let Some(adaptive) = &self.adaptive {
+                        adaptive.on_backoff().await;
+                    }
+                    last_err = Some(e);
+                    if attempt + 1 == attempts {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            CapturedError::from_str(
+                "http::get_without_auth",
+                Some(url.to_string()),
+                "request failed after retries",
+            )
+        }))
+    }
+
+    async fn send_once_without_auth(&self, url: &str) -> Result<HttpResponse, CapturedError> {
         let client = self.client_for_url_unauth(url).map_err(|e| {
             CapturedError::from_str("http::get_without_auth", Some(url.to_string()), e)
         })?;
@@ -759,7 +861,6 @@ impl HttpClient {
             headers.remove(name);
         }
 
-        self.request_count.fetch_add(1, Ordering::Relaxed);
         let response = client.execute(req).await.map_err(|e| {
             debug!("[GET {url}] send error (no auth): {e}");
             CapturedError::new("http::get_without_auth", Some(url.to_string()), &e)

@@ -113,8 +113,8 @@ pub async fn run(
     );
 
     // ── 2. Discovery phase with per-site cap ────────────────────────────────
-    let (discovered, mut discovery_errors) = if config.no_discovery {
-        (Vec::new(), Vec::new())
+    let (discovered, mut discovery_errors, skipped_cap) = if config.no_discovery {
+        (Vec::new(), Vec::new(), 0usize)
     } else {
         run_discovery_per_site(&unique_seeds, &config, &http_client).await
     };
@@ -138,8 +138,6 @@ pub async fn run(
         discovered = work_list.len(),
         skipped_dedup, skipped_merged, "Scan lifecycle: discovery merged"
     );
-
-    let skipped_cap = 0; // No global cap anymore, handled per-site
 
     let scanned = work_list.len();
     let skipped = skipped_dedup + skipped_merged + skipped_cap;
@@ -520,7 +518,13 @@ fn dedup(raw: Vec<String>) -> (Vec<String>, usize) {
     let mut dropped = 0usize;
 
     for raw_url in raw {
-        let canonical = canonicalise(&raw_url).unwrap_or_else(|| raw_url.clone());
+        let canonical = match canonicalise(&raw_url) {
+            Some(c) => c,
+            None => {
+                debug!(url = %raw_url, "URL canonicalization failed; using raw value");
+                raw_url.clone()
+            }
+        };
 
         if seen.insert(canonical.clone()) {
             unique.push(canonical);
@@ -581,7 +585,7 @@ async fn run_discovery_per_site(
     seeds: &[String],
     config: &Config,
     client: &HttpClient,
-) -> (Vec<String>, Vec<CapturedError>) {
+) -> (Vec<String>, Vec<CapturedError>, usize) {
     const MAX_SITEMAPS: usize = 5;
     const MAX_SCRIPTS: usize = 10;
     let discovery_timeout_secs = config.politeness.timeout_secs.saturating_mul(2).max(1);
@@ -589,6 +593,7 @@ async fn run_discovery_per_site(
 
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
+    let mut all_capped_dropped = 0usize;
 
     let sites = group_seeds_by_site(seeds);
 
@@ -665,12 +670,15 @@ async fn run_discovery_per_site(
 
         let site_urls: Vec<String> = site_discovered.into_iter().collect();
         let capped_count = site_urls.len().min(max_per_site);
+        let dropped_by_cap = site_urls.len().saturating_sub(capped_count);
+        all_capped_dropped += dropped_by_cap;
 
         if site_urls.len() > max_per_site {
             debug!(
                 site = %host,
                 discovered = site_urls.len(),
                 capped = capped_count,
+                dropped_by_cap,
                 "Site endpoints capped"
             );
         }
@@ -680,7 +688,7 @@ async fn run_discovery_per_site(
     }
 
     let urls = all_discovered.into_iter().collect();
-    (urls, all_errors)
+    (urls, all_errors, all_capped_dropped)
 }
 
 fn group_seeds_by_site(seeds: &[String]) -> BTreeMap<String, (String, Vec<String>)> {

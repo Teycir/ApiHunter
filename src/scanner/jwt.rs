@@ -410,6 +410,10 @@ async fn attempt_alg_confusion(
     baseline_status: u16,
     errors: &mut Vec<CapturedError>,
 ) -> Option<Finding> {
+    if baseline_status >= 400 {
+        return None;
+    }
+
     let header = header?;
     let has_key_hint = header.get("x5c").is_some() || header.get("jwk").is_some();
     if !has_key_hint {

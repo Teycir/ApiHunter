@@ -824,6 +824,56 @@ async fn discovery_results_are_merged_when_step_completes_in_time() {
 }
 
 #[tokio::test]
+async fn discovery_per_site_cap_contributes_to_skipped_count() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/plain")
+                .set_body_string("User-agent: *\nAllow: /a\nAllow: /b\nAllow: /c\n"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.max_endpoints = 1;
+    cfg.politeness.timeout_secs = 1;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.toggles.mass_assignment = false;
+    cfg.toggles.oauth_oidc = false;
+    cfg.toggles.rate_limit = false;
+    cfg.toggles.cve_templates = false;
+    cfg.toggles.websocket = false;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let result = runner::run(
+        vec![server.uri()],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+
+    assert!(
+        result.skipped >= 2,
+        "expected capped discovery URLs to be counted as skipped, got skipped={}",
+        result.skipped
+    );
+}
+
+#[tokio::test]
 async fn canonicalise_dedups_query_parameter_order_variants() {
     let mut cfg = test_config();
     cfg.no_discovery = true;

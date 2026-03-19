@@ -1721,3 +1721,57 @@
   - `cargo fmt`
   - `cargo clippy --all-targets --all-features -- -D warnings` (outside sandbox): passed.
   - `cargo test` (outside sandbox, full suite): passed.
+
+---
+
+# Task: JWT Alg-Confusion Baseline Guard (2026-03-19)
+
+## Plan
+- [x] Add baseline validation in `src/scanner/jwt.rs` so alg-confusion probing is skipped when authenticated baseline status is 4xx/5xx.
+- [x] Add a regression test in `tests/jwt_scanner.rs` proving alg-confusion is not attempted when baseline auth fails.
+- [x] Run JWT-targeted and full test suites outside sandbox, then document outcomes.
+
+## Review
+- Added an early return in `src/scanner/jwt.rs` (`attempt_alg_confusion`) when `baseline_status >= 400`, preventing alg-confusion probing when the authenticated baseline request is already unsuccessful.
+- Added regression test `alg_confusion_skipped_when_authenticated_baseline_fails` in `tests/jwt_scanner.rs`:
+  - baseline call returns `401` with RS256 token containing JWK,
+  - asserts no `jwt/alg-confusion` finding,
+  - asserts no follow-up confusion probe request is sent (call count remains `1`).
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test jwt_scanner` (outside sandbox): passed (`7/7`)
+  - `cargo test` (outside sandbox, full suite): passed
+
+---
+
+# Task: Bug Report Validation and Fixes (2026-03-19)
+
+## Plan
+- [x] Fix `HttpClient` no-redirect path to reuse a cached no-redirect client instead of rebuilding per request.
+- [x] Harden adaptive concurrency backoff so `AdaptiveLimiter::decrease()` still takes effect under saturated load.
+- [x] Add retry handling to `get_without_auth()` for transient statuses to align with other request paths.
+- [x] Include discovery per-site cap drops in `RunResult.skipped` accounting.
+- [x] Add canonicalization fallback debug logging when URL normalization fails in dedup flow.
+- [x] Add/adjust regression tests for the above behavior and run formatting plus full test validation outside sandbox.
+
+## Review
+- Reproduced and fixed core transport/orchestration issues:
+  - `src/http_client.rs`
+    - Added cached `no_redirect_inner` client built once in `HttpClient::new()` and reused in `send_once_no_redirect`.
+    - Adaptive limiter hardening: when saturated and `try_acquire_owned()` fails, `decrease()` now schedules a single background permit hold to apply effective backoff once capacity frees.
+    - `get_without_auth()` now uses retry/backoff flow (including adaptive signals, host delay, and WAF jitter) instead of single-shot execution.
+  - `src/runner.rs`
+    - `run_discovery_per_site()` now returns dropped-by-cap count.
+    - `run()` now includes per-site cap drops in `RunResult.skipped`.
+    - Added debug logging when URL canonicalization fails and raw URL fallback is used.
+- Added regression coverage:
+  - `tests/http_client_unauth.rs`: `unauthenticated_probe_retries_transient_statuses` validates transient-status retry behavior for unauth probes.
+  - `tests/integration_runner.rs`: `discovery_per_site_cap_contributes_to_skipped_count` validates capped discovery URLs are counted in `skipped`.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test http_client_unauth --test integration_runner` (outside sandbox): passed.
+  - `cargo test` (outside sandbox, full suite): passed.
+- Verification outcome for reported items:
+  - Fixed: 1, 2, 3, 4, 7.
+  - Not reproducible as stated: 5 (logging paths are mutually exclusive due early return).
+  - Already fixed in current tree: 6 (`--urls` documented/implemented as file-path input).

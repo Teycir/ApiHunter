@@ -2,6 +2,7 @@
 //
 // Ensure unauthenticated probes do not send auth-like headers.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use api_scanner::{
@@ -89,4 +90,41 @@ async fn unauthenticated_probe_strips_auth_headers() {
     assert!(headers.get("cookie").is_none());
     assert!(headers.get("x-api-key").is_none());
     assert!(headers.get("x-custom-auth").is_none());
+}
+
+#[tokio::test]
+async fn unauthenticated_probe_retries_transient_statuses() {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_for_server = Arc::clone(&attempts);
+
+    Mock::given(method("GET"))
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = attempts_for_server.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                ResponseTemplate::new(503)
+            } else {
+                ResponseTemplate::new(200)
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.politeness.retries = 1;
+    let config = Arc::new(cfg);
+    let client = HttpClient::new(&config).expect("http client");
+
+    let url = format!("{}/private/42", server.uri());
+    let resp = client
+        .get_without_auth(&url)
+        .await
+        .expect("retried unauth request should succeed");
+
+    assert_eq!(resp.status, 200, "expected retry to recover from 503");
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        2,
+        "expected one retry attempt for transient status"
+    );
 }

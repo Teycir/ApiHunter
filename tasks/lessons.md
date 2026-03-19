@@ -89,3 +89,9 @@
 - Rule: route specialized probes (for example no-redirect OAuth authorize checks) through `HttpClient` variants so counting, delay, retries, headers, cookies, and auth context stay consistent.
 - User correction pattern: mutation-probe payload assertions can overfit fixed keys and block adaptive schema-aware improvements.
 - Rule: in active-check tests, assert required baseline probe fields and semantics while allowing adaptive additional fields when scanner behavior intentionally expands with observed schema hints.
+- User correction pattern: JWT alg-confusion probes can produce noisy/invalid outcomes when the authenticated baseline request is already failing.
+- Rule: gate JWT alg-confusion active checks behind a successful authenticated baseline (`baseline_status < 400`) and add regression tests that assert no follow-up probe is attempted when baseline auth fails.
+- User correction pattern: specialized request paths can regress performance/reliability by bypassing shared transport lifecycle behaviors.
+- Rule: all HTTP probe variants (including no-redirect and unauthenticated flows) must reuse cached clients and inherit retry/backoff behavior unless a scanner explicitly requires one-shot semantics.
+- User correction pattern: per-site discovery caps can silently drop coverage without visible accounting.
+- Rule: whenever discovery truncates endpoints, thread dropped counts into `RunResult.skipped` and keep regression tests proving summary accounting reflects capped URLs.

@@ -416,3 +416,45 @@ async fn alg_confusion_not_reported_when_unauthenticated_access_is_already_succe
         "alg confusion should not be reported when unauthenticated baseline already succeeds: {findings:#?}"
     );
 }
+
+#[tokio::test]
+async fn alg_confusion_skipped_when_authenticated_baseline_fails() {
+    let server = MockServer::start().await;
+    let token = make_rs256_jwt_with_jwk();
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                // Initial authenticated baseline fails: alg-confusion check must be skipped.
+                ResponseTemplate::new(401).set_body_string(format!("token={token}"))
+            } else {
+                ResponseTemplate::new(200).set_body_string("unexpected follow-up probe")
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config_custom(true, 5));
+    let client = HttpClient::new(cfg.as_ref()).unwrap();
+    let scanner = JwtScanner::new(cfg.as_ref());
+
+    let (findings, errors) = scanner.scan(&server.uri(), &client, cfg.as_ref()).await;
+
+    assert!(
+        errors.is_empty(),
+        "unexpected errors when baseline auth fails: {errors:#?}"
+    );
+    assert!(
+        findings.iter().all(|f| f.check != "jwt/alg-confusion"),
+        "alg confusion should not be reported when authenticated baseline fails: {findings:#?}"
+    );
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        1,
+        "expected only initial authenticated baseline request when baseline_status >= 400"
+    );
+}
