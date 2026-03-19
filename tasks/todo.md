@@ -1,3 +1,30 @@
+# Task: Naming & CI Hardening (Phase 18)
+
+## Plan
+- [x] Rename root docs/legal files to standard names (`Readme.md` -> `README.md`, `Licence` -> `LICENSE`).
+- [x] Update repository references to new canonical names.
+- [x] Ensure CI workflow explicitly includes build in addition to lint/tests.
+- [x] Verify file/link/workflow consistency.
+
+## Review
+- Renamed files:
+  - `Readme.md` -> `README.md`
+  - `Licence` -> `LICENSE`
+- Updated key references:
+  - `Makefile` release packaging now sources `README.md` and `LICENSE`.
+  - `CONTRIBUTING.md` docs-update checklist now references `README.md`.
+  - `docs/INDEX.md` now links to `../README.md` and `../LICENSE`.
+  - `README.md` license link now uses `[MIT](LICENSE)`.
+  - `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu/README.md` link fixed to `[MIT](LICENSE)`.
+- CI hardening:
+  - `.github/workflows/ci.yml` now includes explicit build gate:
+    - `cargo build --all-targets --locked`
+- Verification:
+  - `rg -n "\\bReadme\\.md\\b|\\bLicence\\b|../Readme\\.md|../Licence|\\[MIT\\]\\(Licence\\)" -S --glob '!dist/**' --glob '!tasks/**' .` (no hits)
+  - `sed -n '1,220p' .github/workflows/ci.yml`
+
+---
+
 # Task: Release Validation Hardening (Phase 17)
 
 ## Plan

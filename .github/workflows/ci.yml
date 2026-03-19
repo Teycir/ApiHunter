@@ -29,6 +29,9 @@ jobs:
       - name: Tests
         run: cargo test --all-targets
 
+      - name: Build
+        run: cargo build --all-targets --locked
+
       - name: Security audit
         uses: rustsec/audit-check@v1
         with:

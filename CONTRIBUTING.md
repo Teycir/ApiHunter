@@ -38,7 +38,7 @@ cargo test
 
 ## Documentation
 
-- Update `Readme.md`, `HOWTO.md`, and `docs/` when CLI flags, defaults, or behavior change.
+- Update `README.md`, `HOWTO.md`, and `docs/` when CLI flags, defaults, or behavior change.
 - Add usage examples for new features when relevant.
 
 ## Pull Request Checklist

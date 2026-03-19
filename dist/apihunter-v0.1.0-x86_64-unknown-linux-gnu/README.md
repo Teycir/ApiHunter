@@ -753,4 +753,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## License
 
-[MIT](Licence)
+[MIT](LICENSE)

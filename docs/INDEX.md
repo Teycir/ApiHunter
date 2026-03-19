@@ -17,7 +17,7 @@ Complete guide to ApiHunter documentation and resources.
 
 | Document | Category | Purpose |
 |----------|----------|---------|
-| [README.md](../Readme.md) | Getting Started | Project overview, features, quick start, and CLI reference |
+| [README.md](../README.md) | Getting Started | Project overview, features, quick start, and CLI reference |
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
 | [Auth Flow](./auth-flow.md) | Configuration Guide | Auth flow format and usage |
@@ -34,7 +34,7 @@ Complete guide to ApiHunter documentation and resources.
 | **Security Policy** | [SECURITY.md](../SECURITY.md) | Vulnerability disclosure and supported-version policy |
 | **Release Smoke Workflow** | [release-smoke.yml](../.github/workflows/release-smoke.yml) | Manual CI check for build/sign/SBOM/attestation pipeline |
 | **Changelog** | [CHANGELOG.md](../CHANGELOG.md) | Version history and updates |
-| **License** | [Licence](../Licence) | MIT License information |
+| **License** | [LICENSE](../LICENSE) | MIT License information |
 | **Deep Review Checklist** | [deep-review-checklist.md](./deep-review-checklist.md) | Tracked checklist from the latest code review |
 
 ---
@@ -42,7 +42,7 @@ Complete guide to ApiHunter documentation and resources.
 ## Documentation by Tag
 
 ### Security Scanning
-- [README.md](../Readme.md) - `security, scanner, api`
+- [README.md](../README.md) - `security, scanner, api`
 - [Scanners](./scanners.md) - `cors, csp, graphql, api-security, jwt, openapi, active-checks`
 - [Findings](./findings.md) - `findings, severity, remediation`
 
@@ -61,7 +61,7 @@ Complete guide to ApiHunter documentation and resources.
 ## Documentation by Category
 
 ### Getting Started
-1. [README.md](../Readme.md) - Start here
+1. [README.md](../README.md) - Start here
 2. [HOWTO.md](../HOWTO.md) - Detailed setup and usage
 3. [Configuration.md](./configuration.md) - CLI options reference
 
@@ -124,7 +124,7 @@ Complete guide to ApiHunter documentation and resources.
 
 ## Getting Help
 
-1. **Quick Start:** See [README.md](../Readme.md) features and CLI reference
+1. **Quick Start:** See [README.md](../README.md) features and CLI reference
 2. **Installation:** See [HOWTO.md](../HOWTO.md) for setup instructions
 3. **Configuration:** See [Configuration.md](./configuration.md) for all CLI options
 4. **Troubleshooting:** Check [HOWTO.md](../HOWTO.md) for common issues
