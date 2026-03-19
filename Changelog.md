@@ -124,6 +124,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Improved semaphore acquisition error handling to prevent scanner crashes
   - Enhanced cookie parsing clarity using `split_once()` instead of iterator unwraps
   - Added comprehensive panic safety review across all unwrap/expect usage
+- **Performance Improvements**:
+  - Replaced `Mutex<HashMap>` with `DashMap` for per-host rate limiting (eliminates global lock contention)
+  - Optimized host delay logic to lock only single map entry instead of entire map
+  - Parallelized discovery phase with `tokio::join!` for concurrent robots/sitemap/swagger/js/headers/common-paths probing
+  - Removed redundant `all_findings` and `all_errors` vectors in scan_url_with_results (findings now streamed directly)
+  - Moved deduplication to use existing `reports::dedup_findings` function
+  - Optimized environment variable substitution in auth.rs using `replace_all` instead of iterative string replacement
+- **Code Quality**:
+  - Removed dead code and unused variables (empty default_headers block, unused all_findings/all_errors)
+  - Removed `#[allow(dead_code)]` from `dedup_findings` (now actively used)
+  - Introduced `UrlScanSummary` struct to track per-URL finding counts without storing full finding vectors
+  - Replaced `eprintln!` with structured `tracing` logs (info/warn) for better observability
+  - Added deterministic scanner ordering in tests (prevents flaky test failures from random shuffle)
+- **JWT Scanner Enhancements**:
+  - Improved RS256→HS256 algorithm confusion attack with proper RSA modulus extraction
+  - Added `extract_rsa_modulus_from_jwk` to parse JWK `n` parameter (base64url-decoded RSA modulus)
+  - Added `extract_rsa_modulus_from_x5c` with full DER certificate parsing
+  - Implemented minimal DER parser (`parse_der_tlv`) for extracting RSA public key from X.509 certificates
+  - Added error reporting when key material extraction fails
+  - Fixed test to use `jwk` instead of invalid `x5c` stub
 - Unified default UA sourcing: `cli::default_user_agents()` now uses `WafEvasion::user_agent_pool()`
 - Removed inline mass-assignment probe from `api_security` scanner (now dedicated module)
 - Removed inline rate-limit probe from `api_security` scanner (now dedicated module)
@@ -181,6 +201,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Comprehensive error handling audit across all scanner modules
   - Complete panic safety analysis of all unwrap/expect calls
   - Identified additional improvement areas: logging, config validation, resource cleanup, false positive reduction, security hardening, UX, output formats, and testing gaps
+- **README Enhancements**:
+  - Added comprehensive "Why ApiHunter?" section highlighting core advantages (API-first, false positive reduction, production-safe, stealth, CI/CD native, performance, auth support)
+  - Expanded Features section with detailed subsections for all capabilities (passive analysis, active testing, discovery, performance, output, integration, configuration)
+  - Added architecture diagram showing code structure and component flow
+  - Highlighted dual extensibility model (TOML templates + Rust modules) with examples
+  - Expanded stealth/WAF evasion documentation across multiple sections
+  - Added Related Projects section cross-referencing Excalibur and BurpAPIsecuritysuite
+  - Enhanced FAQ with stealth and WAF evasion questions
+  - Updated contact information and author details
 
 ---
 

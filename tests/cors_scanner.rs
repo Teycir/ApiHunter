@@ -153,3 +153,40 @@ async fn regex_bypass_probe_failures_are_collected() {
         "expected network/send error details for bypass probe failures, got: {errors:#?}"
     );
 }
+
+#[tokio::test]
+async fn options_probe_is_preferred_over_get_when_cors_headers_present() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("OPTIONS"))
+        .respond_with(|request: &wiremock::Request| {
+            let origin = request
+                .headers
+                .get("origin")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("https://cdn.example.net")
+                .to_string();
+            ResponseTemplate::new(200)
+                .insert_header("Access-Control-Allow-Origin", origin)
+                .insert_header("Access-Control-Allow-Credentials", "true")
+        })
+        .mount(&server)
+        .await;
+
+    // If scanner falls back to GET despite valid OPTIONS CORS headers, this
+    // delay will trigger timeout errors under the short test timeout.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config_with_timeout(1));
+    let client = HttpClient::new(cfg.as_ref()).unwrap();
+    let scanner = CorsScanner::new(cfg.as_ref());
+
+    let (_findings, errors) = scanner.scan(&server.uri(), &client, cfg.as_ref()).await;
+    assert!(
+        errors.is_empty(),
+        "OPTIONS-based probing should avoid fallback GET timeout errors, got: {errors:#?}"
+    );
+}

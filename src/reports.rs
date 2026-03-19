@@ -766,7 +766,6 @@ pub fn filter_new_findings(
 
 /// Deduplicate findings by `(url, check)` pair, keeping the highest-severity
 /// instance.  Expects `findings` to already be sorted descending by severity.
-#[allow(dead_code)]
 pub fn dedup_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
     // Sort descending so the first occurrence of each key is the most severe.
     findings.sort_by(|a, b| b.severity.rank().cmp(&a.severity.rank()));

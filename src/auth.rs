@@ -317,14 +317,11 @@ fn extract_jsonpath(doc: &Value, path: &str) -> Result<String> {
 
 /// Replace `{{ENV_VAR}}` placeholders with environment variable values.
 fn substitute_env_vars(s: &str) -> String {
-    let mut out = s.to_string();
     let re = once_cell::sync::Lazy::force(&ENV_RE);
-    for cap in re.captures_iter(s) {
-        let var_name = &cap[1];
-        let replacement = std::env::var(var_name).unwrap_or_default();
-        out = out.replace(&cap[0], &replacement);
-    }
-    out
+    re.replace_all(s, |caps: &regex::Captures| {
+        std::env::var(&caps[1]).unwrap_or_default()
+    })
+    .into_owned()
 }
 
 fn substitute_env_vars_in_value(v: &Value) -> Value {

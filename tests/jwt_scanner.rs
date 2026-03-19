@@ -95,11 +95,12 @@ fn make_hs256_jwt(secret: &str) -> String {
     make_hs256_jwt_with_payload(secret, payload)
 }
 
-fn make_rs256_jwt_with_x5c() -> String {
+fn make_rs256_jwt_with_jwk() -> String {
     let header = serde_json::json!({
         "alg": "RS256",
         "typ": "JWT",
-        "x5c": ["QUJD"] // "ABC" base64
+        // Minimal RSA JWK; `n` decodes to 65537 bytes [0x01, 0x00, 0x01]
+        "jwk": { "kty": "RSA", "n": "AQAB", "e": "AQAB" }
     });
     let payload = serde_json::json!({"sub":"123","exp":1893456000});
     let header_b64 = URL_SAFE_NO_PAD.encode(header.to_string());
@@ -184,7 +185,7 @@ async fn malformed_jwt_decode_errors_are_reported() {
 #[tokio::test]
 async fn alg_confusion_probe_failure_is_reported() {
     let server = MockServer::start().await;
-    let token = make_rs256_jwt_with_x5c();
+    let token = make_rs256_jwt_with_jwk();
     let call_count = Arc::new(AtomicUsize::new(0));
     let call_count_for_get = Arc::clone(&call_count);
 

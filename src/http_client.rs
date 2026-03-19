@@ -91,7 +91,7 @@ pub struct HttpClient {
     waf_enabled: bool,
     delay_ms: u64,
     retries: u32,
-    host_last_request: Arc<Mutex<HashMap<String, tokio::time::Instant>>>,
+    host_last_request: Arc<DashMap<String, tokio::time::Instant>>,
     session_store: Option<Arc<Mutex<SessionStore>>>,
     session_path: Option<PathBuf>,
     adaptive: Option<Arc<AdaptiveLimiter>>,
@@ -229,10 +229,6 @@ impl HttpClient {
             }
         }
 
-        if !default_headers.is_empty() {
-            // apply later to builder
-        }
-
         let client_config = ClientConfig {
             timeout_secs: config.politeness.timeout_secs,
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
@@ -277,7 +273,7 @@ impl HttpClient {
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
-            host_last_request: Arc::new(Mutex::new(HashMap::new())),
+            host_last_request: Arc::new(DashMap::new()),
             session_store,
             session_path: config.session_file.clone(),
             adaptive: if config.adaptive_concurrency {
@@ -499,25 +495,20 @@ impl HttpClient {
         let now = tokio::time::Instant::now();
 
         // Reserve the next allowed time per host to prevent concurrent TOCTOU races.
-        let sleep_for = {
-            let mut map = self.host_last_request.lock().await;
-            let next_allowed = match map.get(&key) {
-                Some(last) => {
-                    let candidate = *last + min_gap;
-                    if candidate > now {
-                        candidate
-                    } else {
-                        now
-                    }
-                }
-                None => now,
-            };
-            map.insert(key, next_allowed);
-            if next_allowed > now {
-                next_allowed - now
-            } else {
-                Duration::from_millis(0)
-            }
+        // Keep lock scope to a single map entry update to avoid global
+        // serialization across hosts under high concurrency.
+        let next_allowed = {
+            let mut entry = self.host_last_request.entry(key).or_insert(now);
+            let candidate = *entry + min_gap;
+            let next = if candidate > now { candidate } else { now };
+            *entry = next;
+            next
+        };
+
+        let sleep_for = if next_allowed > now {
+            next_allowed - now
+        } else {
+            Duration::from_millis(0)
         };
 
         if !sleep_for.is_zero() {

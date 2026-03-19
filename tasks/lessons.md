@@ -47,3 +47,9 @@
 - Rule: keep `.history/` and non-sanctioned target lists untracked by default; when they are accidentally tracked, remove from git index immediately while preserving local files.
 - User correction pattern: issue lists can include stale claims; fixes should be evidence-driven.
 - Rule: verify each claim against current code and document non-reproducible items explicitly rather than applying speculative changes.
+- User correction pattern: active crypto/auth probes are easy to wire incorrectly while still "working" syntactically.
+- Rule: when implementing JWT/JWS confusion or signature checks, derive cryptographic key material explicitly (with tests) and never use serialized container blobs as signing keys.
+- User correction pattern: fan-in/fan-out paths can accidentally duplicate data flow (channel send + local return clones).
+- Rule: for concurrent pipelines, keep exactly one data transport path for results and return only metadata needed for local progress reporting.
+- User correction pattern: non-deterministic ordering in production paths can make tests flaky.
+- Rule: keep randomized ordering in release builds, but gate deterministic behavior under test configuration (`cfg(test)` or explicit deterministic flag) and add regression tests for the chosen policy.

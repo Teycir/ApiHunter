@@ -2,13 +2,13 @@
 
 use async_trait::async_trait;
 use rand::seq::SliceRandom;
-use reqwest::header::HeaderValue;
+use reqwest::header::{HeaderMap, HeaderValue};
 use std::collections::HashSet;
 
 use crate::{
     config::Config,
     error::CapturedError,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpResponse},
     reports::{Finding, Severity},
 };
 
@@ -59,6 +59,42 @@ fn generate_probe_origins(url: &str) -> Vec<String> {
     origins
 }
 
+async fn probe_cors_response(
+    client: &HttpClient,
+    url: &str,
+    origin: &str,
+) -> Result<HttpResponse, CapturedError> {
+    let mut preflight = HeaderMap::new();
+    let origin_header = HeaderValue::from_str(origin).map_err(|e| {
+        CapturedError::from_str(
+            "cors/probe",
+            Some(url.to_string()),
+            format!("Invalid Origin header value '{origin}': {e}"),
+        )
+    })?;
+    preflight.insert("Origin", origin_header);
+    preflight.insert(
+        "Access-Control-Request-Method",
+        HeaderValue::from_static("GET"),
+    );
+
+    // Prefer OPTIONS probing (lower-impact than repeated GET requests).
+    if let Ok(resp) = client.options(url, Some(preflight)).await {
+        if resp.header("access-control-allow-origin").is_some() {
+            return Ok(resp);
+        }
+    }
+
+    let extra = [
+        ("Origin".to_string(), origin.to_string()),
+        (
+            "Access-Control-Request-Method".to_string(),
+            "GET".to_string(),
+        ),
+    ];
+    client.get_with_headers(url, &extra).await
+}
+
 #[async_trait]
 impl Scanner for CorsScanner {
     async fn scan(
@@ -83,15 +119,7 @@ impl Scanner for CorsScanner {
             .unwrap_or_default();
 
         for origin in &probe_origins {
-            let extra = [
-                ("Origin".to_string(), origin.to_string()),
-                (
-                    "Access-Control-Request-Method".to_string(),
-                    "GET".to_string(),
-                ),
-            ];
-
-            let resp = match client.get_with_headers(url, &extra).await {
+            let resp = match probe_cors_response(client, url, origin).await {
                 Ok(r) => r,
                 Err(e) => {
                     errors.push(e);
@@ -137,14 +165,7 @@ impl Scanner for CorsScanner {
                 {
                     for suffix in REGEX_BYPASS_SUFFIXES {
                         let bypass = format!("{}{}", reflected, suffix);
-                        let bypass_extra = [
-                            ("Origin".to_string(), bypass.clone()),
-                            (
-                                "Access-Control-Request-Method".to_string(),
-                                "GET".to_string(),
-                            ),
-                        ];
-                        match client.get_with_headers(url, &bypass_extra).await {
+                        match probe_cors_response(client, url, &bypass).await {
                             Ok(r) => {
                                 if r.header("access-control-allow-origin") == Some(&bypass)
                                     && r.header("access-control-allow-credentials") == Some("true")
@@ -179,14 +200,7 @@ impl Scanner for CorsScanner {
                     };
                     for prefix in REGEX_BYPASS_PREFIXES {
                         let bypass = format!("{}://{}{}", scheme, prefix, rest);
-                        let bypass_extra = [
-                            ("Origin".to_string(), bypass.clone()),
-                            (
-                                "Access-Control-Request-Method".to_string(),
-                                "GET".to_string(),
-                            ),
-                        ];
-                        match client.get_with_headers(url, &bypass_extra).await {
+                        match probe_cors_response(client, url, &bypass).await {
                             Ok(r) => {
                                 if r.header("access-control-allow-origin") == Some(&bypass)
                                     && r.header("access-control-allow-credentials") == Some("true")

@@ -19,7 +19,7 @@ use tokio::{
     sync::{mpsc, Semaphore},
     task::JoinSet,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::{
@@ -81,6 +81,14 @@ struct ScannerRunStats {
 
 type ScannerStatsMap = BTreeMap<String, ScannerRunStats>;
 
+#[derive(Debug, Default, Clone, Copy)]
+struct UrlScanSummary {
+    findings: usize,
+    critical: usize,
+    high: usize,
+    medium: usize,
+}
+
 /// Entry point called from `main`.
 pub async fn run(
     urls: Vec<String>,
@@ -108,14 +116,14 @@ pub async fn run(
         run_discovery_per_site(&unique_seeds, &config, &http_client).await
     };
     if config.no_discovery {
-        eprintln!(
-            "Discovery skipped (--no-discovery): {} seed endpoints",
-            unique_seeds.len()
+        info!(
+            seeds = unique_seeds.len(),
+            "Discovery skipped (--no-discovery)"
         );
     } else {
-        eprintln!(
-            "Discovery complete: {} total endpoints",
-            discovered.len() + unique_seeds.len()
+        info!(
+            discovered = discovered.len() + unique_seeds.len(),
+            "Discovery complete"
         );
     }
 
@@ -172,10 +180,10 @@ pub async fn run(
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
 
-    eprintln!(
-        "Scan started: {} | Targets: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        scanned
+    info!(
+        started_at = %chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        scanned,
+        "Scan started"
     );
 
     for url in work_list {
@@ -198,7 +206,7 @@ pub async fn run(
                 }
             };
 
-            let (findings, _errors, scanner_stats) = scan_url_with_results(
+            let (url_summary, scanner_stats) = scan_url_with_results(
                 url.clone(),
                 &client,
                 &scanners,
@@ -215,31 +223,18 @@ pub async fn run(
 
             // Build summary message for detailed logging
             let mut msg = url.clone();
-            if !findings.is_empty() {
-                let critical = findings
-                    .iter()
-                    .filter(|f| matches!(f.severity, crate::reports::Severity::Critical))
-                    .count();
-                let high = findings
-                    .iter()
-                    .filter(|f| matches!(f.severity, crate::reports::Severity::High))
-                    .count();
-                let medium = findings
-                    .iter()
-                    .filter(|f| matches!(f.severity, crate::reports::Severity::Medium))
-                    .count();
-
-                msg.push_str(&format!(" | 🔍 {} findings", findings.len()));
-                if critical > 0 {
-                    msg.push_str(&format!(" (🔴 {}C", critical));
+            if url_summary.findings > 0 {
+                msg.push_str(&format!(" | 🔍 {} findings", url_summary.findings));
+                if url_summary.critical > 0 {
+                    msg.push_str(&format!(" (🔴 {}C", url_summary.critical));
                 }
-                if high > 0 {
-                    msg.push_str(&format!(" 🟠 {}H", high));
+                if url_summary.high > 0 {
+                    msg.push_str(&format!(" 🟠 {}H", url_summary.high));
                 }
-                if medium > 0 {
-                    msg.push_str(&format!(" 🟡 {}M", medium));
+                if url_summary.medium > 0 {
+                    msg.push_str(&format!(" 🟡 {}M", url_summary.medium));
                 }
-                if critical > 0 || high > 0 || medium > 0 {
+                if url_summary.critical > 0 || url_summary.high > 0 || url_summary.medium > 0 {
                     msg.push(')');
                 }
             } else {
@@ -286,7 +281,7 @@ pub async fn run(
     // ── 8. Post-process ───────────────────────────────────────────────────────
     tracker.finish().await;
 
-    dedup_findings(&mut findings);
+    findings = crate::reports::dedup_findings(findings);
     sort_findings(&mut findings);
     dedup_errors(&mut errors);
 
@@ -313,12 +308,12 @@ pub async fn run(
         "Scan lifecycle: completed"
     );
 
-    eprintln!(
-        "Scan finished: {} | Findings: {} | Scanned: {} | Elapsed: {:.2}s",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        findings.len(),
+    info!(
+        finished_at = %chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        findings = findings.len(),
         scanned,
-        elapsed.as_secs_f64()
+        elapsed_secs = elapsed.as_secs_f64(),
+        "Scan finished"
     );
 
     RunResult {
@@ -348,12 +343,11 @@ async fn scan_url_with_results(
     reporter: &Reporter,
     ftx: mpsc::UnboundedSender<Vec<Finding>>,
     etx: mpsc::UnboundedSender<Vec<CapturedError>>,
-) -> (Vec<Finding>, Vec<CapturedError>, ScannerStatsMap) {
+) -> (UrlScanSummary, ScannerStatsMap) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 
     let mut scanner_set: JoinSet<(String, Vec<Finding>, Vec<CapturedError>)> = JoinSet::new();
-    let mut all_findings = Vec::new();
-    let mut all_errors = Vec::new();
+    let mut summary = UrlScanSummary::default();
     let mut scanner_stats: ScannerStatsMap = BTreeMap::new();
 
     for scanner in scanners {
@@ -376,6 +370,20 @@ async fn scan_url_with_results(
                 stats.findings += f.len();
                 stats.errors += e.len();
 
+                summary.findings += f.len();
+                summary.critical += f
+                    .iter()
+                    .filter(|x| matches!(x.severity, crate::reports::Severity::Critical))
+                    .count();
+                summary.high += f
+                    .iter()
+                    .filter(|x| matches!(x.severity, crate::reports::Severity::High))
+                    .count();
+                summary.medium += f
+                    .iter()
+                    .filter(|x| matches!(x.severity, crate::reports::Severity::Medium))
+                    .count();
+
                 for finding in &mut f {
                     if finding.url.is_empty() {
                         finding.url = url.clone();
@@ -386,8 +394,6 @@ async fn scan_url_with_results(
                         reporter.flush_finding(finding);
                     }
                 }
-                all_findings.extend(f.clone());
-                all_errors.extend(e.clone());
                 if !f.is_empty() {
                     let _ = ftx.send(f);
                 }
@@ -397,13 +403,12 @@ async fn scan_url_with_results(
             }
             Err(join_err) => {
                 let ce = CapturedError::internal(format!("Scanner panic on {url}: {join_err}"));
-                all_errors.push(ce.clone());
                 let _ = etx.send(vec![ce]);
             }
         }
     }
 
-    (all_findings, all_errors, scanner_stats)
+    (summary, scanner_stats)
 }
 
 // ── Scanner registry ───────────────────────────────────────────────────────────
@@ -484,11 +489,14 @@ fn build_scanners(
     }
 
     if scanners.is_empty() {
-        eprintln!("Warning: All scanners disabled");
+        warn!("All scanners disabled");
     } else if scanners.len() > 1 {
         // Reduce deterministic scanner ordering fingerprints across runs.
-        let mut rng = rand::thread_rng();
-        scanners.shuffle(&mut rng);
+        // Keep tests deterministic to avoid flaky order-dependent assertions.
+        if !cfg!(test) {
+            let mut rng = rand::thread_rng();
+            scanners.shuffle(&mut rng);
+        }
     }
 
     scanners
@@ -575,36 +583,53 @@ async fn run_discovery_per_site(
 
         let mut site_discovered: HashSet<String> = HashSet::new();
         let mut errors: Vec<CapturedError> = Vec::new();
+        let robots = RobotsDiscovery::new(client, &base, &host);
+        let sitemap = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS);
+        let swagger = SwaggerDiscovery::new(client, &base, &host);
+        let js = JsDiscovery::new(client, js_seed, &host, MAX_SCRIPTS);
+        let headers = HeaderDiscovery::new(client, &base, &host);
+        let common_paths = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new());
 
-        let (paths, errs) = RobotsDiscovery::new(client, &base, &host).run().await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        let robots_fut = robots.run();
+        let sitemap_fut = sitemap.run();
+        let swagger_fut = swagger.run();
+        let js_fut = js.run();
+        let headers_fut = headers.run();
+        let common_paths_fut = common_paths.run();
 
-        let (paths, errs) = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS)
-            .run()
-            .await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        let (
+            (robots_paths, robots_errs),
+            (sitemap_paths, sitemap_errs),
+            (swagger_paths, swagger_errs),
+            (js_paths, js_errs),
+            (header_paths, header_errs),
+            (common_paths, common_errs),
+        ) = tokio::join!(
+            robots_fut,
+            sitemap_fut,
+            swagger_fut,
+            js_fut,
+            headers_fut,
+            common_paths_fut
+        );
 
-        let (paths, errs) = SwaggerDiscovery::new(client, &base, &host).run().await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        errors.extend(robots_errs);
+        insert_paths(&base, robots_paths, &mut site_discovered);
 
-        let (paths, errs) = JsDiscovery::new(client, js_seed, &host, MAX_SCRIPTS)
-            .run()
-            .await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        errors.extend(sitemap_errs);
+        insert_paths(&base, sitemap_paths, &mut site_discovered);
 
-        let (paths, errs) = HeaderDiscovery::new(client, &base, &host).run().await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        errors.extend(swagger_errs);
+        insert_paths(&base, swagger_paths, &mut site_discovered);
 
-        let (paths, errs) = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new())
-            .run()
-            .await;
-        errors.extend(errs);
-        insert_paths(&base, paths, &mut site_discovered);
+        errors.extend(js_errs);
+        insert_paths(&base, js_paths, &mut site_discovered);
+
+        errors.extend(header_errs);
+        insert_paths(&base, header_paths, &mut site_discovered);
+
+        errors.extend(common_errs);
+        insert_paths(&base, common_paths, &mut site_discovered);
 
         let max_per_site = if config.max_endpoints == 0 {
             usize::MAX
@@ -669,11 +694,6 @@ fn insert_paths(base: &str, paths: HashSet<String>, out: &mut HashSet<String>) {
         let url = format!("{base}{path}");
         out.insert(url);
     }
-}
-
-fn dedup_findings(findings: &mut Vec<Finding>) {
-    let mut seen = HashSet::new();
-    findings.retain(|f| seen.insert((f.url.clone(), f.check.clone())));
 }
 
 fn sort_findings(findings: &mut [Finding]) {

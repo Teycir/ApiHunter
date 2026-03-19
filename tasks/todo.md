@@ -1309,3 +1309,43 @@
   - `cargo fmt`
   - `cargo test --test cli --test integration_runner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Scanner Correctness & Concurrency Fixes (Phase 32)
+
+## Plan
+- [x] Fix JWT alg-confusion key material extraction (`x5c`/`jwk`) so probes use RSA key material, not raw cert/JWK JSON blobs.
+- [x] Remove per-URL scan dead clones and dual return/send path in runner scanner fan-in.
+- [x] Make finding dedup severity-aware in runner by using the report-level dedup behavior.
+- [x] Reduce scanner-order test flakiness by disabling random scanner shuffling in test builds.
+- [x] Improve CORS probe request strategy to prefer preflight (`OPTIONS`) and only fallback to `GET` when needed.
+- [x] Parallelize per-site discovery strategy execution (`robots`, `sitemap`, `swagger`, `js`, `headers`, `common_paths`) with `tokio::join!`.
+- [x] Clean minor hygiene issues (`substitute_env_vars` replace-all correctness, remove dead comment stub, runner `eprintln!` -> tracing).
+- [x] Add/adjust tests for the new behavior and run fmt + targeted/full tests outside sandbox.
+
+## Review
+- JWT alg-confusion probe correctness:
+  - `src/scanner/jwt.rs` no longer uses raw `x5c` DER blobs or serialized JWK JSON as HMAC secret material.
+  - Added key derivation helpers:
+    - RSA modulus extraction from `jwk.n` (base64url decode),
+    - best-effort RSA modulus extraction from `x5c` certificate DER (SPKI BIT STRING parse).
+  - If key hints exist but extraction fails, scanner now records a `CapturedError` (`jwt/alg_confusion`) instead of silently running with invalid key bytes.
+  - Updated JWT test fixture to use RSA JWK in token header for active-probe path coverage.
+- Runner correctness and hygiene:
+  - `scan_url_with_results(...)` now returns lightweight per-URL summary counters and scanner stats only; removed dead clone-heavy `all_findings/all_errors` accumulation.
+  - Worker progress summary now uses returned severity counters rather than cloned finding vectors.
+  - Final finding dedup in runner now calls `reports::dedup_findings(...)` (severity-aware); removed runner-local first-seen dedup implementation.
+  - Runner lifecycle status output moved from `eprintln!` to `tracing` (`info!/warn!`).
+  - Scanner registry shuffling remains enabled in normal builds but is skipped under `cfg(test)` to prevent order-related test flakiness.
+- Discovery and CORS behavior:
+  - Per-site discovery strategies now run concurrently via `tokio::join!` in `run_discovery_per_site(...)` instead of sequential blocking.
+  - CORS scanner now prefers `OPTIONS` preflight probing via `probe_cors_response(...)` and only falls back to `GET` if preflight response lacks CORS headers.
+  - Added regression test `options_probe_is_preferred_over_get_when_cors_headers_present`.
+- Minor fixes:
+  - `auth.rs` env substitution now uses a single `replace_all` pass (no repeated global string replacement loop).
+  - Removed dead comment stub from `HttpClient::new`.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test jwt_scanner --test cors_scanner --test integration_runner --test reports` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)
