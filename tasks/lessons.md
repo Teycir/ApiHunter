@@ -107,3 +107,11 @@
 - Rule: prefer owned captures (`HttpClient` clone + owned URL) inside concurrent burst closures so behavior remains sound if refactored toward spawned tasks.
 - User correction pattern: config-aware helpers can regress at call sites even when helper internals are already fixed.
 - Rule: when transport/security options are threaded into helper APIs (`proxy`, TLS), update every caller and related tests in the same patch.
+- User correction pattern: host-level metadata probes in `api_security` can duplicate requests/findings across many same-host endpoints.
+- Rule: for host-scoped checks (for example `security.txt`), keep a per-host seen-set in the scanner and add regression tests that assert only one probe set per host.
+- User correction pattern: template-loading warnings can bypass quiet/structured logging when emitted via stderr.
+- Rule: route scanner load/parse warnings through `tracing::warn!` instead of `eprintln!` so subscriber config (`--quiet`, JSON logs) is consistently respected.
+- User correction pattern: auth flow behavior can drift from runtime timeout config when helper clients keep hardcoded defaults.
+- Rule: when building auth/probe HTTP clients, always source timeout from `config.politeness.timeout_secs` and add timeout-specific regression coverage.
+- User correction pattern: some review-reported bugs are stale or resolved and should not trigger speculative edits.
+- Rule: re-verify each report item against live code, implement only reproducible gaps, and explicitly document confirmed non-bugs in task review notes.

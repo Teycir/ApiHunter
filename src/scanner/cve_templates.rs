@@ -8,6 +8,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
+use tracing::warn;
 use url::Url;
 
 use crate::{
@@ -120,9 +121,10 @@ fn load_templates() -> Vec<CveTemplate> {
                 .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
                 .collect::<Vec<_>>(),
             Err(e) => {
-                eprintln!(
-                    "Warning: failed to read CVE template dir '{}': {e}",
-                    dir.display()
+                warn!(
+                    template_dir = %dir.display(),
+                    error = %e,
+                    "Failed to read CVE template directory"
                 );
                 Vec::new()
             }
@@ -134,9 +136,10 @@ fn load_templates() -> Vec<CveTemplate> {
             let raw = match fs::read_to_string(&path) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!(
-                        "Warning: failed to read CVE template file '{}': {e}",
-                        path.display()
+                    warn!(
+                        template_path = %path.display(),
+                        error = %e,
+                        "Failed to read CVE template file"
                     );
                     continue;
                 }
@@ -145,9 +148,10 @@ fn load_templates() -> Vec<CveTemplate> {
             let parsed = match toml::from_str::<CveTemplateFile>(&raw) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!(
-                        "Warning: failed to parse CVE template file '{}': {e}",
-                        path.display()
+                    warn!(
+                        template_path = %path.display(),
+                        error = %e,
+                        "Failed to parse CVE template file"
                     );
                     continue;
                 }
@@ -159,9 +163,9 @@ fn load_templates() -> Vec<CveTemplate> {
                     || t.path.trim().is_empty()
                     || t.method.trim().is_empty()
                 {
-                    eprintln!(
-                        "Warning: skipping invalid CVE template in '{}': id/check/path/method required",
-                        path.display()
+                    warn!(
+                        template_path = %path.display(),
+                        "Skipping invalid CVE template: id/check/path/method required"
                     );
                     continue;
                 }
@@ -183,7 +187,7 @@ fn load_templates() -> Vec<CveTemplate> {
     }
 
     if templates.is_empty() {
-        eprintln!("Warning: no CVE templates loaded from configured template directories");
+        warn!("No CVE templates loaded from configured template directories");
     }
 
     templates

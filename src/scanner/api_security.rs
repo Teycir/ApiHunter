@@ -13,6 +13,7 @@
 //     patterns (e.g. actuator returns JSON, .env contains KEY=VAL).
 
 use async_trait::async_trait;
+use dashmap::DashSet;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
 use regex::Regex;
@@ -35,11 +36,15 @@ use super::{
 
 pub struct ApiSecurityScanner {
     client_b: Option<Arc<HttpClient>>,
+    checked_hosts: Arc<DashSet<String>>,
 }
 
 impl ApiSecurityScanner {
     pub fn new(_config: &Config, client_b: Option<Arc<HttpClient>>) -> Self {
-        Self { client_b }
+        Self {
+            client_b,
+            checked_hosts: Arc::new(DashSet::new()),
+        }
     }
 }
 
@@ -641,6 +646,9 @@ impl Scanner for ApiSecurityScanner {
         let base = url.trim_end_matches('/');
         let spa_fingerprint = detect_spa_catchall(base, client, &mut errors).await;
         let spa_catchall = spa_fingerprint.is_some();
+        let security_txt_host = Url::parse(url)
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(|h| h.to_ascii_lowercase()));
 
         // Run all checks; failures are captured rather than propagated.
         check_secrets_in_response(url, client, &mut findings, &mut errors).await;
@@ -648,7 +656,13 @@ impl Scanner for ApiSecurityScanner {
         check_http_methods(url, client, &mut findings, &mut errors, spa_catchall).await;
         check_debug_endpoints(url, client, &mut findings, &mut errors, spa_fingerprint).await;
         check_directory_listing(url, client, &mut findings, &mut errors).await;
-        check_security_txt(url, client, &mut findings).await;
+        if security_txt_host
+            .as_ref()
+            .map(|host| self.checked_hosts.insert(host.clone()))
+            .unwrap_or(true)
+        {
+            check_security_txt(url, client, &mut findings).await;
+        }
         check_response_headers(url, client, &mut findings, &mut errors).await;
 
         if config.active_checks {

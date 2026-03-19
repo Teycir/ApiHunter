@@ -174,7 +174,7 @@ pub fn load_flow(path: &Path) -> Result<AuthFlow> {
 pub async fn execute_flow(flow: &AuthFlow, config: &Config) -> Result<LiveCredential> {
     let jar = Arc::new(Jar::default());
     let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(config.politeness.timeout_secs))
         .cookie_provider(Arc::clone(&jar));
 
     // Apply proxy settings if configured

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use api_scanner::auth::{execute_flow, AuthFlow, AuthStep, InjectAs};
 use api_scanner::config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig};
@@ -54,6 +54,12 @@ fn test_config() -> Config {
         },
         quiet: false,
     }
+}
+
+fn test_config_with_timeout(timeout_secs: u64) -> Config {
+    let mut cfg = test_config();
+    cfg.politeness.timeout_secs = timeout_secs;
+    cfg
 }
 
 #[tokio::test]
@@ -145,4 +151,41 @@ async fn execute_flow_substitutes_lowercase_env_placeholders() {
 
     let cred = result.expect("lowercase env placeholders should be substituted");
     assert_eq!(cred.current(), "token-lowercase");
+}
+
+#[tokio::test]
+async fn execute_flow_uses_configured_timeout() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(serde_json::json!({
+                    "access_token": "token-too-slow"
+                })),
+        )
+        .mount(&server)
+        .await;
+
+    let flow = AuthFlow {
+        steps: vec![AuthStep {
+            url: format!("{}/login", server.uri()),
+            method: "POST".to_string(),
+            body: None,
+            headers: HashMap::new(),
+            extract: Some("$.access_token".to_string()),
+            extract_refresh: None,
+            extract_expires_in: None,
+            inject_as: Some(InjectAs::Bearer),
+        }],
+        refresh_interval_secs: 840,
+    };
+
+    let result = execute_flow(&flow, &test_config_with_timeout(1)).await;
+    assert!(
+        result.is_err(),
+        "expected auth flow to fail when response exceeds configured timeout"
+    );
 }

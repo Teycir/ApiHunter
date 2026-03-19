@@ -1829,3 +1829,36 @@
   - `cargo fmt`
   - `cargo test --test oauth_oidc_scanner --test mass_assignment_scanner --test auth_flow --test auth_refresh --test burst_probe` (outside sandbox): passed.
   - `cargo test` (outside sandbox, full suite): passed.
+
+---
+
+# Task: Scanner/Auth Bugfix Batch (2026-03-19)
+
+## Plan
+- [x] Add per-host dedup in `ApiSecurityScanner` so `check_security_txt` runs once per host per scan run.
+- [x] Replace `eprintln!` warnings in `CveTemplateScanner::load_templates()` with `tracing::warn!`.
+- [x] Apply `config.politeness.timeout_secs` to auth flow HTTP client timeout in `auth::execute_flow`.
+- [x] Add/adjust tests in `tests/` for security.txt host dedup and auth timeout behavior.
+- [x] Verify with formatting and targeted tests, then document outcomes in Review.
+
+## Review
+- Verification outcome for reported items:
+  - Reproducible and fixed: Bug 1 (`ApiSecurityScanner` security.txt host dedup), Bug 2 (`CveTemplateScanner` warnings now use tracing), Bug 4 (`auth::execute_flow` timeout now config-driven).
+  - Confirmed non-bug: Bug 3 (`mass_assignment::is_likely_mutation_target` behavior is correct under URL parsing and current segment matching semantics).
+- Code changes:
+  - `src/scanner/api_security.rs`:
+    - Added `checked_hosts: Arc<DashSet<String>>` to `ApiSecurityScanner`.
+    - Added host-level guard around `check_security_txt` so it executes once per host per run.
+  - `src/scanner/cve_templates.rs`:
+    - Replaced all `eprintln!` warning paths in `load_templates()` with `tracing::warn!` (including empty-template warning).
+  - `src/auth.rs`:
+    - Updated auth client timeout from hardcoded `30s` to `config.politeness.timeout_secs`.
+- Regression tests:
+  - Added `tests/api_security_scanner.rs`:
+    - `security_txt_probe_runs_once_per_host`
+  - Updated `tests/auth_flow.rs`:
+    - `execute_flow_uses_configured_timeout`
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test api_security_scanner --test auth_flow` (outside sandbox): passed.
+  - `cargo test --test cve_templates_scanner` (outside sandbox): passed.
