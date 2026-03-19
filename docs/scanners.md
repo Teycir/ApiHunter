@@ -137,18 +137,44 @@ Active-checks scanner powered by a TOML template catalog translated from Nuclei-
 This scanner currently runs only when `--active-checks` is enabled.
 
 Template catalog location:
-- `assets/cve_templates.toml`
+- `assets/cve_templates/*.toml`
 
 Current translated checks include:
 - `cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed`
 - `cve/cve-2021-29442/nacos-auth-bypass-signal`
+- `cve/cve-2021-29441/nacos-user-agent-auth-bypass-signal`
 - `cve/cve-2020-13945/apisix-default-admin-key`
+- `cve/cve-2021-45232/apisix-dashboard-unauthorized-export`
 
 **Detects:**
 - CVE-specific exposure signals based on:
   - HTTP status constraints
   - response body indicators
   - required request headers (for example known-default API keys)
+  - optional baseline-vs-confirm differentials for bypass-style checks
+
+Regression target lists kept in-repo:
+- `targets/cve-regression-vulhub-local.txt` (local true-positive CVE validation set)
+- `targets/cve-regression-real-public.txt` (real internet negative-regression set)
+
+Local true-positive mapping:
+- `http://127.0.0.1:18080/actuator` -> `CVE-2022-22947`
+- `http://127.0.0.1:18848/nacos` -> `CVE-2021-29442`
+- `http://127.0.0.1:18851/nacos` -> `CVE-2021-29441` (requires auth-enabled Nacos baseline)
+- `http://127.0.0.1:19080/apisix/admin` -> `CVE-2020-13945`
+- `http://127.0.0.1:19000/apisix/admin` -> `CVE-2021-45232`
+
+Example true-positive regression run:
+```bash
+./target/debug/api-scanner \
+  --urls targets/cve-regression-vulhub-local.txt \
+  --no-filter --no-discovery --active-checks \
+  --no-cors --no-csp --no-graphql --no-jwt --no-openapi \
+  --format ndjson --output /tmp/cve_tp.ndjson \
+  --quiet --delay-ms 0 --fail-on critical
+
+rg '"check":"cve/' /tmp/cve_tp.ndjson
+```
 
 ---
 
@@ -195,7 +221,7 @@ These should only be used in controlled environments or with explicit permission
 
 ### CVE Template Active Checks
 - **Template-driven CVE probes** — translated low-impact API CVE checks executed against host-contextual paths
-- **Catalog extensibility** — add or tune templates via `assets/cve_templates.toml` without changing scanner code
+- **Catalog extensibility** — add or tune templates via `assets/cve_templates/*.toml` without changing scanner code
 
 ⚠️ **Warning:** Active checks generate significantly higher request volume and may:
 - Trigger WAF/IDS alerts and rate limiting

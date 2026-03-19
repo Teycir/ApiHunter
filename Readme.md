@@ -142,7 +142,7 @@ Complete documentation is available in `docs/`. Start with:
 
 ### Next Priorities
 
-- 🔜 **Template expansion:** grow `assets/cve_templates.toml` coverage with additional vetted API CVE probes.
+- 🔜 **Template expansion:** grow `assets/cve_templates/*.toml` coverage with additional vetted API CVE probes.
 - 🔜 **Template tooling:** add import/translation helpers for Nuclei API templates into ApiHunter TOML format.
 
 ### What To Do Next After Quick Start

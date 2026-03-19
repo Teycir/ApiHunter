@@ -12,3 +12,12 @@
 - User preference: all test execution must run outside sandbox.
 - Rule: always run `cargo test` (full or targeted) with escalation/outside sandbox, even if sandbox execution appears possible.
 - Rule scope: this preference is global across repos; enforce it via `/home/teycir/.codex/AGENTS.md` so all projects inherit it.
+
+## 2026-03-19
+- User preference: CVE checks must come from external template files, not embedded fallback catalogs.
+- Rule: keep CVE scanner loading template-only (`assets/cve_templates/*.toml` + optional extra dirs) and avoid runtime fallback to bundled single-file catalogs.
+- User preference: keep expanding CVE coverage from real template sources, not a tiny fixed starter set.
+- Rule: when CVE catalog breadth is requested, use Exa to source upstream template/advisory references and add only checks that fit ApiHunter's low-impact execution model.
+- User preference: every CVE template should be proven with true-positive validation, not only mock tests.
+- Rule: maintain and use in-repo regression target lists for CVE true-positive and negative runs (`targets/cve-regression-vulhub-local.txt`, `targets/cve-regression-real-public.txt`).
+- Rule: for context-gated CVE templates, seed scans with context-bearing URLs (for example `/actuator`, `/nacos`, `/apisix/admin`) or findings may be skipped.

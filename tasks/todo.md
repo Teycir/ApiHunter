@@ -450,12 +450,12 @@
 ## Review
 - Added scanner module: `src/scanner/cve_templates.rs`
   - Active-check gated (`--active-checks` required).
-  - Loads translated templates from `assets/cve_templates.toml`.
+  - Initial version loaded translated templates from `assets/cve_templates.toml` (later migrated to template files).
   - Executes low-impact template probes (GET only) with:
     - request headers from template definition,
     - response status/body/header matchers,
     - host+template deduplication to avoid repeated probes.
-- Added translated TOML catalog: `assets/cve_templates.toml`
+- Added translated TOML starter catalog in `assets/cve_templates.toml` (later migrated to `assets/cve_templates/*.toml`).
   - `CVE-2022-22947` Spring Cloud Gateway actuator exposure signal
   - `CVE-2021-29442` Nacos auth-bypass signal
   - `CVE-2020-13945` APISIX default admin key signal
@@ -478,3 +478,130 @@
   - Live run:
     - `./target/debug/api-scanner --urls /tmp/cve_real_targets.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/cve_real.ndjson --summary --delay-ms 0`
     - scanned: `3`, findings: `1` (rate-limit signal), `cve/*` findings: `0`, errors: `0`.
+
+---
+
+# Task: CVE Templates-Only Loading (Phase 16)
+
+## Plan
+- [x] Remove fallback CVE catalog loading from scanner runtime.
+- [x] Ensure starter CVEs are loaded from template files under `assets/cve_templates/`.
+- [x] Update docs and roadmap references to the template-directory model.
+- [x] Validate with formatting and CVE/full test runs.
+
+## Review
+- Runtime behavior changed to template-only loading in `src/scanner/cve_templates.rs`:
+  - Removed fallback parsing path that used embedded `assets/cve_templates.toml`.
+  - Scanner now warns when no templates are loaded from configured template directories.
+- Migrated starter CVE catalog from single file to per-template files:
+  - `assets/cve_templates/cve-2022-22947.toml`
+  - `assets/cve_templates/cve-2021-29442.toml`
+  - `assets/cve_templates/cve-2020-13945.toml`
+- Updated references:
+  - `docs/scanners.md` now points to `assets/cve_templates/*.toml`.
+  - `Readme.md` roadmap "Template expansion" now points to `assets/cve_templates/*.toml`.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test cve_templates_scanner`
+  - `cargo test`
+
+---
+
+# Task: CVE Catalog Expansion via Exa (Phase 17)
+
+## Plan
+- [x] Use Exa to source additional API-relevant CVEs/templates beyond the initial 3 entries.
+- [x] Translate additional CVEs into `assets/cve_templates/*.toml` files.
+- [x] Add scanner support for baseline-vs-bypass matcher constraints needed by Nacos UA bypass signal.
+- [x] Add focused tests and run full validation.
+- [x] Update scanner docs with new CVE checks.
+
+## Review
+- Exa-sourced references used:
+  - `https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main/http/cves/2021/CVE-2021-29441.yaml`
+  - `https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main/http/cves/2021/CVE-2021-45232.yaml`
+  - `https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main/http/cves/2022/CVE-2022-24112.yaml` (reviewed but not added due intrusive multi-step/oast flow)
+- Added new CVE template files:
+  - `assets/cve_templates/cve-2021-29441.toml`
+  - `assets/cve_templates/cve-2021-45232.toml`
+- Scanner enhancements in `src/scanner/cve_templates.rs`:
+  - Added optional baseline matcher fields:
+    - `baseline_status_any_of`
+    - `baseline_body_contains_any`
+    - `baseline_body_contains_all`
+    - `baseline_match_headers`
+  - Added baseline request/verification flow before main template probe when baseline matchers are configured.
+  - Refactored response matching into shared constraint matcher utility.
+- Added tests in `tests/cve_templates_scanner.rs`:
+  - APISIX dashboard export exposure check (`CVE-2021-45232`).
+  - Nacos User-Agent auth bypass signal with baseline-vs-bypass behavior (`CVE-2021-29441`).
+- Updated docs in `docs/scanners.md` to list the two new translated checks and baseline differential capability.
+- Validation:
+  - `cargo fmt` passed.
+  - `cargo test --test cve_templates_scanner` passed (`5/5`).
+  - `cargo test` passed (full suite green).
+
+---
+
+# Task: Real Internet Target Validation (Phase 18)
+
+## Plan
+- [x] Use Exa to discover candidate public internet targets for CVE path validation.
+- [x] Preflight candidate targets for reachability and basic endpoint status.
+- [x] Run off-sandbox low-impact validation scan on real public targets.
+- [x] Capture CVE/no-CVE outcomes and summarize evidence.
+
+## Review
+- Exa discovery was used to gather public candidate domains and references for Nacos/APISIX/Spring paths.
+- Real internet target set used:
+  - `https://docs.spring.io`
+  - `https://nacos.io`
+  - `https://apisix.apache.org`
+  - `https://techdocs.broadcom.com`
+- Preflight checks:
+  - roots reachable (`200/301`), CVE-specific paths returned `404` on these domains.
+- Off-sandbox validation command:
+  - `./target/debug/api-scanner --urls /tmp/cve_real_public_targets.txt --no-filter --no-discovery --active-checks --no-cors --no-csp --no-graphql --no-api-security --no-jwt --no-openapi --format ndjson --output /tmp/cve_real_public_validation.ndjson --summary --delay-ms 0`
+- Output summary (`/tmp/cve_real_public_validation.ndjson`):
+  - scanned: `4`
+  - findings: `4` (all `rate_limit/not-detected`, low)
+  - errors: `0`
+  - CVE findings (`scanner == cve_templates`): `0`
+- Conclusion:
+  - Real internet negative validation passed (no false-positive CVE matches on these public documentation/official domains).
+
+---
+
+# Task: Full CVE True-Positive Validation (Phase 19)
+
+## Plan
+- [x] Validate each CVE template against a controlled vulnerable target with off-sandbox runs.
+- [x] Ensure baseline-vs-bypass behavior for `CVE-2021-29441` using an auth-enabled Nacos target.
+- [x] Keep reproducible regression target list(s) in-repo.
+- [x] Harden template matching where validation surfaced overmatching risk.
+- [x] Add regression test coverage for the hardened matcher.
+- [x] Re-run targeted CVE scanner tests outside sandbox.
+
+## Review
+- Off-sandbox true-positive validation completed for all translated CVEs using seeded context paths:
+  - `CVE-2022-22947` -> `http://127.0.0.1:18080/actuator`
+  - `CVE-2021-29442` -> `http://127.0.0.1:18848/nacos`
+  - `CVE-2021-29441` -> `http://127.0.0.1:18851/nacos`
+  - `CVE-2020-13945` -> `http://127.0.0.1:19080/apisix/admin`
+  - `CVE-2021-45232` -> `http://127.0.0.1:19000/apisix/admin`
+- Final validation artifacts:
+  - `/tmp/cve_tp_runs5/CVE-2022-22947.ndjson`
+  - `/tmp/cve_tp_runs5/CVE-2021-29442.ndjson`
+  - `/tmp/cve_tp_runs5/CVE-2021-29441.ndjson`
+  - `/tmp/cve_tp_runs5/CVE-2020-13945.ndjson`
+  - `/tmp/cve_tp_runs5/CVE-2021-45232.ndjson`
+- Reproducibility assets added:
+  - `targets/cve-regression-vulhub-local.txt`
+  - `docs/scanners.md` updated with CVE regression target lists and rerun command.
+- Matcher hardening:
+  - `assets/cve_templates/cve-2022-22947.toml` now requires:
+    - `predicate` marker in response body
+    - at least one Spring-Gateway route-shape token (`route_id` or `predicates` or `filters`)
+  - This removes observed overmatch on APISIX dashboard HTML content.
+- Added test coverage:
+  - `translated_template_22947_does_not_match_html_routes_text` in `tests/cve_templates_scanner.rs`.

@@ -4,5 +4,8 @@ target
 _test_result.txt
 final_results.json
 gambling_scan_results.json
-targets
+.tmp/
+targets/*
+!targets/cve-regression-real-public.txt
+!targets/cve-regression-vulhub-local.txt
 gambling_scan_short_results.json

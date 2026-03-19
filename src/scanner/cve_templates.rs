@@ -63,6 +63,14 @@ struct CveTemplate {
     body_contains_all: Vec<String>,
     #[serde(default)]
     context_path_contains_any: Vec<String>,
+    #[serde(default)]
+    baseline_status_any_of: Vec<u16>,
+    #[serde(default)]
+    baseline_body_contains_any: Vec<String>,
+    #[serde(default)]
+    baseline_body_contains_all: Vec<String>,
+    #[serde(default)]
+    baseline_match_headers: Vec<NameValue>,
 }
 
 fn default_method() -> String {
@@ -85,7 +93,10 @@ fn load_templates() -> Vec<CveTemplate> {
                 .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
                 .collect::<Vec<_>>(),
             Err(e) => {
-                eprintln!("Warning: failed to read CVE template dir '{}': {e}", dir.display());
+                eprintln!(
+                    "Warning: failed to read CVE template dir '{}': {e}",
+                    dir.display()
+                );
                 Vec::new()
             }
         };
@@ -96,7 +107,10 @@ fn load_templates() -> Vec<CveTemplate> {
             let raw = match fs::read_to_string(&path) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Warning: failed to read CVE template file '{}': {e}", path.display());
+                    eprintln!(
+                        "Warning: failed to read CVE template file '{}': {e}",
+                        path.display()
+                    );
                     continue;
                 }
             };
@@ -104,7 +118,10 @@ fn load_templates() -> Vec<CveTemplate> {
             let parsed = match toml::from_str::<CveTemplateFile>(&raw) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("Warning: failed to parse CVE template file '{}': {e}", path.display());
+                    eprintln!(
+                        "Warning: failed to parse CVE template file '{}': {e}",
+                        path.display()
+                    );
                     continue;
                 }
             };
@@ -136,13 +153,7 @@ fn load_templates() -> Vec<CveTemplate> {
     }
 
     if templates.is_empty() {
-        let raw = include_str!("../../assets/cve_templates.toml");
-        match toml::from_str::<CveTemplateFile>(raw) {
-            Ok(file) => return file.templates,
-            Err(e) => {
-                eprintln!("Warning: failed to parse fallback CVE template catalog: {e}");
-            }
-        }
+        eprintln!("Warning: no CVE templates loaded from configured template directories");
     }
 
     templates
@@ -212,6 +223,19 @@ impl Scanner for CveTemplateScanner {
                 format!("{base}/{}", tmpl.path)
             };
 
+            if template_has_baseline_matchers(tmpl) {
+                let baseline_resp = match client.get(&probe_url).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        errors.push(e);
+                        continue;
+                    }
+                };
+                if !template_matches_baseline_response(tmpl, &baseline_resp) {
+                    continue;
+                }
+            }
+
             let resp = match execute_template_request(client, &probe_url, tmpl).await {
                 Ok(r) => r,
                 Err(e) => {
@@ -258,6 +282,13 @@ fn template_context_matches(tmpl: &CveTemplate, target_path: &str) -> bool {
         .any(|hint| target_path.contains(&hint.to_ascii_lowercase()))
 }
 
+fn template_has_baseline_matchers(tmpl: &CveTemplate) -> bool {
+    !tmpl.baseline_status_any_of.is_empty()
+        || !tmpl.baseline_body_contains_any.is_empty()
+        || !tmpl.baseline_body_contains_all.is_empty()
+        || !tmpl.baseline_match_headers.is_empty()
+}
+
 async fn execute_template_request(
     client: &HttpClient,
     probe_url: &str,
@@ -285,32 +316,56 @@ async fn execute_template_request(
 }
 
 fn template_matches_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
-    if !tmpl.status_any_of.is_empty() && !tmpl.status_any_of.contains(&resp.status) {
+    response_matches_constraints(
+        &tmpl.status_any_of,
+        &tmpl.body_contains_any,
+        &tmpl.body_contains_all,
+        &tmpl.match_headers,
+        resp,
+    )
+}
+
+fn template_matches_baseline_response(tmpl: &CveTemplate, resp: &HttpResponse) -> bool {
+    response_matches_constraints(
+        &tmpl.baseline_status_any_of,
+        &tmpl.baseline_body_contains_any,
+        &tmpl.baseline_body_contains_all,
+        &tmpl.baseline_match_headers,
+        resp,
+    )
+}
+
+fn response_matches_constraints(
+    status_any_of: &[u16],
+    body_contains_any: &[String],
+    body_contains_all: &[String],
+    match_headers: &[NameValue],
+    resp: &HttpResponse,
+) -> bool {
+    if !status_any_of.is_empty() && !status_any_of.contains(&resp.status) {
         return false;
     }
 
     let body_l = resp.body.to_ascii_lowercase();
 
-    if !tmpl.body_contains_all.is_empty()
-        && !tmpl
-            .body_contains_all
+    if !body_contains_all.is_empty()
+        && !body_contains_all
             .iter()
             .all(|needle| body_l.contains(&needle.to_ascii_lowercase()))
     {
         return false;
     }
 
-    if !tmpl.body_contains_any.is_empty()
-        && !tmpl
-            .body_contains_any
+    if !body_contains_any.is_empty()
+        && !body_contains_any
             .iter()
             .any(|needle| body_l.contains(&needle.to_ascii_lowercase()))
     {
         return false;
     }
 
-    if !tmpl.match_headers.is_empty() {
-        for hv in &tmpl.match_headers {
+    if !match_headers.is_empty() {
+        for hv in match_headers {
             let name_l = hv.name.to_ascii_lowercase();
             let want_l = hv.value.to_ascii_lowercase();
             let got = resp.headers.get(&name_l).map(|v| v.to_ascii_lowercase());
