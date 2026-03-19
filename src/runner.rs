@@ -81,6 +81,8 @@ struct ScannerRunStats {
 }
 
 type ScannerStatsMap = BTreeMap<String, ScannerRunStats>;
+type StreamFindingKey = (String, String);
+type StreamSeenSet = Arc<Mutex<HashSet<StreamFindingKey>>>;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct UrlScanSummary {
@@ -177,7 +179,7 @@ pub async fn run(
     let (finding_tx, mut finding_rx) = mpsc::unbounded_channel::<Vec<Finding>>();
     let (error_tx, mut error_rx) = mpsc::unbounded_channel::<Vec<CapturedError>>();
     let (scanner_stats_tx, mut scanner_stats_rx) = mpsc::unbounded_channel::<ScannerStatsMap>();
-    let stream_seen: Arc<Mutex<HashSet<(String, String)>>> = Arc::new(Mutex::new(HashSet::new()));
+    let stream_seen: StreamSeenSet = Arc::new(Mutex::new(HashSet::new()));
 
     // ── 6. Spawn worker tasks ─────────────────────────────────────────────────
     let mut join_set: JoinSet<()> = JoinSet::new();
@@ -348,7 +350,7 @@ async fn scan_url_with_results(
         mpsc::UnboundedSender<Vec<Finding>>,
         mpsc::UnboundedSender<Vec<CapturedError>>,
     ),
-    stream_seen: Arc<Mutex<HashSet<(String, String)>>>,
+    stream_seen: StreamSeenSet,
 ) -> (UrlScanSummary, ScannerStatsMap) {
     debug!(url = %url, scanners = scanners.len(), "Scanning URL");
 

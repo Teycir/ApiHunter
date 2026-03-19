@@ -299,23 +299,39 @@ async fn analyze_jwt(
     }
 
     if alg.eq_ignore_ascii_case("hs256") {
-        if let Some(secret) = weak_secret_match(url, parts[0], parts[1], &signature) {
-            findings.push(
-                Finding::new(
-                    url,
-                    "jwt/weak-secret",
-                    "JWT signed with weak HS256 secret",
-                    Severity::Critical,
-                    format!(
-                        "JWT signature verifies with a weak secret candidate: '{secret}'.",
+        let url_owned = url.to_string();
+        let header_owned = parts[0].to_string();
+        let payload_owned = parts[1].to_string();
+        let signature_owned = signature.clone();
+        match tokio::task::spawn_blocking(move || {
+            weak_secret_match(&url_owned, &header_owned, &payload_owned, &signature_owned)
+        })
+        .await
+        {
+            Ok(Some(secret)) => {
+                findings.push(
+                    Finding::new(
+                        url,
+                        "jwt/weak-secret",
+                        "JWT signed with weak HS256 secret",
+                        Severity::Critical,
+                        format!(
+                            "JWT signature verifies with a weak secret candidate: '{secret}'.",
+                        ),
+                        "jwt",
+                    )
+                    .with_evidence(format!("Token: {}", redact_token(token)))
+                    .with_remediation(
+                        "Use a strong, high-entropy secret for HS256 or move to asymmetric signing (RS256/ES256).",
                     ),
-                    "jwt",
-                )
-                .with_evidence(format!("Token: {}", redact_token(token)))
-                .with_remediation(
-                    "Use a strong, high-entropy secret for HS256 or move to asymmetric signing (RS256/ES256).",
-                ),
-            );
+                );
+            }
+            Ok(None) => {}
+            Err(e) => errors.push(CapturedError::from_str(
+                "jwt/weak_secret_probe",
+                Some(url.to_string()),
+                format!("weak-secret blocking task failed: {e}"),
+            )),
         }
     }
 

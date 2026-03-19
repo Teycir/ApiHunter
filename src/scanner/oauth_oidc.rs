@@ -1,10 +1,6 @@
 use async_trait::async_trait;
-use base64::engine::general_purpose::STANDARD as BASE64_STD;
-use base64::Engine;
 use rand::{distributions::Alphanumeric, seq::SliceRandom, Rng};
-use reqwest::header::LOCATION;
 use serde_json::Value;
-use std::time::Duration;
 use url::Url;
 
 use crate::{
@@ -68,7 +64,7 @@ impl Scanner for OAuthOidcScanner {
         }
 
         if is_authorize_like_path(&path) {
-            let (mut f, mut e) = probe_authorize_redirect(url, config).await;
+            let (mut f, mut e) = probe_authorize_redirect(url, client).await;
             findings.append(&mut f);
             errors.append(&mut e);
         }
@@ -126,7 +122,7 @@ fn random_redirect_probe() -> String {
 
 async fn probe_authorize_redirect(
     target_url: &str,
-    config: &Config,
+    client: &HttpClient,
 ) -> (Vec<Finding>, Vec<CapturedError>) {
     let mut findings = Vec::new();
     let mut errors = Vec::new();
@@ -150,7 +146,7 @@ async fn probe_authorize_redirect(
         .append_pair("scope", "openid profile")
         .append_pair("state", &state_probe);
 
-    let resp = match authorize_probe_without_redirects(config, &probe).await {
+    let resp = match authorize_probe_without_redirects(client, &probe).await {
         Ok(r) => r,
         Err(e) => {
             errors.push(e);
@@ -162,28 +158,6 @@ async fn probe_authorize_redirect(
         return (findings, errors);
     };
     let location_l = location.to_ascii_lowercase();
-
-    if !location_l.starts_with(&redirect_probe) {
-        return (findings, errors);
-    }
-
-    findings.push(
-        Finding::new(
-            target_url,
-            "oauth/redirect-uri-not-validated",
-            "OAuth authorize endpoint may accept attacker redirect_uri",
-            Severity::High,
-            "Authorization flow redirected to an attacker-controlled redirect_uri.",
-            "oauth_oidc",
-        )
-        .with_evidence(format!(
-            "GET {}\nStatus: {}\nLocation: {}",
-            probe, resp.status, location
-        ))
-        .with_remediation(
-            "Require exact redirect_uri matching per client registration and reject unregistered callbacks.",
-        ),
-    );
 
     if !location_l.contains(&format!("state={state_probe}")) {
         findings.push(
@@ -205,110 +179,41 @@ async fn probe_authorize_redirect(
         );
     }
 
+    if location_l.starts_with(&redirect_probe) {
+        findings.push(
+            Finding::new(
+                target_url,
+                "oauth/redirect-uri-not-validated",
+                "OAuth authorize endpoint may accept attacker redirect_uri",
+                Severity::High,
+                "Authorization flow redirected to an attacker-controlled redirect_uri.",
+                "oauth_oidc",
+            )
+            .with_evidence(format!(
+                "GET {}\nStatus: {}\nLocation: {}",
+                probe, resp.status, location
+            ))
+            .with_remediation(
+                "Require exact redirect_uri matching per client registration and reject unregistered callbacks.",
+            ),
+        );
+    }
+
     (findings, errors)
 }
 
 async fn authorize_probe_without_redirects(
-    config: &Config,
+    client: &HttpClient,
     probe: &Url,
 ) -> Result<HttpResponse, CapturedError> {
-    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-
-    let mut builder = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(config.politeness.timeout_secs))
-        .danger_accept_invalid_certs(config.danger_accept_invalid_certs);
-
-    if let Some(proxy) = &config.proxy {
-        match reqwest::Proxy::all(proxy) {
-            Ok(p) => builder = builder.proxy(p),
-            Err(e) => {
-                return Err(CapturedError::new(
-                    "oauth/authorize-probe",
-                    Some(probe.to_string()),
-                    &e,
-                ));
-            }
-        }
-    }
-
-    let client = builder
-        .build()
-        .map_err(|e| CapturedError::new("oauth/authorize-probe", Some(probe.to_string()), &e))?;
-
-    let mut request_headers = HeaderMap::new();
-    for (k, v) in &config.default_headers {
-        if let (Ok(name), Ok(value)) = (
-            HeaderName::from_bytes(k.as_bytes()),
-            HeaderValue::from_str(v),
-        ) {
-            request_headers.insert(name, value);
-        }
-    }
-
-    if !request_headers.contains_key(reqwest::header::AUTHORIZATION) {
-        if let Some(token) = &config.auth_bearer {
-            if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
-                request_headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
-        } else if let Some(creds) = &config.auth_basic {
-            let encoded = BASE64_STD.encode(creds.as_bytes());
-            if let Ok(value) = HeaderValue::from_str(&format!("Basic {encoded}")) {
-                request_headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
-        }
-    }
-
-    if !config.cookies.is_empty() {
-        let cookie_value = config
-            .cookies
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        if let Some(existing) = request_headers.get(reqwest::header::COOKIE).cloned() {
-            let mut combined = existing.to_str().unwrap_or("").to_string();
-            if !combined.is_empty() {
-                combined.push_str("; ");
-            }
-            combined.push_str(&cookie_value);
-            if let Ok(value) = HeaderValue::from_str(&combined) {
-                request_headers.insert(reqwest::header::COOKIE, value);
-            }
-        } else if let Ok(value) = HeaderValue::from_str(&cookie_value) {
-            request_headers.insert(reqwest::header::COOKIE, value);
-        }
-    }
-
-    let mut req = client.get(probe.as_str());
-    if !request_headers.is_empty() {
-        req = req.headers(request_headers);
-    }
-
-    let resp = req
-        .send()
+    client
+        .get_with_headers_no_redirect(probe.as_str(), &[])
         .await
-        .map_err(|e| CapturedError::new("oauth/authorize-probe", Some(probe.to_string()), &e))?;
-
-    let mut headers = std::collections::HashMap::new();
-    for (k, v) in resp.headers() {
-        if let Ok(s) = v.to_str() {
-            headers.insert(k.as_str().to_ascii_lowercase(), s.to_string());
-        }
-    }
-    if let Some(loc) = resp.headers().get(LOCATION).and_then(|v| v.to_str().ok()) {
-        headers.insert("location".to_string(), loc.to_string());
-    }
-
-    let status = resp.status().as_u16();
-    let body = resp.text().await.unwrap_or_default();
-    Ok(HttpResponse {
-        status,
-        headers,
-        body,
-        url: probe.to_string(),
-    })
+        .map_err(|mut e| {
+            e.context = "oauth/authorize-probe".to_string();
+            e.url = Some(probe.to_string());
+            e
+        })
 }
 
 async fn analyze_openid_metadata(

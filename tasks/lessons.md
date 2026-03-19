@@ -83,3 +83,9 @@
 - Rule: when using custom per-check clients (e.g., no-redirect probes), propagate configured default headers/auth/cookies and transport settings unless the check explicitly requires stripping them.
 - User correction pattern: env placeholder support that is too restrictive leads to silent credential substitution failures.
 - Rule: keep auth-flow placeholder parsing case-flexible for variable names used in real deployments, and add substitution regression tests.
+- User correction pattern: finding dedup keyed only by `(url, check)` can silently drop distinct evidence for multi-probe checks.
+- Rule: final report dedup keys must preserve evidence granularity (for example include evidence identity) while retaining deterministic severity selection per exact key.
+- User correction pattern: scanner probes that bypass shared `HttpClient` drift from metrics/evasion/delay behavior and undercount runtime traffic.
+- Rule: route specialized probes (for example no-redirect OAuth authorize checks) through `HttpClient` variants so counting, delay, retries, headers, cookies, and auth context stay consistent.
+- User correction pattern: mutation-probe payload assertions can overfit fixed keys and block adaptive schema-aware improvements.
+- Rule: in active-check tests, assert required baseline probe fields and semantics while allowing adaptive additional fields when scanner behavior intentionally expands with observed schema hints.

@@ -31,14 +31,16 @@ impl RateLimitScanner {
 const BURST_REQUESTS: usize = 12;
 const BYPASS_REQUESTS: usize = 3;
 
-fn random_reserved_ipv4() -> String {
+fn random_publicish_ipv4() -> String {
     let mut rng = rand::thread_rng();
-    let block = match rng.gen_range(0..3) {
-        0 => "203.0.113",
-        1 => "198.51.100",
-        _ => "192.0.2",
-    };
-    format!("{block}.{}", rng.gen_range(1..=254))
+    const FIRST_OCTETS: &[u8] = &[
+        11, 23, 31, 45, 52, 63, 79, 91, 103, 121, 138, 151, 166, 178, 185, 199, 216,
+    ];
+    let a = FIRST_OCTETS[rng.gen_range(0..FIRST_OCTETS.len())];
+    let b = rng.gen_range(1..=254);
+    let c = rng.gen_range(1..=254);
+    let d = rng.gen_range(1..=254);
+    format!("{a}.{b}.{c}.{d}")
 }
 
 #[derive(Default)]
@@ -128,7 +130,7 @@ impl Scanner for RateLimitScanner {
                 );
             }
 
-            let spoof_ip = random_reserved_ipv4();
+            let spoof_ip = random_publicish_ipv4();
             let bypass_headers = vec![
                 ("X-Forwarded-For".to_string(), spoof_ip.clone()),
                 ("X-Real-IP".to_string(), spoof_ip.clone()),

@@ -471,6 +471,69 @@ impl HttpClient {
         self.read_response(response, url).await
     }
 
+    async fn send_once_no_redirect(
+        &self,
+        method: Method,
+        url: &str,
+        extra_headers: Option<HeaderMap>,
+        body: Option<serde_json::Value>,
+    ) -> Result<HttpResponse, CapturedError> {
+        let client = build_client_no_redirect(&self.client_config).map_err(|e| {
+            CapturedError::from_str(
+                "http::client_no_redirect",
+                Some(url.to_string()),
+                e.to_string(),
+            )
+        })?;
+        let mut req = client.request(method.clone(), url);
+
+        if self.waf_enabled {
+            req = req.headers(WafEvasion::evasion_headers());
+        }
+
+        let mut combined_headers = HeaderMap::new();
+        if let Some(hdrs) = extra_headers {
+            combined_headers.extend(hdrs);
+        }
+
+        if let Some(cookie) = self.cookie_header_for(url).await {
+            let key = HeaderName::from_static("cookie");
+            let merged = if let Some(existing) = combined_headers.get(&key) {
+                let mut combined = existing.to_str().unwrap_or("").to_string();
+                if !combined.is_empty() {
+                    combined.push_str("; ");
+                }
+                combined.push_str(&cookie);
+                combined
+            } else {
+                cookie
+            };
+            if let Ok(value) = HeaderValue::from_str(&merged) {
+                combined_headers.insert(key, value);
+            }
+        }
+
+        if let Some(ref cred) = self.live_credential {
+            cred.apply_to(&mut combined_headers);
+        }
+
+        if !combined_headers.is_empty() {
+            req = req.headers(combined_headers);
+        }
+
+        if let Some(json_body) = body {
+            req = req
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .json(&json_body);
+        }
+
+        let response = req.send().await.map_err(|e| {
+            debug!("[{method} {url}] send error (no-redirect): {e}");
+            CapturedError::new("http::send_no_redirect", Some(url.to_string()), &e)
+        })?;
+        self.read_response(response, url).await
+    }
+
     async fn enforce_host_delay(&self, url: &str) {
         if self.delay_ms == 0 {
             return;
@@ -566,6 +629,90 @@ impl HttpClient {
         }
         self.request_count.fetch_add(1, Ordering::Relaxed);
         self.send_once(Method::GET, url, Some(map), None).await
+    }
+
+    /// GET with extra headers while forcing redirect policy to `none`.
+    /// This keeps transport accounting/evasion behavior consistent with normal
+    /// requests while allowing scanners to inspect 30x `Location` responses.
+    pub async fn get_with_headers_no_redirect(
+        &self,
+        url: &str,
+        extra: &[(String, String)],
+    ) -> Result<HttpResponse, CapturedError> {
+        let _adaptive_permit = if let Some(adaptive) = &self.adaptive {
+            match adaptive.acquire().await {
+                Ok(permit) => Some(permit),
+                Err(e) => {
+                    debug!("[GET {url}] adaptive limiter acquire failed: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        self.enforce_host_delay(url).await;
+        if self.waf_enabled && self.delay_ms > 0 {
+            let min_secs = self.delay_ms as f64 / 1000.0;
+            let max_secs = min_secs * 3.0;
+            WafEvasion::random_delay(min_secs, max_secs).await;
+        }
+
+        let mut map = HeaderMap::new();
+        for (k, v) in extra {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(v),
+            ) {
+                map.insert(name, value);
+            }
+        }
+
+        let attempts = self.retries + 1;
+        let mut last_err: Option<CapturedError> = None;
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                self.retry_count.fetch_add(1, Ordering::Relaxed);
+                tokio::time::sleep(retry_backoff(attempt)).await;
+            }
+
+            self.request_count.fetch_add(1, Ordering::Relaxed);
+            match self
+                .send_once_no_redirect(Method::GET, url, Some(map.clone()), None)
+                .await
+            {
+                Ok(resp) => {
+                    if let Some(adaptive) = &self.adaptive {
+                        if should_retry_status(resp.status) {
+                            adaptive.on_backoff().await;
+                        } else {
+                            adaptive.on_success().await;
+                        }
+                    }
+                    if should_retry_status(resp.status) && attempt + 1 < attempts {
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    if let Some(adaptive) = &self.adaptive {
+                        adaptive.on_backoff().await;
+                    }
+                    last_err = Some(e);
+                    if attempt + 1 == attempts {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            CapturedError::from_str(
+                "http::send_no_redirect",
+                Some(url.to_string()),
+                "request failed after retries",
+            )
+        }))
     }
 
     #[allow(dead_code)]
@@ -852,12 +999,23 @@ fn retry_backoff(attempt: u32) -> Duration {
 }
 
 fn build_client(cfg: &ClientConfig) -> ScannerResult<Client> {
+    build_client_with_redirect(cfg, reqwest::redirect::Policy::limited(5))
+}
+
+fn build_client_no_redirect(cfg: &ClientConfig) -> ScannerResult<Client> {
+    build_client_with_redirect(cfg, reqwest::redirect::Policy::none())
+}
+
+fn build_client_with_redirect(
+    cfg: &ClientConfig,
+    redirect: reqwest::redirect::Policy,
+) -> ScannerResult<Client> {
     let mut builder = Client::builder()
         .timeout(Duration::from_secs(cfg.timeout_secs))
         .danger_accept_invalid_certs(cfg.danger_accept_invalid_certs)
         .gzip(true)
         .deflate(true)
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(redirect)
         .tcp_keepalive(Duration::from_secs(30));
 
     if !cfg.default_headers.is_empty() {

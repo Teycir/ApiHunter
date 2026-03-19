@@ -132,6 +132,38 @@ fn dedup_preserves_distinct_checks() {
 }
 
 #[test]
+fn dedup_preserves_distinct_evidence_for_same_url_and_check() {
+    let first = Finding::new(
+        "https://example.com",
+        "cors/reflected-origin",
+        "title",
+        Severity::Medium,
+        "detail",
+        "cors",
+    )
+    .with_evidence("origin=https://app.example.net");
+
+    let second = Finding::new(
+        "https://example.com",
+        "cors/reflected-origin",
+        "title",
+        Severity::High,
+        "detail",
+        "cors",
+    )
+    .with_evidence("origin=https://portal.example.org");
+
+    let deduped = dedup_findings(vec![first, second]);
+    assert_eq!(deduped.len(), 2);
+    assert!(deduped
+        .iter()
+        .any(|f| f.evidence.as_deref() == Some("origin=https://app.example.net")));
+    assert!(deduped
+        .iter()
+        .any(|f| f.evidence.as_deref() == Some("origin=https://portal.example.org")));
+}
+
+#[test]
 fn filter_findings_respects_threshold() {
     let findings = vec![
         Finding::new("u", "a", "t", Severity::Critical, "d", "s"),

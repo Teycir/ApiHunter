@@ -106,13 +106,19 @@ fn assert_expected_mass_assignment_payload(
         let body: serde_json::Value =
             serde_json::from_slice(&req.body).expect("POST body should be JSON");
         assert_eq!(
-            body,
-            json!({
-                "is_admin": true,
-                "role": "admin",
-                "permissions": ["*"]
-            }),
-            "unexpected mass-assignment probe payload"
+            body.get("is_admin"),
+            Some(&json!(true)),
+            "expected probe payload to include is_admin=true"
+        );
+        assert_eq!(
+            body.get("role"),
+            Some(&json!("admin")),
+            "expected probe payload to include role=admin"
+        );
+        assert_eq!(
+            body.get("permissions"),
+            Some(&json!(["*"])),
+            "expected probe payload to include permissions=[\"*\"]"
         );
     }
 }
@@ -739,6 +745,113 @@ async fn nested_elevated_fields_confirm_high_severity() {
             .any(|f| f.check == "mass_assignment/persisted-state-change"),
         "expected high severity nested-field confirmation, got: {findings:#?}"
     );
+}
+
+#[tokio::test]
+async fn baseline_sensitive_keys_are_adapted_into_probe_payload() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"user":{"id":1,"accountType":"user","is_owner":false,"accessLevel":"viewer","entitlements":["read"]}}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"ok":true,"accountType":"admin","is_owner":true,"accessLevel":"admin","entitlements":["*"]}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (_findings, _errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    let post = requests
+        .iter()
+        .find(|r| r.method.as_str() == "POST" && r.url.path() == "/users")
+        .expect("expected POST /users request");
+
+    let body: serde_json::Value = serde_json::from_slice(&post.body).expect("json probe payload");
+    assert_eq!(body.get("accountType"), Some(&json!("admin")));
+    assert_eq!(body.get("is_owner"), Some(&json!(true)));
+    assert_eq!(body.get("accessLevel"), Some(&json!("admin")));
+    assert_eq!(body.get("entitlements"), Some(&json!(["*"])));
+}
+
+#[tokio::test]
+async fn more_than_three_newly_elevated_fields_are_all_confirmed() {
+    let server = MockServer::start().await;
+
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(move |_request: &wiremock::Request| {
+            let call = call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(
+                        r#"{"user":{"accountType":"user","is_owner":false,"accessLevel":"viewer","entitlements":["read"]}}"#,
+                    )
+            } else {
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "application/json")
+                    .set_body_string(
+                        r#"{"user":{"accountType":"admin","is_owner":true,"accessLevel":"admin","entitlements":["*"]}}"#,
+                    )
+            }
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"ok":true,"accountType":"admin","is_owner":true,"accessLevel":"admin","entitlements":["*"]}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    let finding = findings
+        .iter()
+        .find(|f| f.check == "mass_assignment/persisted-state-change")
+        .expect("expected persisted-state-change finding");
+    let evidence = finding.evidence.as_deref().unwrap_or("");
+    assert!(evidence.contains("accounttype"), "evidence: {evidence}");
+    assert!(evidence.contains("isowner"), "evidence: {evidence}");
+    assert!(evidence.contains("accesslevel"), "evidence: {evidence}");
+    assert!(evidence.contains("entitlements"), "evidence: {evidence}");
 }
 
 #[tokio::test]

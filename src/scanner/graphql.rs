@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use rand::seq::SliceRandom;
 use serde_json::{json, Value};
 use tracing::debug;
+use url::Url;
 
 use crate::{
     config::Config,
@@ -94,9 +95,12 @@ impl Scanner for GraphqlScanner {
         // Build candidate endpoint list
         let lower = url.to_ascii_lowercase();
         let already_gql = GQL_PATHS.iter().any(|p| lower.ends_with(p));
+        let base_path_looks_graphql = seed_path_looks_graphql(url);
 
         let mut candidates: Vec<String> = Vec::new();
-        candidates.push(url.to_string());
+        if already_gql || base_path_looks_graphql {
+            candidates.push(url.to_string());
+        }
         if !already_gql {
             let base = url.trim_end_matches('/');
             let mut paths: Vec<&str> = GQL_PATHS.to_vec();
@@ -350,4 +354,12 @@ fn is_sensitive(name: &str) -> bool {
     SENSITIVE_TYPES
         .iter()
         .any(|&s| name == s || name.contains(s))
+}
+
+fn seed_path_looks_graphql(url: &str) -> bool {
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    let path = parsed.path().to_ascii_lowercase();
+    path.contains("graphql") || path.ends_with("/gql")
 }

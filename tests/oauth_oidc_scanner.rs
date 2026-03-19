@@ -186,6 +186,53 @@ async fn authorize_probe_uses_configured_auth_headers_and_cookies() {
             .any(|f| f.check == "oauth/redirect-uri-not-validated"),
         "expected redirect_uri finding when authorized probe is used, got: {findings:#?}"
     );
+
+    let metrics = client.runtime_metrics();
+    assert_eq!(
+        metrics.requests_sent, 2,
+        "expected authorize probe + metadata probe to be counted in runtime metrics"
+    );
+}
+
+#[tokio::test]
+async fn state_not_returned_is_reported_even_without_redirect_uri_acceptance() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/oauth/authorize"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("Location", "https://trusted-idp.example/callback?code=abc"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = OAuthOidcScanner::new(cfg.as_ref());
+
+    let target = format!("{}/oauth/authorize", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "oauth/state-not-returned"),
+        "expected state-not-returned finding, got: {findings:#?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.check == "oauth/redirect-uri-not-validated"),
+        "did not expect redirect-uri-not-validated for trusted location, got: {findings:#?}"
+    );
 }
 
 #[tokio::test]

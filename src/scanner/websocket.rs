@@ -65,39 +65,46 @@ impl Scanner for WebSocketScanner {
         };
 
         for candidate in candidates {
+            let cross_origin = random_cross_origin_probe();
             let same_origin_resp = match websocket_probe(client, &candidate, &same_origin).await {
-                Ok(resp) => resp,
+                Ok(resp) => Some(resp),
                 Err(e) => {
                     errors.push(e);
-                    continue;
+                    None
+                }
+            };
+            let cross_origin_resp = match websocket_probe(client, &candidate, cross_origin).await {
+                Ok(resp) => Some(resp),
+                Err(e) => {
+                    errors.push(e);
+                    None
                 }
             };
 
-            if !is_upgrade_success(&same_origin_resp) {
-                continue;
+            if let Some(resp) = same_origin_resp.as_ref() {
+                if is_upgrade_success(resp) {
+                    findings.push(
+                        Finding::new(
+                            &candidate,
+                            "websocket/upgrade-endpoint",
+                            "WebSocket endpoint accepts upgrade",
+                            Severity::Info,
+                            "Endpoint accepted a WebSocket upgrade handshake.",
+                            "websocket",
+                        )
+                        .with_evidence(format!(
+                            "GET {candidate}\nOrigin: {same_origin}\nStatus: {}",
+                            resp.status
+                        ))
+                        .with_remediation(
+                            "Ensure this endpoint enforces authentication and strict message-level authorization.",
+                        ),
+                    );
+                }
             }
 
-            findings.push(
-                Finding::new(
-                    &candidate,
-                    "websocket/upgrade-endpoint",
-                    "WebSocket endpoint accepts upgrade",
-                    Severity::Info,
-                    "Endpoint accepted a WebSocket upgrade handshake.",
-                    "websocket",
-                )
-                .with_evidence(format!(
-                    "GET {candidate}\nOrigin: {same_origin}\nStatus: {}",
-                    same_origin_resp.status
-                ))
-                .with_remediation(
-                    "Ensure this endpoint enforces authentication and strict message-level authorization.",
-                ),
-            );
-
-            let cross_origin = random_cross_origin_probe();
-            match websocket_probe(client, &candidate, cross_origin).await {
-                Ok(resp) if is_upgrade_success(&resp) => {
+            if let Some(resp) = cross_origin_resp.as_ref() {
+                if is_upgrade_success(resp) {
                     findings.push(
                         Finding::new(
                             &candidate,
@@ -117,8 +124,6 @@ impl Scanner for WebSocketScanner {
                         ),
                     );
                 }
-                Ok(_) => {}
-                Err(e) => errors.push(e),
             }
         }
 

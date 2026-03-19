@@ -1673,3 +1673,51 @@
   - `cargo test --test burst_probe --test jwt_scanner --test oauth_oidc_scanner --test auth_flow` (outside sandbox): all passed.
   - `cargo clippy --all-targets --all-features -- -D warnings` (outside sandbox): passed.
   - `cargo test` (outside sandbox, full suite): all passed.
+
+---
+
+# Task: Design/Logic Follow-up Sweep (Phase 43)
+
+## Plan
+- [x] Improve report dedup granularity to avoid dropping distinct multi-evidence findings with identical `(url, check)`.
+- [x] Route OAuth authorize no-redirect probes through `HttpClient` so request metrics, host delay, retries, and WAF evasion behavior are consistent.
+- [x] Decouple OAuth state round-trip check from redirect-uri acceptance outcome.
+- [x] Refine mass-assignment probe strategy: adaptive payload keying from observed schema hints and remove silent elevated-field cap.
+- [x] Offload JWT weak-secret brute-force work from async hot path using blocking-task isolation.
+- [x] Skip GraphQL base-URL introspection probe when seed path is clearly non-GraphQL.
+- [x] Replace rate-limit bypass spoof IP generator with plausible public IPv4 generation (non-TEST-NET ranges).
+- [x] Improve WebSocket origin validation check to avoid auth-context false negatives.
+- [x] Add/update regression tests and run `cargo fmt`, strict clippy, and full tests outside sandbox.
+
+## Review
+- Reporting/dedup:
+  - `src/reports.rs::dedup_findings(...)` now dedups by `(url, check, evidence)` and keeps highest severity per exact evidence key.
+  - Stream-mode behavior remains `(url, check)` to preserve existing NDJSON contract/test expectations.
+- OAuth/OIDC probe consistency:
+  - `src/http_client.rs` added no-redirect transport path: `get_with_headers_no_redirect(...)` with retries, metrics, host delay, WAF jitter, cookies, and live credentials.
+  - `src/scanner/oauth_oidc.rs` now uses the above path for authorize probes.
+  - State finding is independent of redirect-uri acceptance: missing/altered `state` emits `oauth/state-not-returned` even when redirect URI is not attacker-controlled.
+- Mass-assignment logic:
+  - Completed adaptive payload generation in `src/scanner/mass_assignment.rs`:
+    - baseline schema-sensitive key harvesting,
+    - per-key probe values based on key semantics (boolean/role/permission-like),
+    - canonical fields always included.
+  - Removed broken recursive payload function and completed missing helper implementations (`normalize_key`, sensitive-key classification/candidate extraction).
+  - No silent elevated-field cap remains.
+- JWT hot-path CPU isolation:
+  - `src/scanner/jwt.rs` weak-secret matching now runs under `tokio::task::spawn_blocking`.
+- GraphQL probe optimization:
+  - `src/scanner/graphql.rs` skips direct seed-path probe when path is obviously REST-like; continues probing known GraphQL paths.
+- Rate-limit bypass realism:
+  - `src/scanner/rate_limit.rs` now generates plausible public-ish spoof IPs instead of TEST-NET ranges.
+- WebSocket origin check ordering:
+  - `src/scanner/websocket.rs` evaluates cross-origin upgrade independently of same-origin probe success to reduce auth-context false negatives.
+- Regression tests added/updated:
+  - `tests/reports.rs`: multi-evidence dedup retention.
+  - `tests/oauth_oidc_scanner.rs`: authorize probe request accounting + independent state-not-returned check.
+  - `tests/graphql_scanner.rs`: REST-like seed skips base probe; GraphQL-like seed retains base probe.
+  - `tests/mass_assignment_scanner.rs`: adaptive payload fields + >3 elevated-field confirmation coverage; payload assertion helper now validates required canonical fields while allowing adaptive extras.
+- Validation:
+  - `cargo fmt`
+  - `cargo clippy --all-targets --all-features -- -D warnings` (outside sandbox): passed.
+  - `cargo test` (outside sandbox, full suite): passed.
