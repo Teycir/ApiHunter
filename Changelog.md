@@ -185,6 +185,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Auth flow JSON extraction now accepts scalar JSONPath/JSON Pointer values (string/int/uint/float/bool), including integral float `expires_in` values
 - JWT leading-zero normalization now uses single-pass draining instead of repeated front removals
 - HAR import now filters for likely API/business endpoints (excludes static/CDN)
+- Main CLI lifecycle/status warnings now use `tracing` instead of ad-hoc `eprintln!`, so `--quiet` and `RUST_LOG` apply consistently
+- URL accessibility prefilter now treats any HTTP response as reachable and only classifies connect/timeout failures as inaccessible
+- Startup input validation now fast-fails on missing/unreadable `--auth-flow` / `--auth-flow-b` files
 
 ### Fixed
 - **Critical Error Handling**:
@@ -205,6 +208,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - SARIF driver tool name now uses `env!("CARGO_PKG_NAME")` instead of a hardcoded value
 - Session persistence now preserves empty cookie values from `Set-Cookie` entries (for cookie-clearing flows)
 - CVE runtime extension tests now hold env-var lock for full async test execution to prevent cross-test races
+- CLI cookie parsing now accepts empty cookie values (`name=`) instead of rejecting valid deletion-style cookies
 
 ### Performance
 - **Mass Assignment Scanner Optimizations**:

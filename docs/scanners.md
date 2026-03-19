@@ -11,6 +11,24 @@ category: Scanner Modules
 
 This document describes all built-in scanner modules and their detection capabilities.
 
+## Quick Reference
+
+| Scanner | Type | Severity Range | Key Detections |
+|---------|------|----------------|----------------|
+| [CORS](#cors-scannercors) | Passive | Low-High | Wildcard origins, reflected origins, null origin, regex bypass, missing Vary |
+| [CSP](#csp-scannercsp) | Passive | Info-Medium | Missing CSP, unsafe-inline/eval, wildcard sources, bypassable CDNs |
+| [GraphQL](#graphql-scannergraphql) | Passive | Info-High | Introspection enabled, sensitive fields, batching, alias DoS, IDE exposure |
+| [API Security](#api-security-scannerapi_security) | Passive | Info-Medium | Missing headers, version disclosure, unauth access, debug endpoints |
+| [JWT](#jwt-scannerjwt) | Passive | Medium-Critical | alg=none, weak secrets, missing expiry, sensitive claims |
+| [OpenAPI](#openapi-scanneropenapi) | Passive | Low-Medium | Missing security schemes, unsecured operations, file uploads |
+| [Mass Assignment](#mass-assignment-scannermass_assignment) | Active | High-Critical | Reflected fields, persisted changes, privilege escalation |
+| [OAuth/OIDC](#oauth2--oidc-scanneroauth_oidc) | Active | Medium-High | Redirect URI bypass, missing state, PKCE issues, unsafe flows |
+| [Rate Limit](#rate-limit-scannerrate_limit) | Active | Medium | Missing throttling, bypass via IP headers |
+| [CVE Templates](#cve-templates-scannercve_templates) | Active | Varies | Template-driven CVE detection (7 CVEs currently) |
+| [WebSocket](#websocket-scannerwebsocket) | Active | Low-Medium | Upgrade acceptance, missing origin validation |
+
+---
+
 ## CORS (`scanner::cors`)
 
 Checks for overly permissive `Access-Control-Allow-Origin` responses.

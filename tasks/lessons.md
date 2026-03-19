@@ -65,3 +65,5 @@
 - Rule: always re-verify each claimed issue against live source before patching, explicitly mark already-fixed items, and only implement reproducible gaps.
 - User correction pattern: async tests that mutate process-wide env vars can race even when setup is serialized.
 - Rule: keep env-lock guards alive for the full async test body (not just setup) whenever tests set/remove global environment variables.
+- User correction pattern: CLI entrypoint logging can regress by bypassing tracing, even when scanner internals are clean.
+- Rule: treat `main.rs` lifecycle output like library/runtime logs by default (`tracing`), and reserve raw `eprintln!/println!` only for explicitly intentional UX output.

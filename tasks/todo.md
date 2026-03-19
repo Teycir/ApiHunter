@@ -1519,3 +1519,33 @@
   - `cargo test --test auth_flow --test session_file_formats --test jwt_scanner --test integration_runner --test reports` (outside sandbox)
   - `cargo test --test cve_templates_runtime_ext --test integration_runner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Main.rs CI/Runtime Hardening Follow-up (Phase 38)
+
+## Plan
+- [x] Re-verify each reported issue against live source and classify stale vs reproducible.
+- [x] Replace non-essential `eprintln!` status/warning output in `main.rs` and URL filter path with `tracing` logs so `--quiet` and `RUST_LOG` are respected.
+- [x] Relax CLI cookie parsing to allow empty cookie values while still rejecting empty names.
+- [x] Improve URL accessibility pre-filter heuristic to treat any HTTP response as reachable and only classify connect/timeout failures as inaccessible.
+- [x] Add startup validation for `--auth-flow` and `--auth-flow-b` path existence/type/readability.
+- [x] Update lessons/changelog/todo review and run CI checks (`fmt`, `clippy -D warnings`) plus full tests outside sandbox.
+
+## Review
+- Verification outcomes:
+  - Already fixed/stale claims in the report: `spawn_refresh_task` handles are already stored and shut down in `main.rs`, `extract_jsonpath` already supports float scalars, JWT `trim_leading_zeros` is already single-pass, and `init_tracing` already defaults to `info` when not quiet.
+- `main.rs` logging cleanup:
+  - Replaced non-essential status/warning `eprintln!` calls with `tracing::info!`/`tracing::warn!` in the run lifecycle and URL filtering path.
+  - Kept intentional banner printing behavior unchanged.
+- Cookie parsing:
+  - `parse_cookies(...)` now rejects only empty cookie names and accepts empty values (`name=`), aligning CLI parsing with valid cookie semantics.
+- Accessibility filter heuristic:
+  - URL pre-filter now treats any HTTP response as reachable.
+  - Only network-level connect/timeout failures are classified as inaccessible; other request errors are treated as reachable to avoid false pruning.
+- Startup validation:
+  - Added early validation for `--auth-flow` and `--auth-flow-b` paths (exists, file type, readable) with precise error messages.
+- Validation:
+  - `cargo fmt --all --check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test` (outside sandbox, full suite)

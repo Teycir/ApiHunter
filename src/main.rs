@@ -13,7 +13,7 @@
 // 7. Drive runner::run().
 // 8. Hand RunResult to Reporter, print summary, emit exit code.
 
-use std::{collections::HashMap, io, process, sync::Arc, time::Instant};
+use std::{collections::HashMap, io, path::Path, process, sync::Arc, time::Instant};
 
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64_STD;
@@ -68,13 +68,13 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
-        eprintln!("Filtering {} URLs...", raw_urls.len());
+        info!(total = raw_urls.len(), "Filtering URL accessibility");
         let (accessible, inaccessible) =
             filter_accessible_urls(&raw_urls, cli.filter_timeout, cli.delay_ms).await;
-        eprintln!(
-            "Filtering complete: {} accessible, {} inaccessible",
-            accessible.len(),
-            inaccessible.len()
+        info!(
+            accessible = accessible.len(),
+            inaccessible = inaccessible.len(),
+            "URL accessibility filtering complete"
         );
         (accessible, inaccessible)
     } else {
@@ -84,16 +84,15 @@ async fn run(cli: Cli) -> Result<i32> {
     if filtered_urls.is_empty() {
         warn!("No accessible URLs remaining after filtering.");
         if !inaccessible_urls.is_empty() {
-            eprintln!("\nInaccessible URLs:");
             for url in &inaccessible_urls {
-                eprintln!("  - {}", url);
+                info!(url = %url, "Filtered as inaccessible");
             }
         }
         return Ok(0);
     }
 
     print_banner(&cli, filtered_urls.len());
-    eprintln!("Started discovering endpoints, working...");
+    info!("Started discovering endpoints");
 
     // ── 2. Build Config ──────────────────────────────────────────────────────
     let max_endpoints = if cli.max_endpoints == 0 {
@@ -271,13 +270,13 @@ async fn run(cli: Cli) -> Result<i32> {
     };
     if !cli.no_auto_report {
         if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc, &min_sev_str) {
-            eprintln!("Warning: Failed to auto-save report: {e}");
+            warn!("Failed to auto-save report: {e}");
         }
     }
 
     if config.session_file.is_some() {
         if let Err(e) = http_client.save_session().await {
-            eprintln!("Warning: Failed to save session file: {e}");
+            warn!("Failed to save session file: {e}");
         }
     }
 
@@ -287,15 +286,15 @@ async fn run(cli: Cli) -> Result<i32> {
 
     let _elapsed = start.elapsed();
 
-    // Display inaccessible URLs if any were filtered
+    // Log filtered URLs for operator visibility (subject to log level / --quiet).
     if !inaccessible_urls.is_empty() {
-        eprintln!("\n┌──────────────────────────────┐");
-        eprintln!("│  INACCESSIBLE URLs ({:>2})  │", inaccessible_urls.len());
-        eprintln!("├──────────────────────────────┤");
+        info!(
+            count = inaccessible_urls.len(),
+            "Inaccessible URLs filtered from scan seeds"
+        );
         for url in &inaccessible_urls {
-            eprintln!("│ {:<28} │", url);
+            info!(url = %url, "Inaccessible URL");
         }
-        eprintln!("└──────────────────────────────┘\n");
     }
 
     // ── 9. Compute and return exit code ───────────────────────────────────────
@@ -303,8 +302,8 @@ async fn run(cli: Cli) -> Result<i32> {
     let code = reports::exit_code(&summary, &fail_on);
 
     if code & 1 != 0 {
-        eprintln!(
-            "Warning: Findings at or above '{}' threshold detected (exit 1).",
+        warn!(
+            "Findings at or above '{}' threshold detected (exit 1).",
             fail_on
         );
     }
@@ -394,6 +393,25 @@ fn validate_startup_inputs(cli: &Cli) -> Result<()> {
         }
     }
 
+    if let Some(path) = &cli.auth_flow {
+        validate_auth_flow_path("--auth-flow", path)?;
+    }
+    if let Some(path) = &cli.auth_flow_b {
+        validate_auth_flow_path("--auth-flow-b", path)?;
+    }
+
+    Ok(())
+}
+
+fn validate_auth_flow_path(flag: &str, path: &Path) -> Result<()> {
+    if !path.exists() {
+        bail!("{flag} file not found: {}", path.display());
+    }
+    if !path.is_file() {
+        bail!("{flag} must point to a file: {}", path.display());
+    }
+    std::fs::File::open(path)
+        .with_context(|| format!("{flag} file is not readable: {}", path.display()))?;
     Ok(())
 }
 
@@ -469,7 +487,7 @@ fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>> {
         let mut parts = raw.splitn(2, '=');
         let name = parts.next().unwrap_or("").trim();
         let value = parts.next().unwrap_or("").trim();
-        if name.is_empty() || value.is_empty() {
+        if name.is_empty() {
             bail!("Invalid cookie format: '{raw}' (expected NAME=VALUE)");
         }
         out.push((name.to_string(), value.to_string()));
@@ -503,8 +521,8 @@ async fn filter_accessible_urls(
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Warning: Failed to build URL filter client: {e}");
-            eprintln!("Skipping URL accessibility filtering.");
+            warn!("Failed to build URL filter client: {e}");
+            warn!("Skipping URL accessibility filtering.");
             return (urls.to_vec(), Vec::new());
         }
     };
@@ -520,13 +538,10 @@ async fn filter_accessible_urls(
             async move {
                 enforce_filter_host_delay(host_last_request.as_ref(), &url, delay_ms).await;
                 let is_accessible = match client.get(&url).send().await {
-                    Ok(resp) => {
-                        let status = resp.status().as_u16();
-                        // Treat any non-5xx HTTP response as reachable.
-                        // 4xx often indicates auth-gated/live APIs rather than dead targets.
-                        (200..500).contains(&status)
-                    }
-                    Err(_) => false,
+                    // Any HTTP response means target is reachable (including 4xx/5xx).
+                    Ok(_) => true,
+                    // Treat only real network unreachability as inaccessible.
+                    Err(e) => !(e.is_connect() || e.is_timeout()),
                 };
                 (url, is_accessible)
             }

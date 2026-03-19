@@ -15,7 +15,7 @@
 
 ---
 
-Async, modular web security scanner for API baseline testing and regression detection.  
+Async, modular API security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
 ## Naming
@@ -90,6 +90,28 @@ flowchart LR
   - Session file import (Excalibur integration)
   - Bearer, Basic, and custom header auth
   - Automatic unauth client for privilege escalation checks
+
+## Scanner Modules
+
+ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
+
+| Scanner | Type | What It Detects |
+|---------|------|----------------|
+| **CORS** | Passive | Wildcard origins, reflected origins with credentials, null origin acceptance, regex bypass vulnerabilities (suffix/prefix attacks), missing Vary: Origin, unsafe preflight methods |
+| **CSP** | Passive | Missing Content-Security-Policy, unsafe-inline/unsafe-eval directives, wildcard sources, bypassable CDN hosts (JSONP gadgets), missing frame-ancestors |
+| **GraphQL** | Passive | Introspection enabled, sensitive schema fields (user/password/token types), field suggestions (schema leakage), query batching, alias amplification (DoS), GraphiQL/Playground exposure |
+| **JWT** | Passive | alg=none tokens, weak HS256 secrets (wordlist-based), missing/excessive expiry, sensitive claims in payload, algorithm confusion vulnerabilities |
+| **OpenAPI** | Passive | Missing security schemes, operations without auth requirements, file upload endpoints, deprecated operations still present, unsecured sensitive endpoints |
+| **API Security** | Passive | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints |
+| **Mass Assignment** | Active | Reflected sensitive fields (is_admin, role, permissions), persisted state changes, privilege escalation via field injection |
+| **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
+| **Rate Limit** | Active | Missing rate limiting (burst probes), missing Retry-After headers, IP header spoofing bypass (X-Forwarded-For) |
+| **WebSocket** | Active | WebSocket upgrade acceptance on common paths, missing origin validation, unauthenticated WebSocket connections |
+| **CVE Templates** | Active | Template-driven CVE detection (CVE-2022-22947, CVE-2021-29442, CVE-2021-29441, CVE-2020-13945, CVE-2021-45232, CVE-2022-24288), baseline vs bypass differential matching |
+| **Secret Detection** | Passive | AWS keys (AKIA*), Google API keys (AIza*), GitHub tokens (ghp_*), Slack tokens (xox*), Stripe keys (sk_live_*), database URLs, private keys, bearer tokens (context-aware validation) |
+
+**Passive scanners** run by default and analyze responses without sending crafted requests.  
+**Active scanners** require `--active-checks` flag and send potentially invasive probes (IDOR, mutation, bypass tests).
 
 ## Features
 
