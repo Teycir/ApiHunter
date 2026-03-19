@@ -875,3 +875,36 @@
   - `cargo fmt`
   - `cargo test --test mass_assignment_scanner`
   - `cargo test`
+
+---
+
+# Task: Mass Assignment Recall-First Logic Hardening (Phase 21)
+
+## Plan
+- [x] Replace string-fragile reflected-field detection with JSON key traversal and canonical key normalization.
+- [x] Support key-name variants (`is_admin`, `isAdmin`, `IsAdmin`, `permissions`, `roles`) in reflected and elevated detection consistently.
+- [x] Add missing edge-case tests: camelCase reflection, baseline GET failure path, reflected-only (no persisted change), empty-object JSON response, and single-finding behavior.
+- [x] Tighten assertions for error specificity and request headers where relevant.
+- [x] Run formatting + targeted/full tests outside sandbox and document outcomes.
+
+## Review
+- Scanner logic hardening in `src/scanner/mass_assignment.rs`:
+  - replaced string-based reflected matching with parsed-JSON canonical detection by reusing elevated-field extraction.
+  - added canonical key normalization for snake/camel/pascal variants and related aliases:
+    - `is_admin`, `isAdmin`, `IsAdmin`, `is-administrator` style keys
+    - `role`/`roles`
+    - `permissions`/`scope(s)`
+  - aligned reflected-field detection and elevated-field detection to the same JSON traversal + value semantics.
+- Test hardening in `tests/mass_assignment_scanner.rs`:
+  - added POST `Content-Type` assertion (`application/json`) in request-payload helper.
+  - strengthened high-severity test to assert exactly one finding (`persisted-state-change`) and baseline with no sensitive fields.
+  - tightened confirm/baseline failure tests to assert captured transport-error shape (`context = http::send`).
+  - expanded coverage:
+    - mixed + camel-case reflected key detection,
+    - empty JSON object response ignored,
+    - reflected-only signal when confirm GET shows no persisted change,
+    - baseline GET failure still yielding reflected finding.
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test mass_assignment_scanner`
+  - `cargo test`

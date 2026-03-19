@@ -26,3 +26,6 @@
 - Rule: when requested, use Exa discovery and Fetch retrieval to pin authoritative upstream references into fixture snapshots for parity tests.
 - User correction pattern: scanner tests must prove probe execution and payload correctness, not only resulting findings.
 - Rule: for active-check tests, assert request path/method specificity and exact probe payload contents, and verify baseline/probe/confirm call ordering when multi-step logic is expected.
+- User correction pattern: reflected-field detection must be parser-based and canonicalized, not substring-based.
+- Rule: for JSON scanners, unify detection semantics across code paths (reflected vs elevated) using shared key normalization and structured traversal.
+- Rule: include variant-key regression tests (`snake_case`, `camelCase`, mixed case) and baseline-failure/reflected-only edge cases whenever detection logic changes.

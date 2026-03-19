@@ -159,15 +159,7 @@ fn is_likely_mutation_target(url: &str) -> bool {
 }
 
 fn reflected_probe_fields(body: &str) -> Vec<&'static str> {
-    let body_l = body.to_ascii_lowercase();
-    let mut out = Vec::new();
-    for key in ["is_admin", "role", "permissions"] {
-        let needle = format!("\"{key}\"");
-        if body_l.contains(&needle) {
-            out.push(key);
-        }
-    }
-    out
+    elevated_fields_from_json(body)
 }
 
 async fn fetch_elevated_fields(
@@ -211,37 +203,10 @@ fn collect_elevated_fields(value: &serde_json::Value, out: &mut HashSet<&'static
     match value {
         serde_json::Value::Object(map) => {
             for (k, v) in map {
-                let key = k.to_ascii_lowercase();
-                match key.as_str() {
-                    "is_admin" if v.as_bool() == Some(true) => {
-                        out.insert("is_admin");
+                if let Some(field) = canonical_sensitive_field(k) {
+                    if is_elevated_sensitive_value(field, v) {
+                        out.insert(field);
                     }
-                    "role" => {
-                        if let Some(role) = v.as_str() {
-                            let r = role.to_ascii_lowercase();
-                            if matches!(r.as_str(), "admin" | "superadmin" | "owner") {
-                                out.insert("role");
-                            }
-                        }
-                    }
-                    "permissions" | "roles" => {
-                        if let Some(arr) = v.as_array() {
-                            let has_priv = arr.iter().any(|item| {
-                                item.as_str().map(|s| {
-                                    let p = s.to_ascii_lowercase();
-                                    p == "*" || p == "admin" || p == "owner"
-                                }) == Some(true)
-                            });
-                            if has_priv {
-                                out.insert(if key == "permissions" {
-                                    "permissions"
-                                } else {
-                                    "role"
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
                 }
                 collect_elevated_fields(v, out);
             }
@@ -253,4 +218,76 @@ fn collect_elevated_fields(value: &serde_json::Value, out: &mut HashSet<&'static
         }
         _ => {}
     }
+}
+
+fn canonical_sensitive_field(key: &str) -> Option<&'static str> {
+    let normalized: String = key
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect();
+
+    match normalized.as_str() {
+        "isadmin" | "isadministrator" => Some("is_admin"),
+        "role" | "roles" | "userrole" | "accountrole" => Some("role"),
+        "permission" | "permissions" | "scope" | "scopes" => Some("permissions"),
+        _ => None,
+    }
+}
+
+fn is_elevated_sensitive_value(field: &str, value: &serde_json::Value) -> bool {
+    match field {
+        "is_admin" => match value {
+            serde_json::Value::Bool(true) => true,
+            serde_json::Value::Number(n) => n.as_i64() == Some(1),
+            serde_json::Value::String(s) => is_truthy_string(s),
+            _ => false,
+        },
+        "role" => value_is_privileged_role(value),
+        "permissions" => value_has_privileged_permission(value),
+        _ => false,
+    }
+}
+
+fn is_truthy_string(s: &str) -> bool {
+    matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on" | "admin"
+    )
+}
+
+fn value_is_privileged_role(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => is_privileged_role_token(s),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|item| item.as_str())
+            .any(is_privileged_role_token),
+        _ => false,
+    }
+}
+
+fn value_has_privileged_permission(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => is_privileged_permission_token(s),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|item| item.as_str())
+            .any(is_privileged_permission_token),
+        _ => false,
+    }
+}
+
+fn is_privileged_role_token(token: &str) -> bool {
+    matches!(
+        token.trim().to_ascii_lowercase().as_str(),
+        "admin" | "superadmin" | "owner" | "root"
+    )
+}
+
+fn is_privileged_permission_token(token: &str) -> bool {
+    matches!(
+        token.trim().to_ascii_lowercase().as_str(),
+        "*" | "admin" | "owner" | "root" | "all"
+    )
 }

@@ -77,6 +77,18 @@ fn assert_expected_mass_assignment_payload(
     );
 
     for req in posts {
+        let content_type = req
+            .headers
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            content_type
+                .to_ascii_lowercase()
+                .starts_with("application/json"),
+            "expected JSON POST content-type header, got: {content_type}"
+        );
+
         let body: serde_json::Value =
             serde_json::from_slice(&req.body).expect("POST body should be JSON");
         assert_eq!(
@@ -151,7 +163,7 @@ async fn persisted_sensitive_fields_are_reported_as_high_severity() {
             if call == 0 {
                 ResponseTemplate::new(200)
                     .insert_header("Content-Type", "application/json")
-                    .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#)
+                    .set_body_string(r#"{"user":{"id":1,"name":"baseline"}}"#)
             } else {
                 ResponseTemplate::new(200)
                     .insert_header("Content-Type", "application/json")
@@ -188,10 +200,13 @@ async fn persisted_sensitive_fields_are_reported_as_high_severity() {
         .collect::<Vec<_>>();
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
-    assert!(
-        findings
-            .iter()
-            .any(|f| f.check == "mass_assignment/persisted-state-change"),
+    assert_eq!(
+        findings.len(),
+        1,
+        "expected exactly one finding type (high OR medium), got: {findings:#?}"
+    );
+    assert_eq!(
+        findings[0].check, "mass_assignment/persisted-state-change",
         "expected confirmed mass-assignment finding, got: {findings:#?}"
     );
     assert_eq!(
@@ -368,11 +383,20 @@ async fn confirmation_get_failure_keeps_reflected_finding() {
         "expected reflected finding despite confirm GET failure, got: {findings:#?}"
     );
     assert!(!errors.is_empty(), "expected timeout/error on confirm GET");
+    assert!(
+        errors.iter().any(|e| {
+            e.context == "http::send"
+                && e.message
+                    .to_ascii_lowercase()
+                    .contains("error sending request")
+        }),
+        "expected transport error on confirm GET timeout path, got: {errors:#?}"
+    );
     assert_expected_mass_assignment_payload(&requests, "/users", 1);
 }
 
 #[tokio::test]
-async fn mixed_case_reflected_fields_are_detected() {
+async fn mixed_and_camel_case_reflected_fields_are_detected() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -386,7 +410,9 @@ async fn mixed_case_reflected_fields_are_detected() {
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/json")
-                .set_body_string(r#"{"Is_Admin":true,"Role":"admin","Permissions":["*"]}"#),
+                .set_body_string(
+                    r#"{"Is_Admin":true,"isAdmin":true,"Role":"admin","Permissions":["*"]}"#,
+                ),
         )
         .mount(&server)
         .await;
@@ -403,7 +429,7 @@ async fn mixed_case_reflected_fields_are_detected() {
         findings
             .iter()
             .any(|f| f.check == "mass_assignment/reflected-fields"),
-        "expected mixed-case reflected finding, got: {findings:#?}"
+        "expected mixed/camel-case reflected finding, got: {findings:#?}"
     );
 }
 
@@ -436,6 +462,146 @@ async fn empty_post_body_is_ignored() {
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
     assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
+}
+
+#[tokio::test]
+async fn empty_json_object_post_is_ignored() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
+}
+
+#[tokio::test]
+async fn reflected_fields_without_persisted_state_change_stay_medium() {
+    let server = MockServer::start().await;
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_for_get = Arc::clone(&call_count);
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(move |_request: &wiremock::Request| {
+            call_count_for_get.fetch_add(1, Ordering::SeqCst);
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"name":"stable-user"}}"#)
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(
+                    r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/reflected-fields"),
+        "expected medium reflected finding, got: {findings:#?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/persisted-state-change"),
+        "did not expect persisted-state-change for stable confirm GET: {findings:#?}"
+    );
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        2,
+        "expected baseline + confirm GET calls"
+    );
+}
+
+#[tokio::test]
+async fn baseline_get_failure_still_reports_reflected_fields() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1}}"#),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"ok":true,"role":"admin"}"#),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config_with_timeout(true, 1));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/reflected-fields"),
+        "expected reflected finding when baseline GET fails, got: {findings:#?}"
+    );
+    assert!(
+        errors.iter().any(|e| {
+            e.context == "http::send"
+                && e.message
+                    .to_ascii_lowercase()
+                    .contains("error sending request")
+        }),
+        "expected baseline GET transport error, got: {errors:#?}"
+    );
+    assert_expected_mass_assignment_payload(&requests, "/users", 1);
 }
 
 #[tokio::test]
