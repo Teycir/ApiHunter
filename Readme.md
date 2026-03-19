@@ -561,6 +561,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Testing Guide](docs/testing.md)
 - [Scanners](docs/scanners.md)
 - [Findings & Remediation](docs/findings.md)
+- [Security Policy](SECURITY.md)
 - [HOWTO](HOWTO.md)
 
 ## Roadmap

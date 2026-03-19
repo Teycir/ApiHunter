@@ -1,3 +1,63 @@
+# Task: Security Policy Blocker Removal (Phase 12)
+
+## Plan
+- [x] Add a root `SECURITY.md` with responsible disclosure and support policy.
+- [x] Link `SECURITY.md` from `Readme.md` and `docs/INDEX.md`.
+- [x] Verify links and capture outcomes in review notes.
+
+## Review
+- Added root `SECURITY.md` with:
+  - supported-version policy,
+  - private vulnerability reporting channels,
+  - triage/response targets,
+  - coordinated disclosure expectations,
+  - safe-testing expectation.
+- Linked policy for discoverability:
+  - `Readme.md` documentation section now includes `Security Policy`.
+  - `docs/INDEX.md` additional resources now include `SECURITY.md`.
+- Verification:
+  - `test -f SECURITY.md`
+  - `rg -n "\\[Security Policy\\]\\(SECURITY\\.md\\)|\\[SECURITY\\.md\\]\\(\\.\\./SECURITY\\.md\\)" Readme.md docs/INDEX.md`
+
+---
+
+# Task: Production Readiness Audit (Phase 11)
+
+## Plan
+- [x] Evaluate repository readiness across CI quality gates, release process, security posture, and operational controls.
+- [x] Run local validation gates (`cargo test --all-targets`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all -- --check`).
+- [x] Record a pass/partial/fail checklist with concrete blockers and next actions.
+
+## Review
+- Overall verdict: **Production-candidate for controlled rollout, not yet full broad-production ready**.
+
+- Readiness checklist:
+  - **Quality gates (CI + local): PASS**
+    - Evidence: `.github/workflows/ci.yml` runs fmt, clippy (`-D warnings`), tests, and RustSec audit.
+    - Local validation passed:
+      - `cargo test --all-targets`
+      - `cargo clippy --all-targets -- -D warnings`
+      - `cargo fmt --all -- --check`
+  - **Test strategy and coverage confidence: PASS**
+    - Evidence: scanner suites, integration runner tests, CLI/startup tests, auth/http tests, fixture regressions, documented in `docs/testing.md`.
+  - **Release automation: PARTIAL**
+    - Evidence: `.github/workflows/release.yml` builds multi-target binaries on `v*` tags.
+    - Gap: no explicit artifact signing/attestation/SBOM step in workflow.
+  - **Operational controls in runtime: PARTIAL**
+    - Evidence: retries/timeouts, adaptive concurrency, dry-run, fail-on severity, quiet/summary, runtime metrics in reports.
+    - Gap: no built-in external health endpoint/metrics exporter/alerting integration.
+  - **Security/process governance: PARTIAL**
+    - Evidence: dependency audit in CI (`rustsec/audit-check`).
+    - Gaps observed: no `SECURITY.md` policy, no visible CODEOWNERS/incident runbook artifacts in repo.
+
+- Recommended blockers before broad production rollout:
+  - Add release signing/attestation (for example Sigstore/Cosign) and SBOM generation in release pipeline.
+  - Add a `SECURITY.md` with vulnerability disclosure and support policy.
+  - Define a canary + rollback runbook (including false-positive handling and safe active-check rollout defaults).
+  - Add operational monitoring guidance (minimum alert thresholds around scanner errors, retries, and unreachable targets).
+
+---
+
 # Task: Clarify Testing Strategy in Docs (Phase 10)
 
 ## Plan

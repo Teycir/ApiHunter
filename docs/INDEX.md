@@ -30,6 +30,7 @@ Complete guide to ApiHunter documentation and resources.
 | Document | Location | Purpose |
 |----------|----------|---------|
 | **HOWTO** | [HOWTO.md](../HOWTO.md) | Detailed usage guide and examples |
+| **Security Policy** | [SECURITY.md](../SECURITY.md) | Vulnerability disclosure and supported-version policy |
 | **Changelog** | [CHANGELOG.md](../CHANGELOG.md) | Version history and updates |
 | **License** | [Licence](../Licence) | MIT License information |
 | **Deep Review Checklist** | [deep-review-checklist.md](./deep-review-checklist.md) | Tracked checklist from the latest code review |
