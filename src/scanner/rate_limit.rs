@@ -52,6 +52,10 @@ struct BurstStats {
 
 #[async_trait]
 impl Scanner for RateLimitScanner {
+    fn name(&self) -> &'static str {
+        "rate_limit"
+    }
+
     async fn scan(
         &self,
         url: &str,

@@ -78,6 +78,10 @@ static SENSITIVE_TYPES: &[&str] = &[
 
 #[async_trait]
 impl Scanner for GraphqlScanner {
+    fn name(&self) -> &'static str {
+        "graphql"
+    }
+
     async fn scan(
         &self,
         url: &str,

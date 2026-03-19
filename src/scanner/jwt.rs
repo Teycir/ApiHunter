@@ -60,6 +60,10 @@ impl JwtScanner {
 
 #[async_trait]
 impl Scanner for JwtScanner {
+    fn name(&self) -> &'static str {
+        "jwt"
+    }
+
     async fn scan(
         &self,
         url: &str,

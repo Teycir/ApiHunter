@@ -46,6 +46,10 @@ static SPEC_PATHS: &[&str] = &[
 
 #[async_trait]
 impl Scanner for OpenApiScanner {
+    fn name(&self) -> &'static str {
+        "openapi"
+    }
+
     async fn scan(
         &self,
         url: &str,

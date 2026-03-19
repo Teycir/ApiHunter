@@ -207,6 +207,10 @@ fn cve_template_dirs() -> Vec<std::path::PathBuf> {
 
 #[async_trait]
 impl Scanner for CveTemplateScanner {
+    fn name(&self) -> &'static str {
+        "cve_templates"
+    }
+
     async fn scan(
         &self,
         url: &str,

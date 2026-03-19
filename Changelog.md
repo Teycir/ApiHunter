@@ -137,6 +137,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Introduced `UrlScanSummary` struct to track per-URL finding counts without storing full finding vectors
   - Replaced `eprintln!` with structured `tracing` logs (info/warn) for better observability
   - Added deterministic scanner ordering in tests (prevents flaky test failures from random shuffle)
+  - Added `Scanner::name()` trait method and refactored runner registry to consume trait-owned scanner identities
+  - Added auth refresh lifecycle handles with cooperative cancellation (`CancellationToken`) and graceful shutdown at run end
 - **JWT Scanner Enhancements**:
   - Improved RS256→HS256 algorithm confusion attack with proper RSA modulus extraction
   - Added `extract_rsa_modulus_from_jwk` to parse JWK `n` parameter (base64url-decoded RSA modulus)
@@ -224,4 +226,3 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - NDJSON reporter with `Arc<Mutex<BufWriter<File>>>`
 - CLI via `clap` with `--min-severity`, `--concurrency`, `--output-path`
 - WAF evasion headers and random UA pool
-

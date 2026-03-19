@@ -1349,3 +1349,34 @@
   - `cargo fmt`
   - `cargo test --test jwt_scanner --test cors_scanner --test integration_runner --test reports` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Scanner Identity + Auth Refresh Lifecycle (Phase 33)
+
+## Plan
+- [x] Promote scanner identity to the `Scanner` trait (`fn name()`) so registry metadata can’t drift.
+- [x] Update all scanner implementations to provide stable scanner names.
+- [x] Refactor runner scanner registry to consume trait-provided names instead of a parallel hardcoded name field.
+- [x] Add cancellation support to auth refresh background tasks and stop them cleanly before process exit.
+- [x] Add regression tests for scanner names and refresh task cancellation.
+- [x] Run fmt + targeted/full tests outside sandbox.
+
+## Review
+- Scanner trait and implementations:
+  - Added `fn name(&self) -> &'static str` to `src/scanner/mod.rs`.
+  - Updated all scanner modules (`cors`, `csp`, `graphql`, `api_security`, `jwt`, `openapi`, `mass_assignment`, `oauth_oidc`, `rate_limit`, `cve_templates`, `websocket`) to implement `name()`.
+- Runner registry simplification:
+  - `RegisteredScanner` no longer carries a duplicated `name` field.
+  - Runner now reads scanner names directly from `scanner.name()` for lifecycle logging and stats aggregation.
+- Auth refresh lifecycle:
+  - Added `RefreshTaskHandle` in `src/auth.rs` with cooperative cancellation via `tokio_util::sync::CancellationToken`.
+  - `spawn_refresh_task(...)` now returns this handle.
+  - `src/main.rs` now stores refresh task handles for both auth flows and calls `shutdown().await` before exit, preventing orphaned background tasks.
+- Stability tests:
+  - Added `tests/scanner_names.rs` to assert stable scanner trait names.
+  - Added `tests/auth_refresh.rs` to verify immediate refresh-task cancellation.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test auth_refresh --test scanner_names --test integration_runner --test jwt_scanner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

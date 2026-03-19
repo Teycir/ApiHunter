@@ -626,6 +626,10 @@ static SECURITY_TXT_PATHS: &[&str] = &["/.well-known/security.txt", "/security.t
 
 #[async_trait]
 impl Scanner for ApiSecurityScanner {
+    fn name(&self) -> &'static str {
+        "api_security"
+    }
+
     async fn scan(
         &self,
         url: &str,

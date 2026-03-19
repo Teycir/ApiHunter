@@ -152,7 +152,7 @@ pub async fn run(
     // ── 5. Shared state ───────────────────────────────────────────────────────
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let scanners = build_scanners(&config, http_client_b.clone());
-    let scanner_names: Vec<&str> = scanners.iter().map(|s| s.name).collect();
+    let scanner_names: Vec<&str> = scanners.iter().map(|s| s.name()).collect();
     info!(
         scanner_count = scanners.len(),
         scanners = ?scanner_names,
@@ -351,7 +351,7 @@ async fn scan_url_with_results(
     let mut scanner_stats: ScannerStatsMap = BTreeMap::new();
 
     for scanner in scanners {
-        let scanner_name = scanner.name.to_string();
+        let scanner_name = scanner.name().to_string();
         let s = Arc::clone(&scanner.scanner);
         let u = url.clone();
         let client = client.clone();
@@ -420,83 +420,64 @@ fn build_scanners(
     let mut scanners: Vec<RegisteredScanner> = Vec::new();
 
     if config.toggles.cors {
-        scanners.push(RegisteredScanner::new(
-            "cors",
-            Arc::new(CorsScanner::new(config)),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(CorsScanner::new(config))));
     }
     if config.toggles.csp {
-        scanners.push(RegisteredScanner::new(
-            "csp",
-            Arc::new(CspScanner::new(config)),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(CspScanner::new(config))));
     }
     if config.toggles.graphql {
-        scanners.push(RegisteredScanner::new(
-            "graphql",
-            Arc::new(GraphqlScanner::new(config)),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(GraphqlScanner::new(
+            config,
+        ))));
     }
     if config.toggles.api_security {
-        scanners.push(RegisteredScanner::new(
-            "api_security",
-            Arc::new(ApiSecurityScanner::new(config, http_client_b.clone())),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(ApiSecurityScanner::new(
+            config,
+            http_client_b.clone(),
+        ))));
     }
     if config.toggles.jwt {
-        scanners.push(RegisteredScanner::new(
-            "jwt",
-            Arc::new(JwtScanner::new(config)),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(JwtScanner::new(config))));
     }
     if config.toggles.openapi {
-        scanners.push(RegisteredScanner::new(
-            "openapi",
-            Arc::new(OpenApiScanner::new(config)),
-        ));
+        scanners.push(RegisteredScanner::new(Arc::new(OpenApiScanner::new(
+            config,
+        ))));
     }
     if config.active_checks {
         if config.toggles.mass_assignment {
-            scanners.push(RegisteredScanner::new(
-                "mass_assignment",
-                Arc::new(MassAssignmentScanner::new(config)),
-            ));
+            scanners.push(RegisteredScanner::new(Arc::new(
+                MassAssignmentScanner::new(config),
+            )));
         }
         if config.toggles.oauth_oidc {
-            scanners.push(RegisteredScanner::new(
-                "oauth_oidc",
-                Arc::new(OAuthOidcScanner::new(config)),
-            ));
+            scanners.push(RegisteredScanner::new(Arc::new(OAuthOidcScanner::new(
+                config,
+            ))));
         }
         if config.toggles.rate_limit {
-            scanners.push(RegisteredScanner::new(
-                "rate_limit",
-                Arc::new(RateLimitScanner::new(config)),
-            ));
+            scanners.push(RegisteredScanner::new(Arc::new(RateLimitScanner::new(
+                config,
+            ))));
         }
         if config.toggles.cve_templates {
-            scanners.push(RegisteredScanner::new(
-                "cve_templates",
-                Arc::new(CveTemplateScanner::new(config)),
-            ));
+            scanners.push(RegisteredScanner::new(Arc::new(CveTemplateScanner::new(
+                config,
+            ))));
         }
         if config.toggles.websocket {
-            scanners.push(RegisteredScanner::new(
-                "websocket",
-                Arc::new(WebSocketScanner::new(config)),
-            ));
+            scanners.push(RegisteredScanner::new(Arc::new(WebSocketScanner::new(
+                config,
+            ))));
         }
     }
 
     if scanners.is_empty() {
         warn!("All scanners disabled");
-    } else if scanners.len() > 1 {
+    } else if scanners.len() > 1 && should_shuffle_scanners() {
         // Reduce deterministic scanner ordering fingerprints across runs.
-        // Keep tests deterministic to avoid flaky order-dependent assertions.
-        if !cfg!(test) {
-            let mut rng = rand::thread_rng();
-            scanners.shuffle(&mut rng);
-        }
+        let mut rng = rand::thread_rng();
+        scanners.shuffle(&mut rng);
     }
 
     scanners
@@ -504,13 +485,16 @@ fn build_scanners(
 
 #[derive(Clone)]
 struct RegisteredScanner {
-    name: &'static str,
     scanner: Arc<dyn Scanner>,
 }
 
 impl RegisteredScanner {
-    fn new(name: &'static str, scanner: Arc<dyn Scanner>) -> Self {
-        Self { name, scanner }
+    fn new(scanner: Arc<dyn Scanner>) -> Self {
+        Self { scanner }
+    }
+
+    fn name(&self) -> &'static str {
+        self.scanner.name()
     }
 }
 
@@ -724,4 +708,16 @@ fn merge_scanner_stats(target: &mut ScannerStatsMap, batch: ScannerStatsMap) {
         entry.findings += stats.findings;
         entry.errors += stats.errors;
     }
+}
+
+fn should_shuffle_scanners() -> bool {
+    if cfg!(test) {
+        return false;
+    }
+    // Integration tests run the library as a normal dependency, so cfg(test)
+    // is not always set. RUST_TEST_THREADS is present in cargo test binaries.
+    if std::env::var_os("RUST_TEST_THREADS").is_some() {
+        return false;
+    }
+    std::env::var_os("APIHUNTER_DETERMINISTIC_SCANNER_ORDER").is_none()
 }

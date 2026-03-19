@@ -57,6 +57,7 @@ async fn run(cli: Cli) -> Result<i32> {
     let start = Instant::now();
     validate_startup_inputs(&cli)?;
     emit_security_hygiene_warnings(&cli);
+    let mut auth_refresh_tasks = Vec::new();
 
     // ── 1. Load URLs ─────────────────────────────────────────────────────────
     let raw_urls = load_urls(&cli)?;
@@ -166,7 +167,7 @@ async fn run(cli: Cli) -> Result<i32> {
         let cred = Arc::new(cred);
 
         // Spawn background refresh task
-        auth::spawn_refresh_task(flow, Arc::clone(&cred));
+        auth_refresh_tasks.push(auth::spawn_refresh_task(flow, Arc::clone(&cred)));
 
         Arc::new(
             HttpClient::new(&config)
@@ -184,7 +185,7 @@ async fn run(cli: Cli) -> Result<i32> {
             .await
             .context("Auth flow B failed")?;
         let cred = Arc::new(cred);
-        auth::spawn_refresh_task(flow, Arc::clone(&cred));
+        auth_refresh_tasks.push(auth::spawn_refresh_task(flow, Arc::clone(&cred)));
         Some(Arc::new(
             HttpClient::new(&config)
                 .context("Failed to build HTTP client B")?
@@ -278,6 +279,10 @@ async fn run(cli: Cli) -> Result<i32> {
         if let Err(e) = http_client.save_session().await {
             eprintln!("Warning: Failed to save session file: {e}");
         }
+    }
+
+    for task in auth_refresh_tasks {
+        task.shutdown().await;
     }
 
     let _elapsed = start.elapsed();

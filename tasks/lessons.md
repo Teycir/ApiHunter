@@ -53,3 +53,7 @@
 - Rule: for concurrent pipelines, keep exactly one data transport path for results and return only metadata needed for local progress reporting.
 - User correction pattern: non-deterministic ordering in production paths can make tests flaky.
 - Rule: keep randomized ordering in release builds, but gate deterministic behavior under test configuration (`cfg(test)` or explicit deterministic flag) and add regression tests for the chosen policy.
+- User correction pattern: scanner metadata can drift when scanner names are maintained separately from scanner implementations.
+- Rule: keep scanner identity as trait-owned metadata (`Scanner::name`) and derive registry/logging labels from the trait, not duplicated registration strings.
+- User correction pattern: background refresh tasks need explicit lifecycle control to avoid silent leaks in library/CLI integrations.
+- Rule: every spawned long-lived background task should return a shutdown handle and support cooperative cancellation; call shutdown on normal program exit.

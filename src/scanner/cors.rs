@@ -97,6 +97,10 @@ async fn probe_cors_response(
 
 #[async_trait]
 impl Scanner for CorsScanner {
+    fn name(&self) -> &'static str {
+        "cors"
+    }
+
     async fn scan(
         &self,
         url: &str,

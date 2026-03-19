@@ -13,7 +13,8 @@ use reqwest::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 // ── Flow descriptor ───────────────────────────────────────────────────────────
@@ -88,6 +89,21 @@ pub struct LiveCredential {
     pub inject_as: InjectAs,
     /// For token refresh: seconds before expiry to trigger refresh.
     pub refresh_lead_secs: u64,
+}
+
+/// Handle for a spawned auth refresh background task.
+#[derive(Debug)]
+pub struct RefreshTaskHandle {
+    cancel: CancellationToken,
+    task: JoinHandle<()>,
+}
+
+impl RefreshTaskHandle {
+    /// Signal cancellation and wait for the task to stop.
+    pub async fn shutdown(self) {
+        self.cancel.cancel();
+        let _ = self.task.await;
+    }
 }
 
 impl LiveCredential {
@@ -260,12 +276,20 @@ pub async fn execute_flow(flow: &AuthFlow) -> Result<LiveCredential> {
 /// Spawn a background task that re-executes the auth flow before the token
 /// expires. Writes the new token into `cred.value` so all in-flight requests
 /// automatically pick it up on the next read.
-pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) {
-    // TODO: add cancellation support for library use in long-running processes.
-    tokio::spawn(async move {
+pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) -> RefreshTaskHandle {
+    let cancel = CancellationToken::new();
+    let child_cancel = cancel.child_token();
+
+    let task = tokio::spawn(async move {
         loop {
             let sleep_secs = cred.refresh_lead_secs.max(1);
-            tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
+            tokio::select! {
+                _ = child_cancel.cancelled() => {
+                    info!("Auth flow: refresh task cancelled");
+                    break;
+                }
+                _ = tokio::time::sleep(Duration::from_secs(sleep_secs)) => {}
+            }
 
             info!("Auth flow: refreshing credential…");
             match execute_flow(&flow).await {
@@ -280,6 +304,8 @@ pub fn spawn_refresh_task(flow: AuthFlow, cred: Arc<LiveCredential>) {
             }
         }
     });
+
+    RefreshTaskHandle { cancel, task }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

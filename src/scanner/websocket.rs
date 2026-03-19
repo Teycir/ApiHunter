@@ -43,6 +43,10 @@ fn random_cross_origin_probe() -> &'static str {
 
 #[async_trait]
 impl Scanner for WebSocketScanner {
+    fn name(&self) -> &'static str {
+        "websocket"
+    }
+
     async fn scan(
         &self,
         url: &str,

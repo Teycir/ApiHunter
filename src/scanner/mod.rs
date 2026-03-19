@@ -24,6 +24,9 @@ use crate::{config::Config, error::CapturedError, http_client::HttpClient, repor
 /// errors should be captured and returned in the error vector.
 #[async_trait::async_trait]
 pub trait Scanner: Send + Sync + 'static {
+    /// Stable scanner identifier used for logging, metrics, and reporting.
+    fn name(&self) -> &'static str;
+
     /// Run this scanner against a single URL.
     async fn scan(
         &self,

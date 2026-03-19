@@ -45,6 +45,10 @@ static MUTATION_HINTS: &[&str] = &[
 
 #[async_trait]
 impl Scanner for MassAssignmentScanner {
+    fn name(&self) -> &'static str {
+        "mass_assignment"
+    }
+
     async fn scan(
         &self,
         url: &str,

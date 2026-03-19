@@ -34,6 +34,10 @@ static OAUTH_HINTS: &[&str] = &[
 
 #[async_trait]
 impl Scanner for OAuthOidcScanner {
+    fn name(&self) -> &'static str {
+        "oauth_oidc"
+    }
+
     async fn scan(
         &self,
         url: &str,

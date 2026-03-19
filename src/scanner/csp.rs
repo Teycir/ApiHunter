@@ -69,6 +69,10 @@ static BYPASS_HOSTS: Lazy<Vec<Regex>> = Lazy::new(|| {
 
 #[async_trait]
 impl Scanner for CspScanner {
+    fn name(&self) -> &'static str {
+        "csp"
+    }
+
     async fn scan(
         &self,
         url: &str,
