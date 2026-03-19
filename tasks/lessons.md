@@ -21,3 +21,6 @@
 - User preference: every CVE template should be proven with true-positive validation, not only mock tests.
 - Rule: maintain and use in-repo regression target lists for CVE true-positive and negative runs (`targets/cve-regression-vulhub-local.txt`, `targets/cve-regression-real-public.txt`).
 - Rule: for context-gated CVE templates, seed scans with context-bearing URLs (for example `/actuator`, `/nacos`, `/apisix/admin`) or findings may be skipped.
+- User preference: strengthen CVE tests with real data, not only synthetic payloads.
+- Rule: capture and replay real payload fixtures from controlled vulnerable targets for CVE scanner regression tests.
+- Rule: when requested, use Exa discovery and Fetch retrieval to pin authoritative upstream references into fixture snapshots for parity tests.

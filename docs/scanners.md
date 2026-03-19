@@ -141,6 +141,7 @@ Template catalog location:
 
 Current translated checks include:
 - `cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed`
+- `cve/cve-2022-24288/airflow-example-dag-params-rce-signal`
 - `cve/cve-2021-29442/nacos-auth-bypass-signal`
 - `cve/cve-2021-29441/nacos-user-agent-auth-bypass-signal`
 - `cve/cve-2020-13945/apisix-default-admin-key`
@@ -175,6 +176,10 @@ Example true-positive regression run:
 
 rg '"check":"cve/' /tmp/cve_tp.ndjson
 ```
+
+Real-data hardening tests:
+- `tests/cve_templates_real_data.rs` replays captured live payloads from `tests/fixtures/real_cve_payloads/`
+- `tests/cve_templates_upstream_parity.rs` validates CVE/source linkage against pinned upstream Nuclei snapshots in `tests/fixtures/upstream_nuclei/`
 
 ---
 

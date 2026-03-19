@@ -605,3 +605,81 @@
   - This removes observed overmatch on APISIX dashboard HTML content.
 - Added test coverage:
   - `translated_template_22947_does_not_match_html_routes_text` in `tests/cve_templates_scanner.rs`.
+
+---
+
+# Task: Real-Data CVE Test Hardening (Phase 20)
+
+## Plan
+- [x] Use Exa + Fetch to pull authoritative upstream CVE template references.
+- [x] Pin upstream template snapshots into test fixtures for deterministic parity checks.
+- [x] Capture real payload fixtures from live vulnerable targets for non-synthetic scanner tests.
+- [x] Add new regression tests for true-match and non-match behavior using real payloads.
+- [x] Run targeted and full test suites outside sandbox.
+
+## Review
+- Exa discovery + Fetch retrieval performed for upstream references (Nuclei CVE YAML sources).
+- Added pinned upstream fixtures:
+  - `tests/fixtures/upstream_nuclei/CVE-2022-22947.yaml`
+  - `tests/fixtures/upstream_nuclei/CVE-2021-29441.yaml`
+  - `tests/fixtures/upstream_nuclei/CVE-2021-29442.yaml`
+  - `tests/fixtures/upstream_nuclei/CVE-2020-13945.yaml`
+  - `tests/fixtures/upstream_nuclei/CVE-2021-45232.yaml`
+  - `tests/fixtures/upstream_nuclei/README.md`
+- Added real captured payload fixtures:
+  - `tests/fixtures/real_cve_payloads/cve-2022-22947-body.json`
+  - `tests/fixtures/real_cve_payloads/cve-2021-29442-body.json`
+  - `tests/fixtures/real_cve_payloads/cve-2021-29441-baseline-body.json`
+  - `tests/fixtures/real_cve_payloads/cve-2021-29441-bypass-body.json`
+  - `tests/fixtures/real_cve_payloads/cve-2020-13945-body.json`
+  - `tests/fixtures/real_cve_payloads/cve-2021-45232-body.json`
+  - `tests/fixtures/real_cve_payloads/nonmatch-apisix-dashboard-actuator-routes.html`
+  - `tests/fixtures/real_cve_payloads/README.md`
+- Added new tests:
+  - `tests/cve_templates_real_data.rs`
+    - 5 true-positive tests using real payload fixtures.
+    - 1 real non-match control test (APISIX dashboard HTML should not trip `CVE-2022-22947`).
+  - `tests/cve_templates_upstream_parity.rs`
+    - CVE/source linkage check against pinned upstream snapshots.
+    - body-match indicator alignment check against captured real payload fixtures.
+- Validation:
+  - `cargo test --test cve_templates_real_data --test cve_templates_upstream_parity`
+  - `cargo test` (full suite)
+
+---
+
+# Task: Exa-Sourced Real-World CVE Test Hardening Continuation (Phase 21)
+
+## Plan
+- [x] Add Exa-sourced translated CVE template for Apache Airflow `CVE-2022-24288` using low-impact GET probe semantics.
+- [x] Pin upstream Nuclei snapshot and real-world fixture snapshots (vulnerable + patched) for deterministic test coverage.
+- [x] Extend CVE scanner and real-data/parity tests with true-positive and false-positive regression checks.
+- [x] Run targeted and full test suites outside sandbox and record results.
+
+## Review
+- Added translated CVE template:
+  - `assets/cve_templates/cve-2022-24288.toml`
+  - check: `cve/cve-2022-24288/airflow-example-dag-params-rce-signal`
+  - low-impact GET probe path: `/admin/airflow/code?root=&dag_id=example_passing_params_via_test_command`
+- Added Exa-sourced pinned fixtures:
+  - Upstream Nuclei snapshot:
+    - `tests/fixtures/upstream_nuclei/CVE-2022-24288.yaml`
+  - Real-world body snapshots from upstream Airflow source:
+    - `tests/fixtures/real_cve_payloads/cve-2022-24288-body.py` (2.2.3 vulnerable signal)
+    - `tests/fixtures/real_cve_payloads/nonmatch-cve-2022-24288-airflow-2.2.4-body.py` (2.2.4 patched control)
+- Extended tests:
+  - `tests/cve_templates_real_data.rs`
+    - `cve_2022_24288_matches_real_airflow_223_source_fixture`
+    - `cve_2022_24288_does_not_match_real_airflow_224_patched_fixture`
+  - `tests/cve_templates_upstream_parity.rs`
+    - included `CVE-2022-24288` in upstream parity table
+    - included `CVE-2022-24288` in body-indicator alignment matrix
+- Updated fixture metadata docs:
+  - `tests/fixtures/upstream_nuclei/README.md`
+  - `tests/fixtures/real_cve_payloads/README.md`
+- Updated scanner docs:
+  - `docs/scanners.md` current translated checks now includes `CVE-2022-24288`.
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test cve_templates_real_data --test cve_templates_upstream_parity --test cve_templates_scanner`
+  - `cargo test`
