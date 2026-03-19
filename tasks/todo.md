@@ -908,3 +908,39 @@
   - `cargo fmt`
   - `cargo test --test mass_assignment_scanner`
   - `cargo test`
+
+---
+
+# Task: Mass Assignment Recall-Safe Performance Pass (Phase 22)
+
+## Plan
+- [x] Implement parse-once JSON handling in mass-assignment scan path and GET confirmation path.
+- [x] Reduce hot-path allocations in key canonicalization and field collection.
+- [x] Add early traversal exit when all tracked sensitive fields are already found.
+- [x] Keep recall guardrails: avoid heuristic skips that may drop findings.
+- [x] Run formatting, targeted tests, and full suite outside sandbox; document outcomes.
+
+## Review
+- `src/scanner/mass_assignment.rs` performance updates (recall-safe):
+  - parse-once JSON flow added via `parse_json_body(...)` and reused in:
+    - POST response reflection handling in `scan(...)`,
+    - GET baseline/confirm handling in `fetch_elevated_fields(...)`.
+  - removed redundant JSON parse round trips in hot path.
+  - reduced key-canonicalization allocations:
+    - replaced per-key `String` normalization with allocation-free `key_matches_normalized(...)`.
+  - reduced token normalization allocations:
+    - switched truthy/role/permission checks from `to_ascii_lowercase()` allocation to `eq_ignore_ascii_case(...)` comparisons.
+  - added `HashSet::with_capacity(3)` for sensitive-field collection.
+  - added early exit in recursive traversal once all 3 tracked fields are found.
+- Regression coverage additions:
+  - `tests/mass_assignment_scanner.rs`:
+    - `json_body_with_non_json_content_type_is_still_processed`
+  - this explicitly protects recall by ensuring valid JSON bodies are still processed even with incorrect `Content-Type`.
+- Explicitly not applied (to preserve recall):
+  - heuristic pre-skip of baseline GET for “write-only-looking” paths (`/create`, `/add`, `/submit`).
+  - skipping scan when baseline GET is non-JSON.
+  - rationale: both can suppress true positives on real APIs with inconsistent semantics.
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test mass_assignment_scanner`
+  - `cargo test`

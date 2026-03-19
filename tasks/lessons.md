@@ -29,3 +29,5 @@
 - User correction pattern: reflected-field detection must be parser-based and canonicalized, not substring-based.
 - Rule: for JSON scanners, unify detection semantics across code paths (reflected vs elevated) using shared key normalization and structured traversal.
 - Rule: include variant-key regression tests (`snake_case`, `camelCase`, mixed case) and baseline-failure/reflected-only edge cases whenever detection logic changes.
+- User preference: performance improvements must not trade off recall.
+- Rule: accept only recall-safe optimizations by default (parse/alloc/traversal efficiencies), and reject heuristic request-skips unless explicitly approved as a detection tradeoff.

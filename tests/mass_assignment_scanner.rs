@@ -306,6 +306,48 @@ async fn non_json_post_response_is_ignored() {
 }
 
 #[tokio::test]
+async fn json_body_with_non_json_content_type_is_still_processed() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "application/json")
+                .set_body_string(r#"{"user":{"id":1,"name":"baseline"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/plain")
+                .set_body_string(
+                    r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "mass_assignment/reflected-fields"),
+        "expected reflected finding with valid JSON body despite non-json content-type, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
 async fn post_5xx_response_returns_no_finding() {
     let server = MockServer::start().await;
 
