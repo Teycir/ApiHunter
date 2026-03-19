@@ -10,7 +10,7 @@ use clap::{Args, Parser, Subcommand};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Serialize;
-use serde_yaml::{Mapping, Value};
+use serde_yml::{Mapping, Value};
 
 #[derive(Parser, Debug)]
 #[command(name = "template-tool")]
@@ -133,7 +133,7 @@ fn run() -> Result<()> {
 fn import_nuclei(args: ImportNucleiArgs) -> Result<()> {
     let raw = fs::read_to_string(&args.input)
         .with_context(|| format!("failed to read '{}'", args.input.display()))?;
-    let yaml: Value = serde_yaml::from_str(&raw)
+    let yaml: Value = serde_yml::from_str(&raw)
         .with_context(|| format!("failed to parse YAML '{}'", args.input.display()))?;
 
     let id = yaml

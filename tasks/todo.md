@@ -1,3 +1,49 @@
+# Task: Clippy Gate Cleanup (Phase 14)
+
+## Plan
+- [x] Run strict clippy (`cargo clippy --all-targets -- -D warnings`) to capture current failures.
+- [x] Fix warnings/errors with minimal-impact source changes.
+- [x] Re-run strict clippy and document results.
+
+## Review
+- Initial failure was a compile error during clippy due to dependency rename mismatch:
+  - `tests/cve_templates_upstream_parity.rs` still imported/used `serde_yaml`,
+  - project dependencies now use `serde_yml`.
+- Fixed by switching:
+  - `use serde_yaml::Value;` -> `use serde_yml::Value;`
+  - `serde_yaml::from_str(...)` -> `serde_yml::from_str(...)`
+- Validation:
+  - `cargo clippy --all-targets -- -D warnings` now passes.
+
+---
+
+# Task: Release Hardening Blocker Removal (Phase 13)
+
+## Plan
+- [x] Add build provenance attestations for tagged release artifacts in `.github/workflows/release.yml`.
+- [x] Add keyless signing for release archives and upload signature materials to the GitHub release.
+- [x] Generate and publish a release SBOM artifact in SPDX JSON format.
+- [x] Document supply-chain artifacts in `Readme.md` and verify references.
+
+## Review
+- Hardened `.github/workflows/release.yml` with supply-chain controls:
+  - Added `actions/attest@v4` provenance attestations for each matrix-built release archive.
+  - Enabled SHA256 checksum emission from `taiki-e/upload-rust-binary-action@v1` (`checksum: sha256`).
+  - Added `harden_release` job that:
+    - downloads release assets,
+    - signs archives keylessly via `sigstore/cosign-installer@v3` + `cosign sign-blob`,
+    - uploads signature materials (`.sig`, `.pem`, `.sigstore.json`) back to the release,
+    - generates SPDX JSON SBOM via `anchore/sbom-action@v0`,
+    - attests SBOM with `actions/attest@v4`.
+- Updated `Readme.md` prebuilt release section to advertise published supply-chain artifacts.
+- Validation performed:
+  - `sed -n '1,320p' .github/workflows/release.yml`
+  - `rg -n "attest@v4|cosign-installer|sbom-action|harden_release|checksum: sha256|artifact-metadata" -S .github/workflows/release.yml Readme.md`
+  - Diff review of changed files.
+- Note: end-to-end execution of the new release workflow requires a real `v*` tag push in GitHub Actions.
+
+---
+
 # Task: Security Policy Blocker Removal (Phase 12)
 
 ## Plan

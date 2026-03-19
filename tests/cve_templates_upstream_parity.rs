@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use serde::Deserialize;
-use serde_yaml::Value;
+use serde_yml::Value;
 
 #[derive(Debug, Deserialize)]
 struct TemplateFile {
@@ -41,7 +41,7 @@ fn read_upstream_yaml(path: &str) -> Value {
     let p = repo_file(path);
     let raw =
         fs::read_to_string(&p).unwrap_or_else(|e| panic!("failed to read '{}': {e}", p.display()));
-    serde_yaml::from_str(&raw)
+    serde_yml::from_str(&raw)
         .unwrap_or_else(|e| panic!("failed to parse yaml '{}': {e}", p.display()))
 }
 

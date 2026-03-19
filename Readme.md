@@ -587,6 +587,13 @@ Tagged releases (`v*`) publish prebuilt `apihunter` binaries for:
 - macOS (`x86_64-apple-darwin`)
 - Windows (`x86_64-pc-windows-msvc`)
 
+Each release also publishes supply-chain artifacts:
+
+- SHA256 checksum files (`*.sha256`)
+- Sigstore keyless signature materials (`*.sig`, `*.pem`, `*.sigstore.json`)
+- SPDX JSON SBOM (`apihunter-release-assets-sbom.spdx.json`)
+- GitHub artifact attestations (provenance and SBOM attestation metadata)
+
 Download from [GitHub Releases](https://github.com/Teycir/ApiHunter/releases).
 
 ### Docker

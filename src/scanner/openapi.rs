@@ -95,7 +95,7 @@ fn parse_spec(body: &str) -> Result<Value, String> {
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
         serde_json::from_str::<Value>(trimmed).map_err(|e| e.to_string())
     } else {
-        serde_yaml::from_str::<Value>(trimmed).map_err(|e| e.to_string())
+        serde_yml::from_str::<Value>(trimmed).map_err(|e| e.to_string())
     }
 }
 

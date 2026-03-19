@@ -145,7 +145,7 @@ impl<'a> SwaggerDiscovery<'a> {
     fn parse_yaml(&self, body: &str, paths: &mut HashSet<String>, errors: &mut Vec<CapturedError>) {
         // Try OpenAPI v3 YAML
         if body.contains("openapi:") {
-            match serde_yaml::from_str::<OpenApiV3>(body) {
+            match serde_yml::from_str::<OpenApiV3>(body) {
                 Ok(spec) => {
                     self.harvest_v3(spec, paths);
                     return;
@@ -158,7 +158,7 @@ impl<'a> SwaggerDiscovery<'a> {
         }
 
         // Try Swagger v2 YAML
-        match serde_yaml::from_str::<SwaggerV2>(body) {
+        match serde_yml::from_str::<SwaggerV2>(body) {
             Ok(spec) => self.harvest_v2(spec, paths),
             Err(e) => {
                 warn!("[swagger] YAML Swagger v2 parse failed: {e}");
