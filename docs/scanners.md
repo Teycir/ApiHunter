@@ -182,6 +182,7 @@ Curated hardened examples include:
 Regression target lists kept in-repo:
 - `targets/cve-regression-vulhub-local.txt` (local true-positive CVE validation set)
 - `targets/cve-regression-real-public.txt` (real internet negative-regression set)
+- `docs/lab-setup.md` (reproducible Vulhub compose scenarios and fixture workflow)
 
 Local true-positive mapping:
 - `http://127.0.0.1:18080/actuator` -> `CVE-2022-22947`
@@ -189,6 +190,11 @@ Local true-positive mapping:
 - `http://127.0.0.1:18851/nacos` -> `CVE-2021-29441` (requires auth-enabled Nacos baseline)
 - `http://127.0.0.1:19080/apisix/admin` -> `CVE-2020-13945`
 - `http://127.0.0.1:19000/apisix/admin` -> `CVE-2021-45232`
+
+Vulhub-native Nacos mapping (preferred for reproducibility):
+- `vulhub/nacos/CVE-2021-29441/docker-compose.yml` -> `http://127.0.0.1:8848/nacos`
+- `vulhub/nacos/CVE-2021-29442/docker-compose.yml` -> `http://127.0.0.1:8848/nacos`
+- run one scenario at a time (both bind `8848`)
 
 Example true-positive regression run:
 ```bash

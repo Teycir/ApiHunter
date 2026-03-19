@@ -117,3 +117,5 @@
 - Rule: re-verify each report item against live code, implement only reproducible gaps, and explicitly document confirmed non-bugs in task review notes.
 - User correction pattern: CVE coverage requests can provide a concrete catalog and expect bulk expansion, not incremental additions.
 - Rule: when a CVE reference catalog is provided, automate import through `template-tool`, record importable/non-importable counts, and update docs with the resulting catalog size.
+- User correction pattern: lab spin-up knowledge for CVE template validation should not live only in session notes.
+- Rule: keep a dedicated `docs/lab-setup.md` with reproducible Vulhub compose commands (including Nacos one-at-a-time flows) and reference it from scanner docs/README.

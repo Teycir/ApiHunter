@@ -1916,3 +1916,34 @@
 - Validation (outside sandbox):
   - `cargo test --test cve_templates_scanner --test cve_templates_runtime_ext --test cve_templates_upstream_parity --test cve_templates_real_data`
   - Result: passed (`19/19` tests across the four suites).
+
+---
+
+# Task: Vulhub Lab Setup Documentation (2026-03-19)
+
+## Plan
+- [x] Add a dedicated `docs/lab-setup.md` covering reproducible CVE template validation labs.
+- [x] Include a concrete “top 10 next” Vulhub-ready scenarios for template/fixture work.
+- [x] Migrate Nacos guidance from custom local references to explicit `vulhub/nacos/CVE-2021-29441` and `vulhub/nacos/CVE-2021-29442` compose flows.
+- [x] Link lab setup docs from scanner docs/README and target-list comments.
+- [x] Record upstream path-availability caveats for catalog candidate paths that are not currently present in upstream Vulhub.
+
+## Review
+- Added `docs/lab-setup.md` with:
+  - Vulhub prerequisites and start/stop workflow.
+  - 10 upstream-verified Vulhub-ready scenarios for near-term CVE template validation.
+  - Explicit Nacos one-at-a-time migration guidance using:
+    - `vulhub/nacos/CVE-2021-29441/docker-compose.yml`
+    - `vulhub/nacos/CVE-2021-29442/docker-compose.yml`
+    - shared target URL `http://127.0.0.1:8848/nacos`.
+  - Upstream availability notes (as checked on `2026-03-19`) for paths returning `404`:
+    - `minio/CVE-2021-41266`
+    - `forgerock/CVE-2021-35464`
+    - `sonarqube/CVE-2020-27986`
+    - `gitlab/CVE-2021-22214`
+- Updated references:
+  - `Readme.md` now links to `docs/lab-setup.md`.
+  - `docs/scanners.md` now references `docs/lab-setup.md` and includes Vulhub-native Nacos mapping.
+  - `targets/cve-regression-vulhub-local.txt` comment now points to `docs/lab-setup.md`.
+- Verification commands:
+  - `rg -n "lab-setup|vulhub/nacos/CVE-2021-29441|vulhub/nacos/CVE-2021-29442" Readme.md docs/scanners.md docs/lab-setup.md targets/cve-regression-vulhub-local.txt`

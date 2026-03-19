@@ -29,23 +29,34 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Securi
 
 ```mermaid
 flowchart LR
-    A[CLI<br/>apihunter] --> B[main.rs<br/>parse args + build config]
-    D[Input Sources<br/>--urls / --stdin / --har] --> E[Pre-filter + Discovery]
-    B --> C[HttpClient + Config]
-    E --> F[runner.rs<br/>orchestration]
+    A["CLI
+apihunter"] --> B["main.rs
+parse args + build config"]
+    D["Input Sources
+--urls / --stdin / --har"] --> E["Pre-filter + Discovery"]
+    B --> C["HttpClient + Config"]
+    E --> F["runner.rs
+orchestration"]
     C --> F
 
-    F --> G1[Passive scanners<br/>CORS/CSP/GraphQL/JWT/OpenAPI/API Security]
-    F --> G2[Active scanners<br/>API Security (IDOR/BOLA), Mass Assignment<br/>OAuth/OIDC, Rate Limit, WebSocket, CVE Templates]
+    F --> G1["Passive scanners
+CORS/CSP/GraphQL/JWT/OpenAPI/API Security"]
+    F --> G2["Active scanners
+API Security IDOR/BOLA, Mass Assignment
+OAuth/OIDC, Rate Limit, WebSocket, CVE Templates"]
 
-    I[template-tool<br/>Nuclei YAML -> TOML] --> H[assets/cve_templates/*.toml]
+    I["template-tool
+Nuclei YAML to TOML"] --> H["assets/cve_templates/*.toml"]
     H --> G2
 
-    G1 --> J[Findings + Captured Errors]
+    G1 --> J["Findings + Captured Errors"]
     G2 --> J
-    J --> K[Reporter<br/>Pretty / NDJSON / SARIF]
-    K --> L[Optional Auto Reports<br/>findings.json / summary.md / scan.log]
-    K --> M[CI/CD Controls<br/>baseline diff + fail-on]
+    J --> K["Reporter
+Pretty / NDJSON / SARIF"]
+    K --> L["Optional Auto Reports
+findings.json / summary.md / scan.log"]
+    K --> M["CI/CD Controls
+baseline diff + fail-on"]
 ```
 
 ## Why ApiHunter?
@@ -348,7 +359,7 @@ cargo build --release
 cat ./targets/cve-regression-real-public.txt | ./target/release/apihunter --stdin --min-severity medium
 ```
 
-See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
+See [HOWTO.md](HOWTO.md) for detailed usage, [docs/lab-setup.md](docs/lab-setup.md) for Vulhub-based CVE validation labs, and [docs/](docs/) for internals.
 
 ## Architecture
 
