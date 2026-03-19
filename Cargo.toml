@@ -35,13 +35,13 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["full"] }
 
 # HTTP
-reqwest = { version = "0.12", features = ["json", "gzip", "deflate", "rustls-tls", "cookies", "stream"] }
+reqwest = { version = "0.13", features = ["json", "gzip", "deflate", "rustls", "cookies", "stream"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
-toml = "0.8"
+toml = "1.0"
 base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
@@ -73,7 +73,7 @@ tokio-util = { version = "0.7", features = ["full"] }
 async-trait = "0.1"
 
 # Error handling
-thiserror = "1"
+thiserror = "2"
 anyhow = "1"
 
 # Time
