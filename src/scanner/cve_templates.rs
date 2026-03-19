@@ -8,7 +8,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
-use tracing::warn;
+use tracing::{error, info, warn};
 use url::Url;
 
 use crate::{
@@ -26,9 +26,9 @@ pub struct CveTemplateScanner {
 }
 
 impl CveTemplateScanner {
-    pub fn new(_config: &Config) -> Self {
+    pub fn new(config: &Config) -> Self {
         Self {
-            templates: Arc::new(load_templates()),
+            templates: Arc::new(load_templates(config.quiet)),
             checked_host_templates: Arc::new(DashSet::new()),
         }
     }
@@ -105,11 +105,13 @@ fn default_method() -> String {
     "GET".to_string()
 }
 
-fn load_templates() -> Vec<CveTemplate> {
+fn load_templates(quiet: bool) -> Vec<CveTemplate> {
     let mut templates = Vec::new();
     let mut seen_checks = HashSet::new();
     let mut skipped_invalid = 0usize;
     let mut skipped_unsafe = 0usize;
+    let mut skipped_invalid_templates = Vec::new();
+    let mut skipped_unsafe_templates = Vec::new();
 
     for dir in cve_template_dirs() {
         if !dir.exists() || !dir.is_dir() {
@@ -160,12 +162,15 @@ fn load_templates() -> Vec<CveTemplate> {
             };
 
             for mut t in parsed.templates {
+                let template_key = format!("{} ({})", template_identity(&t.id), path.display());
                 if t.id.trim().is_empty()
                     || t.check.trim().is_empty()
                     || t.path.trim().is_empty()
                     || t.method.trim().is_empty()
                 {
                     skipped_invalid += 1;
+                    skipped_invalid_templates
+                        .push(format!("{template_key}: missing id/check/path/method"));
                     warn!(
                         template_path = %path.display(),
                         "Skipping invalid CVE template: id/check/path/method required"
@@ -175,6 +180,8 @@ fn load_templates() -> Vec<CveTemplate> {
 
                 if !is_supported_template_method(&t.method) {
                     skipped_invalid += 1;
+                    skipped_invalid_templates
+                        .push(format!("{template_key}: unsupported method '{}'", t.method));
                     warn!(
                         template_path = %path.display(),
                         template_id = %t.id,
@@ -186,6 +193,10 @@ fn load_templates() -> Vec<CveTemplate> {
 
                 if !t.path.trim().starts_with('/') {
                     skipped_invalid += 1;
+                    skipped_invalid_templates.push(format!(
+                        "{template_key}: non-root-relative path '{}'",
+                        t.path
+                    ));
                     warn!(
                         template_path = %path.display(),
                         template_id = %t.id,
@@ -199,6 +210,9 @@ fn load_templates() -> Vec<CveTemplate> {
                     || headers_have_unresolved_placeholders(&t.headers)
                 {
                     skipped_unsafe += 1;
+                    skipped_unsafe_templates.push(format!(
+                        "{template_key}: unresolved placeholder in path/headers"
+                    ));
                     continue;
                 }
 
@@ -223,21 +237,54 @@ fn load_templates() -> Vec<CveTemplate> {
 
                 if invalid_preflight {
                     skipped_unsafe += 1;
+                    skipped_unsafe_templates.push(format!(
+                        "{template_key}: invalid/unsafe preflight request metadata"
+                    ));
                     continue;
                 }
 
-                t.context_path_contains_any = normalize_context_hints(&t.context_path_contains_any);
-                if t.context_path_contains_any.is_empty() {
-                    t.context_path_contains_any = derive_context_hints_from_path(&t.path);
-                }
-                if t.context_path_contains_any.is_empty() {
-                    skipped_invalid += 1;
-                    warn!(
-                        template_path = %path.display(),
-                        template_id = %t.id,
-                        "Skipping CVE template with empty/invalid context hints"
-                    );
+                let has_status_matcher = !t.status_any_of.is_empty();
+                let has_evidence_matchers = template_has_response_evidence_matchers(&t);
+                if !has_status_matcher && !has_evidence_matchers {
+                    skipped_unsafe += 1;
+                    skipped_unsafe_templates
+                        .push(format!("{template_key}: no response matchers configured"));
                     continue;
+                }
+                if has_status_matcher && !has_evidence_matchers {
+                    skipped_unsafe += 1;
+                    skipped_unsafe_templates.push(format!(
+                        "{template_key}: status-only matcher without body/header evidence"
+                    ));
+                    continue;
+                }
+
+                if is_root_probe_path(&t.path) {
+                    if !t.context_path_contains_any.is_empty() {
+                        info!(
+                            template_path = %path.display(),
+                            template_id = %t.id,
+                            "Ignoring context_path_contains_any for root-path template"
+                        );
+                    }
+                    t.context_path_contains_any.clear();
+                } else {
+                    t.context_path_contains_any =
+                        normalize_context_hints(&t.context_path_contains_any);
+                    if t.context_path_contains_any.is_empty() {
+                        t.context_path_contains_any = derive_context_hints_from_path(&t.path);
+                    }
+                    if t.context_path_contains_any.is_empty() {
+                        skipped_invalid += 1;
+                        skipped_invalid_templates
+                            .push(format!("{template_key}: empty/invalid context hints"));
+                        warn!(
+                            template_path = %path.display(),
+                            template_id = %t.id,
+                            "Skipping CVE template with empty/invalid context hints"
+                        );
+                        continue;
+                    }
                 }
 
                 if t.source.trim().is_empty() {
@@ -263,6 +310,38 @@ fn load_templates() -> Vec<CveTemplate> {
             loaded = templates.len(),
             "CVE template loader skipped invalid/unsafe templates"
         );
+
+        if quiet {
+            if !skipped_invalid_templates.is_empty() {
+                error!(
+                    skipped_invalid,
+                    templates = ?skipped_invalid_templates,
+                    "CVE template loader invalid-template details"
+                );
+            }
+            if !skipped_unsafe_templates.is_empty() {
+                error!(
+                    skipped_unsafe,
+                    templates = ?skipped_unsafe_templates,
+                    "CVE template loader unsafe-template details"
+                );
+            }
+        } else {
+            if !skipped_invalid_templates.is_empty() {
+                info!(
+                    skipped_invalid,
+                    templates = ?skipped_invalid_templates,
+                    "CVE template loader invalid-template details"
+                );
+            }
+            if !skipped_unsafe_templates.is_empty() {
+                info!(
+                    skipped_unsafe,
+                    templates = ?skipped_unsafe_templates,
+                    "CVE template loader unsafe-template details"
+                );
+            }
+        }
     }
 
     templates
@@ -680,6 +759,25 @@ fn has_unresolved_request_placeholder(raw: &str) -> bool {
     v.contains("{{") && v.contains("}}")
 }
 
+fn template_identity(id: &str) -> &str {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        "<missing-id>"
+    } else {
+        trimmed
+    }
+}
+
+fn template_has_response_evidence_matchers(tmpl: &CveTemplate) -> bool {
+    !tmpl.body_contains_any.is_empty()
+        || !tmpl.body_contains_all.is_empty()
+        || !tmpl.body_regex_any.is_empty()
+        || !tmpl.body_regex_all.is_empty()
+        || !tmpl.match_headers.is_empty()
+        || !tmpl.header_regex_any.is_empty()
+        || !tmpl.header_regex_all.is_empty()
+}
+
 fn headers_have_unresolved_placeholders(headers: &[NameValue]) -> bool {
     headers.iter().any(|h| {
         has_unresolved_request_placeholder(&h.name) || has_unresolved_request_placeholder(&h.value)
@@ -703,6 +801,10 @@ fn normalize_context_hints(raw_hints: &[String]) -> Vec<String> {
     }
 
     out
+}
+
+fn is_root_probe_path(path: &str) -> bool {
+    path_segments(path).is_empty()
 }
 
 fn derive_context_hints_from_path(path: &str) -> Vec<String> {

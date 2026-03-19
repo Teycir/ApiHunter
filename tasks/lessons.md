@@ -121,3 +121,9 @@
 - Rule: keep a dedicated `docs/lab-setup.md` with reproducible Vulhub compose commands (including Nacos one-at-a-time flows) and reference it from scanner docs/README.
 - User correction pattern: broad CVE catalog imports can degrade runtime signal quality without template safety gates.
 - Rule: enforce CVE loader quality gates (reject unresolved request placeholders + invalid request metadata) and prefer segment-aware, specificity-first context matching to control probe fan-out.
+- User correction pattern: status-only or matcherless CVE templates create high false-positive risk and should not be loaded.
+- Rule: require at least one body/header evidence matcher for every CVE template; reject status-only and no-matcher templates at load-time.
+- User correction pattern: `--quiet` can hide critical CVE template load quality problems.
+- Rule: when CVE templates are skipped for safety/quality, emit actionable template-ID diagnostics that remain visible in quiet mode.
+- User correction pattern: root-path (`path="/"`) CVE probes can be incorrectly gated by seed-path context hints.
+- Rule: treat root-path CVE probes as host-scoped checks and ignore context-path hints for those templates.

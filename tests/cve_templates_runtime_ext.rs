@@ -331,3 +331,216 @@ context_path_contains_any = ["/placeholderseed"]
         "rejected placeholder template should not execute probe requests: {paths:?}"
     );
 }
+
+#[tokio::test]
+async fn status_only_templates_are_rejected_at_load() {
+    let _guard = ENV_LOCK.lock().await;
+    let _tmp = tempdir().expect("tempdir");
+    let template_path = _tmp.path().join("status-only.toml");
+
+    std::fs::write(
+        &template_path,
+        r#"
+[[templates]]
+id = "CVE-2099-0104"
+check = "cve/cve-2099-0104/status-only-template"
+title = "Status-only matcher rejection test"
+severity = "high"
+detail = "Templates with only status matcher must be rejected."
+remediation = "n/a"
+source = "test"
+path = "/status-only"
+method = "GET"
+status_any_of = [200]
+body_contains_any = []
+body_contains_all = []
+body_regex_any = []
+body_regex_all = []
+match_headers = []
+header_regex_any = []
+header_regex_all = []
+context_path_contains_any = ["/api"]
+"#,
+    )
+    .expect("write template");
+
+    std::env::set_var(
+        "APIHUNTER_CVE_TEMPLATE_DIRS",
+        _tmp.path().to_str().expect("tmp path"),
+    );
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/status-only"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = CveTemplateScanner::new(cfg.as_ref());
+
+    let target = format!("{}/api/status", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+    let paths = requests
+        .iter()
+        .map(|r| r.url.path().to_string())
+        .collect::<Vec<_>>();
+
+    std::env::remove_var("APIHUNTER_CVE_TEMPLATE_DIRS");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .all(|f| f.check != "cve/cve-2099-0104/status-only-template"),
+        "status-only template should be rejected: {findings:#?}"
+    );
+    assert!(
+        paths.iter().all(|p| p != "/status-only"),
+        "status-only template should not execute probe requests: {paths:?}"
+    );
+}
+
+#[tokio::test]
+async fn templates_without_any_response_matchers_are_rejected_at_load() {
+    let _guard = ENV_LOCK.lock().await;
+    let _tmp = tempdir().expect("tempdir");
+    let template_path = _tmp.path().join("no-matchers.toml");
+
+    std::fs::write(
+        &template_path,
+        r#"
+[[templates]]
+id = "CVE-2099-0105"
+check = "cve/cve-2099-0105/no-matchers-template"
+title = "No matcher rejection test"
+severity = "medium"
+detail = "Templates without any response matcher must be rejected."
+remediation = "n/a"
+source = "test"
+path = "/no-matchers"
+method = "GET"
+status_any_of = []
+body_contains_any = []
+body_contains_all = []
+body_regex_any = []
+body_regex_all = []
+match_headers = []
+header_regex_any = []
+header_regex_all = []
+context_path_contains_any = ["/api"]
+"#,
+    )
+    .expect("write template");
+
+    std::env::set_var(
+        "APIHUNTER_CVE_TEMPLATE_DIRS",
+        _tmp.path().to_str().expect("tmp path"),
+    );
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/no-matchers"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = CveTemplateScanner::new(cfg.as_ref());
+
+    let target = format!("{}/api/status", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+    let paths = requests
+        .iter()
+        .map(|r| r.url.path().to_string())
+        .collect::<Vec<_>>();
+
+    std::env::remove_var("APIHUNTER_CVE_TEMPLATE_DIRS");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .all(|f| f.check != "cve/cve-2099-0105/no-matchers-template"),
+        "matcherless template should be rejected: {findings:#?}"
+    );
+    assert!(
+        paths.iter().all(|p| p != "/no-matchers"),
+        "matcherless template should not execute probe requests: {paths:?}"
+    );
+}
+
+#[tokio::test]
+async fn root_path_templates_ignore_context_hints() {
+    let _guard = ENV_LOCK.lock().await;
+    let _tmp = tempdir().expect("tempdir");
+    let template_path = _tmp.path().join("root-context.toml");
+
+    std::fs::write(
+        &template_path,
+        r#"
+[[templates]]
+id = "CVE-2099-0106"
+check = "cve/cve-2099-0106/root-context-normalization"
+title = "Root path context normalization test"
+severity = "medium"
+detail = "Root-path templates should not be filtered by seed path context hints."
+remediation = "n/a"
+source = "test"
+path = "/"
+method = "GET"
+status_any_of = [200]
+body_contains_any = ["root-ok"]
+body_contains_all = []
+body_regex_any = []
+body_regex_all = []
+match_headers = []
+header_regex_any = []
+header_regex_all = []
+context_path_contains_any = ["/api"]
+"#,
+    )
+    .expect("write template");
+
+    std::env::set_var(
+        "APIHUNTER_CVE_TEMPLATE_DIRS",
+        _tmp.path().to_str().expect("tmp path"),
+    );
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("root-ok"))
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = CveTemplateScanner::new(cfg.as_ref());
+
+    let target = format!("{}/", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+    let paths = requests
+        .iter()
+        .map(|r| r.url.path().to_string())
+        .collect::<Vec<_>>();
+
+    std::env::remove_var("APIHUNTER_CVE_TEMPLATE_DIRS");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "cve/cve-2099-0106/root-context-normalization"),
+        "root-path template should match non-/api seed paths: {findings:#?}"
+    );
+    assert!(
+        paths.iter().any(|p| p == "/"),
+        "expected root probe request for root-path template: {paths:?}"
+    );
+}

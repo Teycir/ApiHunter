@@ -1981,4 +1981,38 @@
 - Seeded real-target comparison (`/tmp/cve_real_public_seeded_targets.txt`):
   - Before hardening: `http_requests=470`, `errors=198`, `elapsed≈48.7s`, findings `0`.
   - After hardening: `http_requests=48`, `errors=12`, `elapsed≈5.3s`, findings `0`.
-  - Net effect: significant noise and probe fan-out reduction while preserving no-false-positive outcome.
+- Net effect: significant noise and probe fan-out reduction while preserving no-false-positive outcome.
+
+---
+
+# Task: CVE Template Data-Quality Guardrails (Follow-up) (2026-03-19)
+
+## Plan
+- [x] Re-verify reported CVE template quality issues against current loader/runtime behavior.
+- [x] Harden loader gates to reject status-only and matcherless templates, while preserving valid high-signal templates.
+- [x] Improve skipped-template operator visibility with actionable template IDs, including `--quiet` mode.
+- [x] Resolve root-path context mismatch behavior for base-path CVE templates.
+- [x] Add focused regression tests in `tests/cve_templates_runtime_ext.rs` for new gate behavior.
+- [x] Run formatting and CVE-focused/full test suites outside sandbox and document outcomes.
+
+## Review
+- Re-verified current behavior against report:
+  - unresolved request placeholders were skipped silently (summary-only warning),
+  - status-only and matcherless templates were accepted and could overfire,
+  - root-path templates with context hints could be path-gated inconsistently.
+- Loader hardening (`src/scanner/cve_templates.rs`):
+  - Rejected matcherless templates (`status_any_of=[]` and no body/header evidence).
+  - Rejected status-only templates (`status_any_of` without body/header evidence).
+  - Preserved valid templates that include body/header evidence matchers.
+  - For root-path probes (`path="/"`), ignored `context_path_contains_any` so host-root checks are not seed-path gated.
+  - Added actionable skip diagnostics listing template IDs/paths:
+    - non-quiet mode: `info!` details for invalid/unsafe IDs,
+    - `--quiet` mode: escalated detail logs to `error!` so they remain visible.
+- Regression tests added in `tests/cve_templates_runtime_ext.rs`:
+  - `status_only_templates_are_rejected_at_load`
+  - `templates_without_any_response_matchers_are_rejected_at_load`
+  - `root_path_templates_ignore_context_hints`
+- Validation (outside sandbox):
+  - `cargo fmt --all` passed.
+  - `cargo test --test cve_templates_runtime_ext` passed (`7/7`).
+  - `cargo test` passed (full suite green).
