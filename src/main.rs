@@ -156,10 +156,6 @@ async fn run(cli: Cli) -> Result<i32> {
     print_banner(&cli, filtered_urls.len());
     info!("Started discovering endpoints");
 
-    if config.danger_accept_invalid_certs {
-        warn!("TLS certificate validation is disabled (--danger-accept-invalid-certs). This is insecure for production scans.");
-    }
-
     // ── 3. Build shared HttpClient ───────────────────────────────────────────
     // Execute auth flow if provided
     let http_client = if let Some(ref flow_path) = config.auth_flow {
@@ -432,6 +428,17 @@ fn emit_security_hygiene_warnings(cli: &Cli) {
             "--retries={} may significantly increase request volume on unstable targets.",
             cli.retries
         );
+    }
+
+    if cli.danger_accept_invalid_certs {
+        warn!(
+            "SECURITY WARNING: TLS certificate validation is disabled via --danger-accept-invalid-certs. Use only in controlled test environments."
+        );
+        if cli.proxy.is_some() {
+            warn!(
+                "SECURITY WARNING: --proxy does not re-enable TLS validation while --danger-accept-invalid-certs is active."
+            );
+        }
     }
 
     for raw in &cli.headers {

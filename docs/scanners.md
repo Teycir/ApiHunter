@@ -29,6 +29,36 @@ This document describes all built-in scanner modules and their detection capabil
 
 ---
 
+## Finding Structure
+
+Each scanner emits standardized findings with fields such as:
+- `check` (stable check ID, for example `cors/wildcard-origin`)
+- `scanner` (module name, for example `cors`)
+- `severity`, `detail`, and `evidence`
+- `url` and `timestamp`
+
+This keeps scanner output machine-consumable for NDJSON/SARIF pipelines while preserving analyst-readable context.
+
+---
+
+## Signal Quality Guidance
+
+| Scanner | High-confidence signals | Typical false-positive sources | Typical false-negative sources |
+|---------|--------------------------|--------------------------------|--------------------------------|
+| CORS | Wildcard/reflected origins on credentialed responses | Reflection on endpoints that never handle sensitive data | CORS checks enforced only after auth/session |
+| CSP | Missing CSP and unsafe directives (`unsafe-inline`, `unsafe-eval`) | Transitional CSP policies in staged rollouts | CSP applied only on edge/CDN path not reached by probe |
+| GraphQL | Introspection and IDE exposure on public endpoints | Public demo schemas intentionally exposed | GraphQL endpoint hidden behind auth gateway |
+| API Security | Missing hardening headers, debug route exposure | Non-prod endpoints exposed in shared environments | Sensitive routes only visible after authenticated crawl |
+| JWT | `alg=none`, weak secret, sensitive claim leakage | Synthetic/non-production tokens in test fixtures | JWT never appears in sampled traffic |
+| OpenAPI | Missing security requirements and exposed upload routes | Internal specs intentionally broad while backend enforces auth | Spec unavailable or split into private fragments |
+| Mass Assignment | Persisted sensitive-field elevation after mutation | Echoed request fields not actually persisted | Server-side validators block mutation path silently |
+| OAuth/OIDC | Redirect validation bypass and weak PKCE metadata | Lab IdP environments with intentionally relaxed defaults | Runtime auth policy differs from published metadata |
+| Rate Limit | Missing throttling signal under burst + bypass attempts | Upstream CDN/rate controls mask application behavior | Long windows not triggered by short probe windows |
+| CVE Templates | Multi-condition template hits with status/body/header evidence | Generic fingerprint overlap on shared middleware pages | Vulnerable path/context never discovered from seed URLs |
+| WebSocket | Upgrade acceptance + attacker-origin acceptance | Public anonymous WS intentionally exposed | Required handshake auth headers not provided in probe |
+
+---
+
 ## CORS (`scanner::cors`)
 
 Checks for overly permissive `Access-Control-Allow-Origin` responses.

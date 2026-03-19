@@ -2016,3 +2016,42 @@
   - `cargo fmt --all` passed.
   - `cargo test --test cve_templates_runtime_ext` passed (`7/7`).
   - `cargo test` passed (full suite green).
+
+---
+
+# Task: Documentation Consistency & Security Posture Polish (2026-03-19)
+
+## Plan
+- [x] Reconcile naming/docs surface and remove any stale `webscan`/placeholder install references.
+- [x] Expand README scanner documentation with concrete finding format examples and module-level guidance pointers.
+- [x] Add explicit testing-strategy documentation (unit vs integration vs fixture coverage).
+- [x] Add explicit security posture notes for proxy+TLS behavior, `--danger-accept-invalid-certs`, and WAF-evasion legal/ethical usage.
+- [x] Rename changelog to `CHANGELOG.md` and align formatting with Keep a Changelog.
+- [x] Update internal docs links/references impacted by README/CHANGELOG adjustments.
+- [x] Verify with link/reference checks and any needed targeted tests; record results.
+
+## Review
+- Reconciled naming/install surface:
+  - Confirmed no `webscan` references and no placeholder install URL (`github.com/you/...`) remain.
+  - Installation section uses `git clone https://github.com/Teycir/ApiHunter`.
+- README enhancements (`Readme.md`):
+  - Added GitHub metadata recommendations (description/website/topics) for discoverability.
+  - Added module output + signal-quality guidance table with false-positive/false-negative expectations.
+  - Added concrete NDJSON finding example.
+  - Added explicit testing strategy section (unit/integration/fixture/mock-server tests).
+  - Added release artifact section linking GitHub Releases (Linux/macOS/Windows prebuilt binaries).
+  - Added security/legal guardrails for proxy+TLS behavior, `--danger-accept-invalid-certs`, and WAF-evasion authorization expectations.
+- Scanner module docs (`docs/scanners.md`):
+  - Added standardized finding structure section.
+  - Added per-scanner signal quality guidance table (confidence + FP/FN drivers).
+- Changelog + docs index:
+  - Renamed root changelog to `CHANGELOG.md`.
+  - Updated changelog content to Keep a Changelog-style sections and added release compare/tag links.
+  - Updated `docs/INDEX.md` changelog link to `../CHANGELOG.md` and refreshed scanner/document stats.
+- Runtime warning hardening:
+  - `src/main.rs` now emits explicit SECURITY WARNING logs for `--danger-accept-invalid-certs`.
+  - Added warning clarifying that `--proxy` does not re-enable TLS validation when danger mode is enabled.
+- Verification:
+  - `cargo fmt --all` passed.
+  - `cargo test --test cli --test startup_inputs` passed (`43/43`).
+  - `rg -n "webscan|github\\.com/you/" Readme.md docs HOWTO.md src tests` returned no hits.

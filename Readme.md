@@ -25,6 +25,14 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Securi
 - Library crate: `api_scanner`
 - CLI binary: `apihunter` (default for `cargo run`)
 
+## GitHub Metadata (Recommended)
+
+Set these in the GitHub repository settings for discoverability:
+
+- **Description**: `Async API security scanner for CORS/CSP/GraphQL/JWT/OpenAPI and active API posture checks.`
+- **Website**: `https://github.com/Teycir/ApiHunter`
+- **Topics**: `rust`, `security`, `api-security`, `scanner`, `graphql`, `cors`, `csp`, `jwt`, `openapi`, `sarif`, `ndjson`
+
 ## Repository Flow
 
 ```mermaid
@@ -121,6 +129,26 @@ ApiHunter includes 11 built-in scanner modules. See [docs/scanners.md](docs/scan
 **Passive scanners** run by default and analyze responses without sending crafted requests.  
 **Active scanners/checks** require `--active-checks` and send potentially invasive probes (IDOR/BOLA, mutation, bypass tests).  
 IDOR/BOLA lives under the `API Security` scanner (there is no dedicated `--no-idor` flag; use `--no-api-security` to disable it).
+
+### Module Output & Signal Notes
+
+These notes summarize how findings are emitted and what typically causes noise:
+
+| Module | Finding Prefix / Shape | Common False Positives | Common False Negatives |
+|---------|-------------------------|-------------------------|-------------------------|
+| CORS | `cors/*` with origin/evidence fields | Reflection on non-sensitive routes | Origin checks applied only on authenticated routes |
+| CSP | `csp/*` with directive evidence | Legacy CSP applied intentionally during migration | CSP delivered only on production CDN edge path |
+| GraphQL | `graphql/*` with endpoint + capability signal | Public playground intended for internal/testing tenants | Schema controls enabled only after auth |
+| JWT | `jwt/*` with token claim/header evidence | Test/demo tokens in synthetic responses | Token never appears in scanned responses |
+| OpenAPI | `openapi/*` with operation/security context | Spec intentionally includes deprecated but blocked endpoints | Spec unavailable or split across private docs |
+| API Security | `api_security/*` with header/path/method evidence | Debug/test endpoints intentionally exposed in non-prod | Controls enforced behind auth/session context |
+| Mass Assignment | `mass_assignment/*` with reflected/persisted deltas | Echo behavior that does not persist backend state | Mutations rejected by hidden validation rules |
+| OAuth/OIDC | `oauth/*` with redirect/metadata evidence | Non-production IdP config with relaxed policies | Dynamic policy enforcement not visible in metadata |
+| Rate Limit | `rate_limit/*` with burst/429 behavior | Global traffic shaping masks app-level limiter behavior | Long-window limiters not triggered by short probe window |
+| WebSocket | `websocket/*` with upgrade/origin checks | Public WS endpoints intentionally anonymous | Auth required via handshake headers not provided in probe |
+| CVE Templates | `cve/<id>/<check>` with template evidence | Fingerprint collision on generic endpoints | Vulnerable path/context not reached from seed URLs |
+
+For check-by-check detail and remediation guidance, see [docs/scanners.md](docs/scanners.md) and [docs/findings.md](docs/findings.md).
 
 ## Features
 
@@ -363,6 +391,21 @@ cat ./targets/cve-regression-real-public.txt | ./target/release/apihunter --stdi
 
 See [HOWTO.md](HOWTO.md) for detailed usage, [docs/lab-setup.md](docs/lab-setup.md) for Vulhub-based CVE validation labs, and [docs/](docs/) for internals.
 
+### Example NDJSON Finding
+
+```json
+{
+  "url": "https://api.example.com/graphql",
+  "check": "graphql/introspection-enabled",
+  "title": "GraphQL introspection is enabled",
+  "severity": "MEDIUM",
+  "detail": "Introspection query returned schema metadata from a public endpoint.",
+  "evidence": "POST /graphql -> HTTP 200 with __schema fields in response body",
+  "scanner": "graphql",
+  "timestamp": "2026-03-19T14:02:11.824Z"
+}
+```
+
 ## Architecture
 
 ```
@@ -480,6 +523,29 @@ cat targets/cve-regression-real-public.txt | ./ScanScripts/deepscan.sh --stdin
 
 All wrapper scripts except `split-by-host.sh` support `--stdin` and trailing ApiHunter flags.
 
+## Testing Strategy
+
+ApiHunter testing is split by intent:
+
+- **Unit tests** (`tests/*_scanner.rs`, parser/config tests): scanner logic and edge cases.
+- **Integration tests** (`tests/integration_runner.rs`, startup/CLI behavior): orchestration and runtime wiring.
+- **Fixture regression tests** (`tests/cve_templates_real_data.rs`, `tests/cve_templates_upstream_parity.rs`): replay real payloads and compare against pinned upstream templates.
+- **Mock-server tests** (multiple scanner suites): deterministic behavior checks without relying on internet targets.
+
+Run focused suites:
+
+```bash
+cargo test --test cors_scanner
+cargo test --test graphql_scanner
+cargo test --test cve_templates_runtime_ext
+```
+
+Run full validation:
+
+```bash
+cargo test
+```
+
 ## Documentation
 
 Complete documentation is available in `docs/`. Start with:
@@ -506,6 +572,16 @@ git clone https://github.com/Teycir/ApiHunter
 cd ApiHunter
 cargo build --release
 ```
+
+### Prebuilt Release Artifacts
+
+Tagged releases (`v*`) publish prebuilt `apihunter` binaries for:
+
+- Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`)
+- macOS (`x86_64-apple-darwin`)
+- Windows (`x86_64-pc-windows-msvc`)
+
+Download from [GitHub Releases](https://github.com/Teycir/ApiHunter/releases).
 
 ### Docker
 
@@ -585,6 +661,13 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `1` | One or more findings at/above `--fail-on` threshold |
 | `2` | One or more scanners captured errors |
 | `3` | Both findings and errors |
+
+## Security & Legal Guardrails
+
+- `--proxy` does **not** disable TLS verification on its own. Certificate checks remain enabled unless `--danger-accept-invalid-certs` is explicitly set.
+- `--danger-accept-invalid-certs` is intended for controlled lab/debug use only. ApiHunter emits an explicit runtime warning when this flag is enabled.
+- `--waf-evasion` and active probes may trigger IDS/WAF alerts. Run only with explicit written authorization and within agreed test windows.
+- For CI or production-adjacent checks, prefer passive mode first, then scope active checks to approved targets.
 
 ## Related Projects
 

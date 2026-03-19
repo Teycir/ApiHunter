@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-14
+last_updated: 2026-03-19
 tags: [index, documentation, guide, navigation]
 category: Documentation Index
 ---
@@ -29,7 +29,7 @@ Complete guide to ApiHunter documentation and resources.
 | Document | Location | Purpose |
 |----------|----------|---------|
 | **HOWTO** | [HOWTO.md](../HOWTO.md) | Detailed usage guide and examples |
-| **Changelog** | [Changelog.md](../Changelog.md) | Version history and updates |
+| **Changelog** | [CHANGELOG.md](../CHANGELOG.md) | Version history and updates |
 | **License** | [Licence](../Licence) | MIT License information |
 | **Deep Review Checklist** | [deep-review-checklist.md](./deep-review-checklist.md) | Tracked checklist from the latest code review |
 
@@ -74,6 +74,12 @@ Complete guide to ApiHunter documentation and resources.
 - **GraphQL** - GraphQL endpoint security analysis
 - **API Security** - General API hardening checks
 - **JWT** - Token inspection and weak-signature checks
+- **OpenAPI** - API specification security posture checks
+- **Mass Assignment** - Active field-injection persistence checks
+- **OAuth/OIDC** - Authorization flow and metadata hardening checks
+- **Rate Limit** - Throttling and bypass checks
+- **CVE Templates** - Template-driven API CVE detection
+- **WebSocket** - Upgrade/origin/auth hardening checks
 
 ### Configuration Areas
 - **URLs & Targets** - Target specification and discovery
@@ -100,8 +106,8 @@ Complete guide to ApiHunter documentation and resources.
 
 ## Documentation Stats
 
-- **Total Documents:** 5 core documents (+ HOWTO, Changelog, License)
-- **Scanner Modules:** 5 built-in scanners
+- **Total Documents:** 6 core documents (+ HOWTO, CHANGELOG, License)
+- **Scanner Modules:** 11 built-in scanners
 - **Configuration Parameters:** 16+ options
 - **Exit Codes:** 4 different exit codes
 
