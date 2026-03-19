@@ -493,7 +493,7 @@ impl Reporter {
             runs: vec![SarifRun {
                 tool: SarifTool {
                     driver: SarifDriver {
-                        name: "api-scanner".to_string(),
+                        name: env!("CARGO_PKG_NAME").to_string(),
                         version: doc.meta.scanner_ver.to_string(),
                         rules: rules_map.into_values().collect(),
                     },

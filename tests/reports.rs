@@ -301,6 +301,10 @@ fn reporter_writes_sarif_to_file() {
     let doc: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(doc["version"], "2.1.0");
     assert!(doc["runs"].is_array());
+    assert_eq!(
+        doc["runs"][0]["tool"]["driver"]["name"],
+        env!("CARGO_PKG_NAME")
+    );
 }
 
 #[test]

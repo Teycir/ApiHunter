@@ -155,6 +155,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Implemented minimal DER parser (`parse_der_tlv`) for extracting RSA public key from X.509 certificates
   - Added error reporting when key material extraction fails
   - Fixed test to use `jwk` instead of invalid `x5c` stub
+  - Expanded RS256→HS256 confusion probe key derivation to try realistic `jwk`/`x5c` public-key material encodings (SPKI DER/PEM and certificate forms) with source-specific probe errors
+  - Optimized weak secret matching to avoid cloning the full weak-secret wordlist per token
 - Unified default UA sourcing: `cli::default_user_agents()` now uses `WafEvasion::user_agent_pool()`
 - Cargo package renamed to `apihunter` while preserving `api-scanner` CLI compatibility
 - Removed inline mass-assignment probe from `api_security` scanner (now dedicated module)
@@ -168,12 +170,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CORS: Downgrade `Access-Control-Allow-Origin: *` without credentials to Low severity
 - CORS: Only flag High severity when regex bypass succeeds with credentials enabled
 - Discovery bypass: runner skips robots/sitemap/swagger probes when `--no-discovery` is enabled
+- Runner URL canonicalization now normalizes query parameter ordering before deduplication
 - Replaced tracing logs with eprintln for user-facing output
 - Default `--min-severity` changed from High to Info
 - Endpoint cap now applies per-site instead of globally
 - CSP missing header severity downgraded from Medium to Low
 - WAF evasion now enforces delay per-host instead of globally
 - Auth live credential storage switched to `ArcSwap<String>` (lock-free reads in request path)
+- CORS scanner now limits regex-bypass expansion to a single reflected-origin pass per URL to reduce redundant active probes
 - Binary target paths split (`apihunter` vs `api-scanner`) to eliminate duplicate-target Cargo warnings
 - Improved code idioms and flexibility across multiple modules (clippy fixes)
 - Simplified session file format to only support Excalibur cookies JSON
@@ -195,6 +199,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Secret detection false positives with additional validation
 - Error array response detection to reduce false positives
 - Severity serde expectation in tests
+- SARIF driver tool name now uses `env!("CARGO_PKG_NAME")` instead of a hardcoded value
 
 ### Performance
 - **Mass Assignment Scanner Optimizations**:

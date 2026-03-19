@@ -541,6 +541,23 @@ fn canonicalise(raw: &str) -> Option<String> {
         u.set_path(path.trim_end_matches('/'));
     }
 
+    if let Some(query) = u.query() {
+        let mut pairs: Vec<(String, String)> = url::form_urlencoded::parse(query.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        if pairs.is_empty() {
+            u.set_query(None);
+        } else {
+            pairs.sort_unstable();
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+            for (k, v) in pairs {
+                serializer.append_pair(&k, &v);
+            }
+            let normalised_query = serializer.finish();
+            u.set_query(Some(&normalised_query));
+        }
+    }
+
     Some(u.to_string())
 }
 

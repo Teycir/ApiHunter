@@ -1433,3 +1433,46 @@
 - Validation:
   - `cargo fmt`
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Targeted Correctness Follow-up (Phase 36)
+
+## Plan
+- [x] Audit reported findings against current code and patch only reproducible gaps.
+- [x] Harden JWT alg-confusion key derivation to probe with RSA public key material from `jwk` (`n` + `e`) and `x5c` SPKI forms, with explicit errors when unusable.
+- [x] Reduce JWT weak-secret matching overhead by removing full wordlist clone per token.
+- [x] Improve URL canonicalization by normalizing query parameter ordering.
+- [x] Align SARIF driver/tool name with package metadata (`env!("CARGO_PKG_NAME")`).
+- [x] Apply low-risk CORS scanner cleanup (`same-origin` comparison clarity, avoid duplicate regex bypass loops).
+- [x] Add/adjust tests for JWT alg-confusion positive path and query-order canonicalization dedup.
+- [x] Run `cargo fmt` and full `cargo test` outside sandbox, then document review + non-reproducible items.
+
+## Review
+- Reproducibility audit outcomes:
+  - Already fixed in current tree: discovery per-site parallelization (`tokio::join!` in `run_discovery_per_site`), auth env substitution (`replace_all` form), auth refresh task cancellation handle, runner dedup path using `reports::dedup_findings`, and runner lifecycle logging via `tracing` (no runner `eprintln!`).
+  - Reproducible/valid gaps addressed in this phase: JWT alg-confusion key material realism, weak-secret clone overhead, query-order canonicalization, SARIF tool-name hardcode, and minor CORS hygiene.
+- JWT alg-confusion hardening (`src/scanner/jwt.rs`):
+  - Reworked probe key derivation to generate realistic public-key material candidates:
+    - from `jwk`: build RSA SPKI DER from decoded `n` + `e`, plus PEM form.
+    - from `x5c`: use certificate DER/PEM and extracted SPKI DER/PEM candidates.
+  - Probe now iterates candidate key-material encodings and records source-specific probe transport errors (`alg_confusion_probe[<source>]`).
+  - Added DER construction helpers (`INTEGER`, TLV lengths, SPKI builder) and certificate SPKI extraction helper.
+- JWT weak-secret performance:
+  - Removed full `WEAK_SECRET_LIST` clone per token; now iterates static list by reference and chains small host-derived candidates.
+- URL canonicalization:
+  - Added query-parameter normalization in `runner::canonicalise` by sorting parsed `(key, value)` pairs before serialization, so equivalent query order variants dedup.
+- SARIF consistency:
+  - Replaced hardcoded SARIF tool name with `env!("CARGO_PKG_NAME")`.
+- CORS cleanup:
+  - Made same-origin comparison explicit with `as_str()` on both sides.
+  - Added `regex_bypass_checked` guard so regex-bypass expansion runs at most once per URL even if multiple origins reflect, reducing redundant active probe volume without disabling the check.
+- Added/updated tests:
+  - `tests/jwt_scanner.rs`: `alg_confusion_detected_when_forged_hs256_matches_jwk_spki`.
+  - `tests/integration_runner.rs`: `canonicalise_dedups_query_parameter_order_variants`.
+  - `tests/reports.rs`: SARIF driver name assertion against `env!("CARGO_PKG_NAME")`.
+- Validation:
+  - `cargo fmt`
+  - `cargo check`
+  - `cargo test --test jwt_scanner --test integration_runner --test reports --test cors_scanner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

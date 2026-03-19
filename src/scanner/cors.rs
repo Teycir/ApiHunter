@@ -109,6 +109,7 @@ impl Scanner for CorsScanner {
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
+        let mut regex_bypass_checked = false;
 
         let probe_origins = generate_probe_origins(url);
         let target_origin = extract_domain_from_url(url)
@@ -166,7 +167,9 @@ impl Scanner for CorsScanner {
                 if reflected == origin.as_str()
                     && origin != "null"
                     && (origin.starts_with("http://") || origin.starts_with("https://"))
+                    && !regex_bypass_checked
                 {
+                    regex_bypass_checked = true;
                     for suffix in REGEX_BYPASS_SUFFIXES {
                         let bypass = format!("{}{}", reflected, suffix);
                         match probe_cors_response(client, url, &bypass).await {
@@ -238,7 +241,7 @@ impl Scanner for CorsScanner {
             // ── Origin reflected ──────────────────────────────────────────────
             if acao == Some(origin.as_str()) {
                 // Skip same-origin echoes; they are not exploitable via CORS.
-                if !target_origin.is_empty() && *origin == target_origin {
+                if !target_origin.is_empty() && origin.as_str() == target_origin.as_str() {
                     continue;
                 }
                 if *origin == "null" {

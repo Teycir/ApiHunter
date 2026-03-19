@@ -748,6 +748,42 @@ async fn no_discovery_skips_robots_probe() {
     assert_eq!(result.scanned, 2, "seed URLs should be scanned directly");
 }
 
+#[tokio::test]
+async fn canonicalise_dedups_query_parameter_order_variants() {
+    let mut cfg = test_config();
+    cfg.no_discovery = true;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.api_security = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.toggles.mass_assignment = false;
+    cfg.toggles.oauth_oidc = false;
+    cfg.toggles.rate_limit = false;
+    cfg.toggles.cve_templates = false;
+    cfg.toggles.websocket = false;
+
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let result = runner::run(
+        vec![
+            "https://api.example.test/users?page=1&limit=10".to_string(),
+            "https://api.example.test/users?limit=10&page=1".to_string(),
+        ],
+        config,
+        client,
+        None,
+        test_reporter(),
+        false,
+    )
+    .await;
+
+    assert_eq!(result.scanned, 1, "query-order variants should deduplicate");
+    assert_eq!(result.skipped, 1, "one duplicate URL should be skipped");
+}
+
 // ─── Reporter unit-level tests ────────────────────────────────────────────────
 
 mod reporter_tests {
