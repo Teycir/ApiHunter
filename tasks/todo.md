@@ -73,7 +73,7 @@
 ## Plan
 - [x] Add an operations runbook covering canary rollout, rollback, and failure-handling policy.
 - [x] Add monitoring/alert guidance using ApiHunter runtime metrics and report outputs.
-- [x] Link the runbook from `Readme.md` and `docs/INDEX.md`.
+- [x] Link the runbook from `README.md` and `docs/INDEX.md`.
 - [x] Verify links and summarize the operational hardening outcome.
 
 ## Review
@@ -83,12 +83,12 @@
   - monitoring thresholds tied to runtime metrics (`http_requests`, `http_retries`, `scanner_findings`, `scanner_errors`),
   - post-run triage discipline and incident note template.
 - Linked runbook for discoverability:
-  - `Readme.md` documentation list now includes `Operations Runbook`.
+  - `README.md` documentation list now includes `Operations Runbook`.
   - `docs/INDEX.md` includes operations guide entries across quick navigation, tag/category sections, and help paths.
 - Updated documentation stats in `docs/INDEX.md` to reflect 8 core docs.
 - Verification:
   - `test -f docs/operations.md`
-  - `rg -n "\\[Operations Runbook\\]\\(docs/operations\\.md\\)|\\[Operations Runbook\\]\\(\\./operations\\.md\\)|\\[Operations\\.md\\]\\(\\./operations\\.md\\)" Readme.md docs/INDEX.md`
+  - `rg -n "\\[Operations Runbook\\]\\(docs/operations\\.md\\)|\\[Operations Runbook\\]\\(\\./operations\\.md\\)|\\[Operations\\.md\\]\\(\\./operations\\.md\\)" README.md docs/INDEX.md`
 
 ---
 
@@ -117,7 +117,7 @@
 - [x] Add build provenance attestations for tagged release artifacts in `.github/workflows/release.yml`.
 - [x] Add keyless signing for release archives and upload signature materials to the GitHub release.
 - [x] Generate and publish a release SBOM artifact in SPDX JSON format.
-- [x] Document supply-chain artifacts in `Readme.md` and verify references.
+- [x] Document supply-chain artifacts in `README.md` and verify references.
 
 ## Review
 - Hardened `.github/workflows/release.yml` with supply-chain controls:
@@ -129,10 +129,10 @@
     - uploads signature materials (`.sig`, `.pem`, `.sigstore.json`) back to the release,
     - generates SPDX JSON SBOM via `anchore/sbom-action@v0`,
     - attests SBOM with `actions/attest@v4`.
-- Updated `Readme.md` prebuilt release section to advertise published supply-chain artifacts.
+- Updated `README.md` prebuilt release section to advertise published supply-chain artifacts.
 - Validation performed:
   - `sed -n '1,320p' .github/workflows/release.yml`
-  - `rg -n "attest@v4|cosign-installer|sbom-action|harden_release|checksum: sha256|artifact-metadata" -S .github/workflows/release.yml Readme.md`
+  - `rg -n "attest@v4|cosign-installer|sbom-action|harden_release|checksum: sha256|artifact-metadata" -S .github/workflows/release.yml README.md`
   - Diff review of changed files.
 - Note: end-to-end execution of the new release workflow requires a real `v*` tag push in GitHub Actions.
 
@@ -142,7 +142,7 @@
 
 ## Plan
 - [x] Add a root `SECURITY.md` with responsible disclosure and support policy.
-- [x] Link `SECURITY.md` from `Readme.md` and `docs/INDEX.md`.
+- [x] Link `SECURITY.md` from `README.md` and `docs/INDEX.md`.
 - [x] Verify links and capture outcomes in review notes.
 
 ## Review
@@ -153,11 +153,11 @@
   - coordinated disclosure expectations,
   - safe-testing expectation.
 - Linked policy for discoverability:
-  - `Readme.md` documentation section now includes `Security Policy`.
+  - `README.md` documentation section now includes `Security Policy`.
   - `docs/INDEX.md` additional resources now include `SECURITY.md`.
 - Verification:
   - `test -f SECURITY.md`
-  - `rg -n "\\[Security Policy\\]\\(SECURITY\\.md\\)|\\[SECURITY\\.md\\]\\(\\.\\./SECURITY\\.md\\)" Readme.md docs/INDEX.md`
+  - `rg -n "\\[Security Policy\\]\\(SECURITY\\.md\\)|\\[SECURITY\\.md\\]\\(\\.\\./SECURITY\\.md\\)" README.md docs/INDEX.md`
 
 ---
 
@@ -202,17 +202,17 @@
 
 ## Plan
 - [x] Add a dedicated testing strategy document describing what each test class covers.
-- [x] Link the testing strategy from `Readme.md` and `docs/INDEX.md` so it is discoverable.
+- [x] Link the testing strategy from `README.md` and `docs/INDEX.md` so it is discoverable.
 - [x] Verify updated doc links and summarize outcomes in a review section.
 
 ## Review
 - Added `docs/testing.md` with a clear testing matrix covering scanner suites, runner integration, CLI/startup, HTTP/auth, fixture regression, and helper-level tests.
 - Explicitly documented that default `cargo test` coverage is local/deterministic (wiremock + fixtures) and does not require live internet targets.
-- Updated `Readme.md` testing section with explicit manual-only live target note and a direct link to the new testing guide.
+- Updated `README.md` testing section with explicit manual-only live target note and a direct link to the new testing guide.
 - Updated `docs/INDEX.md` navigation, development references, deep-dive list, metadata date, and document count to include the new testing guide.
 - Verification:
   - `test -f docs/testing.md`
-  - `rg -n "\\[Testing Guide\\]\\(docs/testing\\.md\\)|\\[Testing Guide\\]\\(\\./testing\\.md\\)" Readme.md docs/INDEX.md`
+  - `rg -n "\\[Testing Guide\\]\\(docs/testing\\.md\\)|\\[Testing Guide\\]\\(\\./testing\\.md\\)" README.md docs/INDEX.md`
 
 ---
 
@@ -223,7 +223,7 @@
 - [x] Add focused tests for User-Agent pool behavior (format + non-empty pool).
 - [x] Validate Item 2 with `cargo fmt` and targeted tests.
 - [x] Roadmap Item 3: add production-ready multi-stage `Dockerfile` and `.dockerignore`.
-- [x] Document Docker usage in `Readme.md` and `HOWTO.md`.
+- [x] Document Docker usage in `README.md` and `HOWTO.md`.
 - [x] Validate Item 3 (Docker CLI check/build if available) and run full `cargo test`.
 
 ## Review
@@ -233,7 +233,7 @@
 - Added roadmap item 3 containerization:
   - Multi-stage `Dockerfile` with Rust builder and slim Debian runtime.
   - `.dockerignore` to keep build context lean.
-  - Docker usage docs in `Readme.md` and `HOWTO.md`.
+  - Docker usage docs in `README.md` and `HOWTO.md`.
 - Validation results:
   - `cargo fmt` passed.
   - `cargo test --test waf_user_agents --test cli` passed.
@@ -247,20 +247,20 @@
 # Task: README Roadmap Continuation (Phase 2)
 
 ## Plan
-- [x] Add a clear `Roadmap & Next Steps` section to `Readme.md`.
+- [x] Add a clear `Roadmap & Next Steps` section to `README.md`.
 - [x] Mark recently completed roadmap items and list upcoming priorities.
 - [x] Add immediate “what to do next” actions for users after quick start.
 - [x] Verify README links and command snippets remain consistent.
 
 ## Review
-- Added `Roadmap & Next Steps` in `Readme.md` with:
+- Added `Roadmap & Next Steps` in `README.md` with:
   - recently completed milestones (items 2 and 3),
   - upcoming roadmap priorities,
   - a practical 4-step “what to do next” flow after quick start.
 - Verified all newly referenced helper scripts exist under `ScanScripts/`.
 - Verification commands:
   - `ls -1 ScanScripts`
-  - `rg -n "Roadmap & Next Steps|What To Do Next After Quick Start|ScanScripts/(quickscan|baselinescan|diffscan|sarifscan|authscan)\\.sh" Readme.md`
+  - `rg -n "Roadmap & Next Steps|What To Do Next After Quick Start|ScanScripts/(quickscan|baselinescan|diffscan|sarifscan|authscan)\\.sh" README.md`
 
 ---
 
@@ -276,8 +276,8 @@
 - Added `CONTRIBUTING.md` with setup, style, testing, docs, PR checklist, and issue-report guidance.
 - Re-ran local README link validation; all local links now resolve.
 - Verification commands:
-  - `rg -o "\\[[^\\]]+\\]\\([^\\)]+\\)" Readme.md | sed -E 's/^.*\\(([^)]+)\\)$/\\1/' | sort -u`
-  - `rg -n "\\[CONTRIBUTING\\.md\\]\\(CONTRIBUTING\\.md\\)" Readme.md`
+  - `rg -o "\\[[^\\]]+\\]\\([^\\)]+\\)" README.md | sed -E 's/^.*\\(([^)]+)\\)$/\\1/' | sort -u`
+  - `rg -n "\\[CONTRIBUTING\\.md\\]\\(CONTRIBUTING\\.md\\)" README.md`
 
 ---
 
@@ -369,7 +369,7 @@
   - `tests/cli.rs`: parse/default coverage for `--no-discovery`
   - `tests/integration_runner.rs`: `no_discovery_skips_robots_probe`
 - Updated docs:
-  - `Readme.md` CLI reference includes `--no-discovery`
+  - `README.md` CLI reference includes `--no-discovery`
   - `HOWTO.md` includes targeted-checks recipe using `--no-discovery`
   - `docs/configuration.md` includes `no_discovery` field and updated date
 - Validation:
@@ -412,7 +412,7 @@
   - no-op when active checks are disabled.
 - Updated docs/roadmap status:
   - `docs/scanners.md`: added `Mass Assignment` scanner section and adjusted active-check bullets.
-  - `Readme.md`: moved Mass Assignment scanner to recently completed roadmap items.
+  - `README.md`: moved Mass Assignment scanner to recently completed roadmap items.
 - Validation:
   - `cargo fmt` passed.
   - `cargo test --test cli` passed.
@@ -605,7 +605,7 @@
     - no-op behavior when active checks are disabled.
 - Docs:
   - `docs/scanners.md`: added OAuth2/OIDC section + active-checks subsection.
-  - `Readme.md`: marked OAuth2/OIDC scanner as recently completed and removed it from next-priority backlog.
+  - `README.md`: marked OAuth2/OIDC scanner as recently completed and removed it from next-priority backlog.
 - Validation:
   - `cargo fmt` passed.
   - `cargo test --test oauth_oidc_scanner` passed (`3/3`).
@@ -645,7 +645,7 @@
     - no-op when active checks are disabled.
 - Docs / roadmap:
   - `docs/scanners.md`: added Rate Limit scanner section and active-checks notes.
-  - `Readme.md`: marked Rate Limit scanner as completed roadmap item.
+  - `README.md`: marked Rate Limit scanner as completed roadmap item.
 - Validation:
   - `cargo fmt` passed.
   - `cargo test --test rate_limit_scanner` passed (`3/3`).
@@ -688,7 +688,7 @@
     - no-op behavior when active checks are disabled.
 - Docs / roadmap:
   - `docs/scanners.md`: added CVE Templates scanner section and active-check notes.
-  - `Readme.md`: marked CVE template module completed and updated next priorities to template expansion/tooling.
+  - `README.md`: marked CVE template module completed and updated next priorities to template expansion/tooling.
 - Validation:
   - `cargo fmt` passed.
   - `cargo test --test cve_templates_scanner` passed (`3/3`).
@@ -717,7 +717,7 @@
   - `assets/cve_templates/cve-2020-13945.toml`
 - Updated references:
   - `docs/scanners.md` now points to `assets/cve_templates/*.toml`.
-  - `Readme.md` roadmap "Template expansion" now points to `assets/cve_templates/*.toml`.
+  - `README.md` roadmap "Template expansion" now points to `assets/cve_templates/*.toml`.
 - Validation:
   - `cargo fmt`
   - `cargo test --test cve_templates_scanner`
@@ -843,7 +843,7 @@
   - `tests/fixtures/upstream_nuclei/CVE-2021-29442.yaml`
   - `tests/fixtures/upstream_nuclei/CVE-2020-13945.yaml`
   - `tests/fixtures/upstream_nuclei/CVE-2021-45232.yaml`
-  - `tests/fixtures/upstream_nuclei/README.md`
+  - `tests/fixtures/upstream_nucl../README.md`
 - Added real captured payload fixtures:
   - `tests/fixtures/real_cve_payloads/cve-2022-22947-body.json`
   - `tests/fixtures/real_cve_payloads/cve-2021-29442-body.json`
@@ -852,7 +852,7 @@
   - `tests/fixtures/real_cve_payloads/cve-2020-13945-body.json`
   - `tests/fixtures/real_cve_payloads/cve-2021-45232-body.json`
   - `tests/fixtures/real_cve_payloads/nonmatch-apisix-dashboard-actuator-routes.html`
-  - `tests/fixtures/real_cve_payloads/README.md`
+  - `tests/fixtures/real_cve_payloa../README.md`
 - Added new tests:
   - `tests/cve_templates_real_data.rs`
     - 5 true-positive tests using real payload fixtures.
@@ -893,8 +893,8 @@
     - included `CVE-2022-24288` in upstream parity table
     - included `CVE-2022-24288` in body-indicator alignment matrix
 - Updated fixture metadata docs:
-  - `tests/fixtures/upstream_nuclei/README.md`
-  - `tests/fixtures/real_cve_payloads/README.md`
+  - `tests/fixtures/upstream_nucl../README.md`
+  - `tests/fixtures/real_cve_payloa../README.md`
 - Updated scanner docs:
   - `docs/scanners.md` current translated checks now includes `CVE-2022-24288`.
 - Validation (outside sandbox for tests):
@@ -930,7 +930,7 @@
     - `import_nuclei_rejects_non_get_methods`
 - Added initial template-tooling documentation:
   - `HOWTO.md` section: "Import a Nuclei CVE template into ApiHunter TOML"
-  - `Readme.md` roadmap updated:
+  - `README.md` roadmap updated:
     - marked initial template tooling completed
     - shifted remaining work to tooling coverage expansion
 - Continued template expansion using the new tool with Exa-sourced upstream template:
@@ -943,7 +943,7 @@
     - `tests/cve_templates_scanner.rs` added `translated_template_detects_cisco_asa_portal_lfi_signal`
     - `tests/cve_templates_upstream_parity.rs` includes `CVE-2020-3452` source-linkage parity check
     - `docs/scanners.md` current translated checks list includes `CVE-2020-3452`
-    - `tests/fixtures/upstream_nuclei/README.md` updated with new pinned source URL
+    - `tests/fixtures/upstream_nucl../README.md` updated with new pinned source URL
 - Validation (tests run outside sandbox):
   - `cargo fmt`
   - `cargo test --test template_tooling --test cve_templates_scanner --test cve_templates_upstream_parity --test cve_templates_real_data`
@@ -961,13 +961,13 @@
 - [x] Update active-check and CVE coverage wording for consistency with current scanners.
 
 ## Review
-- Updated `Readme.md` comparison and FAQ text to clarify tool complementarity and current CVE coverage posture.
+- Updated `README.md` comparison and FAQ text to clarify tool complementarity and current CVE coverage posture.
 - Added a dedicated `Template Tooling (Nuclei -> ApiHunter TOML)` section with runnable command and importer scope.
 - Added a `CVE Hardening Test Strategy` section documenting real payload replay tests and upstream parity checks.
 - Added `Auth Flow` to the documentation index list in README.
 - Updated CVE template module bullet to include current translated checks (including CVE-2020-3452).
 - Verification commands:
-  - `rg -n "Template Tooling|CVE Hardening Test Strategy|Auth Flow|community-maintained CVE templates|active checks" Readme.md`
+  - `rg -n "Template Tooling|CVE Hardening Test Strategy|Auth Flow|community-maintained CVE templates|active checks" README.md`
 
 ---
 
@@ -976,10 +976,10 @@
 ## Plan
 - [x] Read `STEALTH_IMPROVEMENTS.md` and extract only items with no depth/speed quality regressions.
 - [x] Exclude proposals that explicitly trade off coverage or performance (sampling, decoy traffic, traffic shaping, heavy delays).
-- [x] Add accepted items to `Readme.md` roadmap as a dedicated stealth-hardening lane.
+- [x] Add accepted items to `README.md` roadmap as a dedicated stealth-hardening lane.
 
 ## Review
-- Added a new roadmap bullet in `Readme.md` under `Next Priorities`:
+- Added a new roadmap bullet in `README.md` under `Next Priorities`:
   - `Stealth hardening (no depth/speed regressions)`
 - Included only low-risk, no-regression items from `STEALTH_IMPROVEMENTS.md`:
   - remove explicit scanner markers (`__ah_probe`, `X-AH-*`) while preserving semantics
@@ -1226,7 +1226,7 @@
   - adopted in `tests/mass_assignment_scanner.rs`.
 - Added scanner rustdoc on `MassAssignmentScanner` documenting workflow and finding IDs.
 - Updated docs for the new flag/behavior:
-  - `Readme.md` CLI table (`--dry-run`)
+  - `README.md` CLI table (`--dry-run`)
   - `HOWTO.md` dry-run recipe
   - `docs/configuration.md` (`dry_run` field)
   - `docs/scanners.md` mass-assignment dry-run note
@@ -1372,7 +1372,7 @@
   - `tests/reports.rs`: metadata assertions for `meta.runtime_metrics`.
   - all `ScannerToggles` test configs updated across scanner test files to include newly added toggle fields.
 - Docs updated:
-  - `Readme.md` CLI reference + FAQ for new active scanner flags, plus runtime-metrics feature callout.
+  - `README.md` CLI reference + FAQ for new active scanner flags, plus runtime-metrics feature callout.
   - `HOWTO.md` targeted active-check command now includes new active scanner disable flags.
   - `docs/configuration.md` includes new active scanner toggle fields.
 - Validation:
@@ -1409,9 +1409,9 @@
   - `import_nuclei_translates_header_word_matchers_into_match_headers`
   - existing conversion/status/non-GET rejection tests remain green.
 - Updated importer capability docs:
-  - `Readme.md` importer scope section now reflects multi-request GET selection, raw-header extraction, and header-word matcher mapping.
+  - `README.md` importer scope section now reflects multi-request GET selection, raw-header extraction, and header-word matcher mapping.
   - `HOWTO.md` importer scope section updated with matching capability notes.
-  - `Readme.md` roadmap wording for template-tooling priority now calls out remaining matcher/request-chain gaps (regex/dsl + multi-step chains) rather than already-delivered raw/header coverage.
+  - `README.md` roadmap wording for template-tooling priority now calls out remaining matcher/request-chain gaps (regex/dsl + multi-step chains) rather than already-delivered raw/header coverage.
 - Validation:
   - `cargo fmt`
   - `cargo check`
@@ -1468,7 +1468,7 @@
     - `regex_constraints_match_for_body_and_headers`
   - existing `tests/cve_templates_scanner.rs` suite remains green.
 - Documentation updates:
-  - `Readme.md` Template Tooling section now documents regex/dsl translation and safe preflight chain extraction.
+  - `README.md` Template Tooling section now documents regex/dsl translation and safe preflight chain extraction.
   - `HOWTO.md` importer scope updated with the same capabilities.
   - `docs/scanners.md` CVE template scanner section updated to include regex constraints and safe preflight behavior.
 - Validation:
@@ -1494,7 +1494,7 @@
 
 ## Review
 - Naming clarity:
-  - Added an explicit naming section in `Readme.md` (project vs package vs lib vs binary) to remove ambiguity.
+  - Added an explicit naming section in `README.md` (project vs package vs lib vs binary) to remove ambiguity.
   - No legacy project name references were found in the current repo state.
 - Logging + quiet mode:
   - `init_tracing(quiet)` now uses default `error` in quiet mode and `info` otherwise (while still honoring `RUST_LOG` overrides).
@@ -1504,7 +1504,7 @@
 - Auto-report control:
   - Added new CLI flag `--no-auto-report` in `src/cli.rs`.
   - `src/main.rs` now skips `auto_report::save_auto_report(...)` when this flag is present.
-  - Updated `Readme.md` CLI table and `HOWTO.md` examples.
+  - Updated `README.md` CLI table and `HOWTO.md` examples.
 - Discovery politeness validation:
   - Confirmed discovery requests already route through `HttpClient` (`self.client.get/head`), which already enforces per-host delay.
   - Applied additional politeness only to prefilter stage, where raw `reqwest` client requests were previously bursty.
@@ -1623,7 +1623,7 @@
   - Added `default-run = "api-scanner"` to preserve existing `cargo run` behavior.
   - Kept both CLI binaries (`api-scanner` and `apihunter`) mapped to `src/main.rs` for compatibility.
 - Documentation/changelog sync:
-  - `Readme.md` naming section now reflects `apihunter` package and dual binary names.
+  - `README.md` naming section now reflects `apihunter` package and dual binary names.
   - `Changelog.md` includes package rename and lock-free auth credential storage notes.
 - Validation:
   - `cargo fmt`
@@ -1787,7 +1787,7 @@
 - Release workflow:
   - Updated `.github/workflows/release.yml` to publish `apihunter` binary/artifact names.
 - Docs/examples:
-  - Updated command examples in `Readme.md`, `HOWTO.md`, `docs/findings.md`, and `docs/scanners.md` from `api-scanner` to `apihunter`.
+  - Updated command examples in `README.md`, `HOWTO.md`, `docs/findings.md`, and `docs/scanners.md` from `api-scanner` to `apihunter`.
 - Validation:
   - `cargo fmt --all --check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
@@ -2000,16 +2000,16 @@
 
 ## Plan
 - [x] Remove duplicate inaccessible-URL logging paths in `src/main.rs` by keeping one canonical log site.
-- [x] Re-verify `Readme.md` examples for `--urls` semantics and correct any raw-URL usage.
+- [x] Re-verify `README.md` examples for `--urls` semantics and correct any raw-URL usage.
 - [x] Run formatting and targeted/full tests outside sandbox, then document outcomes.
 
 ## Review
 - `src/main.rs` now logs filtered inaccessible URLs in a single canonical block immediately after URL accessibility filtering.
   - Removed the extra lifecycle-end logging block that re-iterated `inaccessible_urls`.
   - Removed the alternate per-URL message in the early-return branch so all runs use one consistent log format.
-- `Readme.md` was re-verified for bug 6:
+- `README.md` was re-verified for bug 6:
   - Quick start uses file-path input (`--urls ./targets/targets.txt`).
-  - No raw-URL `--urls https://...` examples were found in `Readme.md`, `HOWTO.md`, or `docs/`.
+  - No raw-URL `--urls https://...` examples were found in `README.md`, `HOWTO.md`, or `docs/`.
 - Validation:
   - `cargo fmt`
   - `cargo test` (outside sandbox, full suite): passed.
@@ -2093,7 +2093,7 @@
 - [x] Re-validate referenced local command paths and summarize outcomes.
 
 ## Review
-- Updated `Readme.md` to reflect the current implementation:
+- Updated `README.md` to reflect the current implementation:
   - Scanner modules corrected to `11` and scanner table clarified (`API Security` now explicitly covers secret exposure + active IDOR/BOLA checks).
   - Added explicit note that there is no standalone `--no-idor` flag (`--no-api-security` disables those checks).
   - Added missing `inaccessiblescan.sh` profile and corrected script behavior note (`split-by-host.sh` is the exception for `--stdin`).
@@ -2129,7 +2129,7 @@
   - Fetch failures: `1` (`CVE-2022-22955`, no upstream file at canonical CVE path).
   - Import failures: `102` (primarily non-GET templates, rejected by `template-tool` policy).
 - Documentation updates:
-  - `Readme.md`: CVE scanner/module wording now reflects template-catalog coverage (`168` templates).
+  - `README.md`: CVE scanner/module wording now reflects template-catalog coverage (`168` templates).
   - `docs/scanners.md`: quick-reference and CVE section updated to reflect current catalog size.
 - Validation (outside sandbox):
   - `cargo test --test cve_templates_scanner --test cve_templates_runtime_ext --test cve_templates_upstream_parity --test cve_templates_real_data`
@@ -2160,11 +2160,11 @@
     - `sonarqube/CVE-2020-27986`
     - `gitlab/CVE-2021-22214`
 - Updated references:
-  - `Readme.md` now links to `docs/lab-setup.md`.
+  - `README.md` now links to `docs/lab-setup.md`.
   - `docs/scanners.md` now references `docs/lab-setup.md` and includes Vulhub-native Nacos mapping.
   - `targets/cve-regression-vulhub-local.txt` comment now points to `docs/lab-setup.md`.
 - Verification commands:
-  - `rg -n "lab-setup|vulhub/nacos/CVE-2021-29441|vulhub/nacos/CVE-2021-29442" Readme.md docs/scanners.md docs/lab-setup.md targets/cve-regression-vulhub-local.txt`
+  - `rg -n "lab-setup|vulhub/nacos/CVE-2021-29441|vulhub/nacos/CVE-2021-29442" README.md docs/scanners.md docs/lab-setup.md targets/cve-regression-vulhub-local.txt`
 
 ---
 
@@ -2252,7 +2252,7 @@
 - Reconciled naming/install surface:
   - Confirmed no legacy project name references and no placeholder install URL (`github.com/you/...`) remain.
   - Installation section uses `git clone https://github.com/Teycir/ApiHunter`.
-- README enhancements (`Readme.md`):
+- README enhancements (`README.md`):
   - Added GitHub metadata recommendations (description/website/topics) for discoverability.
   - Added module output + signal-quality guidance table with false-positive/false-negative expectations.
   - Added concrete NDJSON finding example.
@@ -2272,7 +2272,7 @@
 - Verification:
   - `cargo fmt --all` passed.
   - `cargo test --test cli --test startup_inputs` passed (`43/43`).
-  - `rg -n "github\\.com/you/" Readme.md docs HOWTO.md src tests` returned no hits.
+  - `rg -n "github\\.com/you/" README.md docs HOWTO.md src tests` returned no hits.
 
 ---
 
@@ -2294,11 +2294,11 @@
     - FP tendency,
     - common FP drivers.
   - Added `Measuring False-Positive Rate In Your Environment` with NDJSON triage workflow and formula.
-- Updated `Readme.md` scanner section with direct pointers to:
+- Updated `README.md` scanner section with direct pointers to:
   - `docs/scanners.md#module-check-catalog`
   - `docs/scanners.md#false-positive-expectation-model`
 - Validation commands:
-  - `rg -n "False-Positive Expectation Model|Module Check Catalog|Measuring False-Positive Rate" docs/scanners.md Readme.md`
+  - `rg -n "False-Positive Expectation Model|Module Check Catalog|Measuring False-Positive Rate" docs/scanners.md README.md`
   - check-ID spot verification against scanner source:
     - `cors/wildcard-no-credentials`
     - `csp/missing`

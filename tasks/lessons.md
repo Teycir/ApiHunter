@@ -98,7 +98,7 @@
 - User correction pattern: duplicate operator logs can slip in when the same data is logged at multiple lifecycle stages.
 - Rule: keep one canonical logging site for filtered/inaccessible seed URLs and avoid mirrored per-URL logging loops in `main.rs`.
 - User correction pattern: docs issues can be marked "already fixed" without re-checking the exact referenced snippet.
-- Rule: before closing a docs bug, grep all `--urls` examples in `Readme.md`, `HOWTO.md`, and `docs/`, then cite the verified snippet/location.
+- Rule: before closing a docs bug, grep all `--urls` examples in `README.md`, `HOWTO.md`, and `docs/`, then cite the verified snippet/location.
 - User correction pattern: scanner-level HTTP caching alone does not guarantee finding-level dedup in repeated same-host scans.
 - Rule: for host-scoped metadata checks (like OIDC well-known docs), keep an explicit per-host seen-set and add regression tests that assert second same-host scans emit no duplicate metadata findings.
 - User correction pattern: broad substring matching on URL paths can over-trigger active mutation probes on nested resource endpoints.
