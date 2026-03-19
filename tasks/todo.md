@@ -1634,3 +1634,42 @@
   - `cargo fmt`
   - `cargo test --test startup_inputs --test http_client_retry_policy --test integration_runner` (outside sandbox): all passed (`26 passed; 0 failed`).
   - `cargo test` (outside sandbox, full suite): all passed.
+
+---
+
+# Task: Burst/JWT/OAuth/Auth Placeholder Correctness Sweep (Phase 42)
+
+## Plan
+- [x] Fix `BurstProbe` to issue burst requests concurrently (not sequential await loop) so rate-limit probes reflect true burst semantics.
+- [x] Require unauthenticated baseline comparison for JWT alg-confusion confirmation to avoid false positives on publicly accessible endpoints.
+- [x] Make OAuth authorize no-redirect probe honor configured auth material (default headers + cookies) and transport settings.
+- [x] Expand auth flow env placeholder regex to support lowercase variable names in `{{...}}` substitutions.
+- [x] Add regression tests in `tests/` for burst concurrency behavior, JWT baseline gating, OAuth auth-header propagation, and lowercase env substitution.
+- [x] Run `cargo fmt`, strict clippy, and full tests outside sandbox; document outcomes.
+
+## Review
+- Burst probe correctness:
+  - `src/scanner/common/probe.rs` now executes burst requests concurrently via `buffer_unordered(...)` instead of sequential per-request await.
+  - Added dedicated burst transport helpers in `src/http_client.rs` (`get_burst`, `get_with_headers_burst`) so burst probes bypass host-delay/retry orchestration and preserve near-simultaneous request semantics.
+- JWT alg-confusion baseline gating:
+  - `src/scanner/jwt.rs::attempt_alg_confusion(...)` now captures an unauthenticated baseline using `get_without_auth`.
+  - A `jwt/alg-confusion` finding is emitted only when forged-token status is successful and unauthenticated baseline is not successful (`>= 400`), preventing public-endpoint false positives.
+  - Baseline fetch failures are captured as `jwt/alg_confusion_baseline` errors (check becomes inconclusive rather than silently passing/failing).
+- OAuth authorize probe auth propagation:
+  - `src/scanner/oauth_oidc.rs::authorize_probe_without_redirects(...)` now applies configured request auth material:
+    - `default_headers`,
+    - fallback `auth_bearer`/`auth_basic` auth header injection when absent,
+    - merged cookie header from configured cookies.
+  - Existing proxy/TLS timeout behavior remains preserved.
+- Auth env placeholder expansion:
+  - `src/auth.rs` placeholder regex now accepts lowercase names: `{{api_key}}` and mixed-case variables work.
+- Added regression tests:
+  - `tests/burst_probe.rs`: `burst_probe_executes_requests_concurrently`.
+  - `tests/jwt_scanner.rs`: `alg_confusion_not_reported_when_unauthenticated_access_is_already_successful`.
+  - `tests/oauth_oidc_scanner.rs`: `authorize_probe_uses_configured_auth_headers_and_cookies`.
+  - `tests/auth_flow.rs`: `execute_flow_substitutes_lowercase_env_placeholders`.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test burst_probe --test jwt_scanner --test oauth_oidc_scanner --test auth_flow` (outside sandbox): all passed.
+  - `cargo clippy --all-targets --all-features -- -D warnings` (outside sandbox): passed.
+  - `cargo test` (outside sandbox, full suite): all passed.

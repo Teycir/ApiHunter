@@ -524,6 +524,13 @@ impl HttpClient {
         self.request(Method::GET, url, None, None).await
     }
 
+    /// GET request for burst probes: bypasses host-delay and retry orchestration
+    /// to exercise server-side rate limiting under near-simultaneous load.
+    pub async fn get_burst(&self, url: &str) -> Result<HttpResponse, CapturedError> {
+        self.request_count.fetch_add(1, Ordering::Relaxed);
+        self.send_once(Method::GET, url, None, None).await
+    }
+
     /// GET with extra request headers specified as `[(name, value)]` pairs.
     pub async fn get_with_headers(
         &self,
@@ -540,6 +547,25 @@ impl HttpClient {
             }
         }
         self.request(Method::GET, url, Some(map), None).await
+    }
+
+    /// Headered GET for burst probes: bypasses host-delay and retries.
+    pub async fn get_with_headers_burst(
+        &self,
+        url: &str,
+        extra: &[(String, String)],
+    ) -> Result<HttpResponse, CapturedError> {
+        let mut map = HeaderMap::new();
+        for (k, v) in extra {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(v),
+            ) {
+                map.insert(name, value);
+            }
+        }
+        self.request_count.fetch_add(1, Ordering::Relaxed);
+        self.send_once(Method::GET, url, Some(map), None).await
     }
 
     #[allow(dead_code)]

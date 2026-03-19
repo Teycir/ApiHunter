@@ -114,6 +114,81 @@ async fn oauth_redirect_uri_probe_detects_untrusted_callback() {
 }
 
 #[tokio::test]
+async fn authorize_probe_uses_configured_auth_headers_and_cookies() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/oauth/authorize"))
+        .respond_with(|request: &wiremock::Request| {
+            let auth_ok = request
+                .headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                == Some("Bearer keepme");
+            let cookie_ok = request
+                .headers
+                .get("cookie")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.contains("session=abc123"))
+                .unwrap_or(false);
+
+            if !(auth_ok && cookie_ok) {
+                return ResponseTemplate::new(401).set_body_string("login required");
+            }
+
+            let mut redirect_uri = None;
+            let mut state = None;
+            for (k, v) in request.url.query_pairs() {
+                if k == "redirect_uri" {
+                    redirect_uri = Some(v.into_owned());
+                } else if k == "state" {
+                    state = Some(v.into_owned());
+                }
+            }
+
+            let location = format!(
+                "{}?code=abc&state={}",
+                redirect_uri.unwrap_or_else(|| "https://app.example.net/callback".to_string()),
+                state.unwrap_or_else(|| "missing".to_string())
+            );
+            ResponseTemplate::new(302).insert_header("Location", location)
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+                    "issuer": "https://issuer.example",
+                    "code_challenge_methods_supported": ["S256"],
+                    "response_types_supported": ["code"],
+                    "grant_types_supported": ["authorization_code"]
+                }"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config(true);
+    cfg.default_headers = vec![("Authorization".to_string(), "Bearer keepme".to_string())];
+    cfg.cookies = vec![("session".to_string(), "abc123".to_string())];
+    let cfg = Arc::new(cfg);
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = OAuthOidcScanner::new(cfg.as_ref());
+
+    let target = format!("{}/oauth/authorize", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "oauth/redirect-uri-not-validated"),
+        "expected redirect_uri finding when authorized probe is used, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
 async fn oidc_metadata_flags_pkce_and_legacy_grants() {
     let server = MockServer::start().await;
 

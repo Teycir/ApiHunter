@@ -382,4 +382,4 @@ fn substitute_env_vars_in_value(v: &Value) -> Value {
 }
 
 static ENV_RE: once_cell::sync::Lazy<regex::Regex> =
-    once_cell::sync::Lazy::new(|| regex::Regex::new(r"\{\{([A-Z0-9_]+)\}\}").unwrap());
+    once_cell::sync::Lazy::new(|| regex::Regex::new(r"\{\{([A-Za-z0-9_]+)\}\}").unwrap());

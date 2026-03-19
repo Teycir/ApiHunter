@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use base64::engine::general_purpose::STANDARD as BASE64_STD;
+use base64::Engine;
 use rand::{distributions::Alphanumeric, seq::SliceRandom, Rng};
 use reqwest::header::LOCATION;
 use serde_json::Value;
@@ -210,6 +212,8 @@ async fn authorize_probe_without_redirects(
     config: &Config,
     probe: &Url,
 ) -> Result<HttpResponse, CapturedError> {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(config.politeness.timeout_secs))
@@ -232,10 +236,60 @@ async fn authorize_probe_without_redirects(
         .build()
         .map_err(|e| CapturedError::new("oauth/authorize-probe", Some(probe.to_string()), &e))?;
 
-    let resp =
-        client.get(probe.as_str()).send().await.map_err(|e| {
-            CapturedError::new("oauth/authorize-probe", Some(probe.to_string()), &e)
-        })?;
+    let mut request_headers = HeaderMap::new();
+    for (k, v) in &config.default_headers {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
+            request_headers.insert(name, value);
+        }
+    }
+
+    if !request_headers.contains_key(reqwest::header::AUTHORIZATION) {
+        if let Some(token) = &config.auth_bearer {
+            if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
+                request_headers.insert(reqwest::header::AUTHORIZATION, value);
+            }
+        } else if let Some(creds) = &config.auth_basic {
+            let encoded = BASE64_STD.encode(creds.as_bytes());
+            if let Ok(value) = HeaderValue::from_str(&format!("Basic {encoded}")) {
+                request_headers.insert(reqwest::header::AUTHORIZATION, value);
+            }
+        }
+    }
+
+    if !config.cookies.is_empty() {
+        let cookie_value = config
+            .cookies
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        if let Some(existing) = request_headers.get(reqwest::header::COOKIE).cloned() {
+            let mut combined = existing.to_str().unwrap_or("").to_string();
+            if !combined.is_empty() {
+                combined.push_str("; ");
+            }
+            combined.push_str(&cookie_value);
+            if let Ok(value) = HeaderValue::from_str(&combined) {
+                request_headers.insert(reqwest::header::COOKIE, value);
+            }
+        } else if let Ok(value) = HeaderValue::from_str(&cookie_value) {
+            request_headers.insert(reqwest::header::COOKIE, value);
+        }
+    }
+
+    let mut req = client.get(probe.as_str());
+    if !request_headers.is_empty() {
+        req = req.headers(request_headers);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| CapturedError::new("oauth/authorize-probe", Some(probe.to_string()), &e))?;
 
     let mut headers = std::collections::HashMap::new();
     for (k, v) in resp.headers() {

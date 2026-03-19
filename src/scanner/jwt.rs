@@ -413,6 +413,15 @@ async fn attempt_alg_confusion(
         return None;
     }
 
+    let unauth_status = match client.get_without_auth(url).await {
+        Ok(r) => Some(r.status),
+        Err(mut e) => {
+            e.context = "jwt/alg_confusion_baseline".to_string();
+            errors.push(e);
+            None
+        }
+    };
+
     for (secret_source, secret) in secret_candidates {
         let mut new_header = header.clone();
         if let Some(obj) = new_header.as_object_mut() {
@@ -447,7 +456,7 @@ async fn attempt_alg_confusion(
             }
         };
 
-        if resp.status < 400 {
+        if resp.status < 400 && matches!(unauth_status, Some(status) if status >= 400) {
             return Some(
                 Finding::new(
                     url,
@@ -458,8 +467,11 @@ async fn attempt_alg_confusion(
                     "jwt",
                 )
                 .with_evidence(format!(
-                    "baseline_status: {baseline_status}, forged_status: {}, key_source: {secret_source}",
-                    resp.status
+                    "baseline_status: {baseline_status}, unauth_status: {}, forged_status: {}, key_source: {secret_source}",
+                    unauth_status
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    resp.status,
                 ))
                 .with_remediation(
                     "Reject HS256 tokens when using RS256 keys; ensure key type matches algorithm.",

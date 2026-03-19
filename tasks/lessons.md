@@ -75,3 +75,11 @@
 - Rule: keep pre-filter HTTP client settings transport-parity with runtime config (proxy, TLS override, default headers, cookies) and add CLI-level regression coverage for proxy paths.
 - User correction pattern: stream-time reporting can violate end-of-run dedup guarantees in concurrent pipelines.
 - Rule: when streaming findings, enforce a run-wide uniqueness guard on the same dedup key used for final reporting to prevent duplicate NDJSON lines.
+- User correction pattern: active burst checks can be accidentally serialized by straightforward await loops.
+- Rule: for burst-style scanners (rate-limit, lockout, throttling), issue requests concurrently and add explicit regression tests that fail under sequential execution timing.
+- User correction pattern: auth-bypass checks need a truly unauthenticated comparator to avoid public-endpoint false positives.
+- Rule: for auth confusion/bypass findings, require forged/authenticated probe success to be compared against an unauthenticated baseline before reporting.
+- User correction pattern: specialized scanner probe clients can drift from configured auth context and silently under-test protected endpoints.
+- Rule: when using custom per-check clients (e.g., no-redirect probes), propagate configured default headers/auth/cookies and transport settings unless the check explicitly requires stripping them.
+- User correction pattern: env placeholder support that is too restrictive leads to silent credential substitution failures.
+- Rule: keep auth-flow placeholder parsing case-flexible for variable names used in real deployments, and add substitution regression tests.

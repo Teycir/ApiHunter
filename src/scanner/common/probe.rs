@@ -2,6 +2,7 @@ use crate::{
     error::CapturedError,
     http_client::{HttpClient, HttpResponse},
 };
+use futures::stream::{self, StreamExt};
 
 pub struct BurstProbe {
     pub count: usize,
@@ -18,16 +19,20 @@ impl BurstProbe {
         client: &HttpClient,
         url: &str,
     ) -> Vec<Result<HttpResponse, CapturedError>> {
-        let mut results = Vec::with_capacity(self.count);
+        let headers = self.headers.clone();
 
-        for _ in 0..self.count {
-            let result = match &self.headers {
-                Some(h) => client.get_with_headers(url, h).await,
-                None => client.get(url).await,
-            };
-            results.push(result);
-        }
-
-        results
+        stream::iter(0..self.count)
+            .map(|_| {
+                let headers = headers.clone();
+                async move {
+                    match headers.as_ref() {
+                        Some(h) => client.get_with_headers_burst(url, h).await,
+                        None => client.get_burst(url).await,
+                    }
+                }
+            })
+            .buffer_unordered(self.count.max(1))
+            .collect()
+            .await
     }
 }
