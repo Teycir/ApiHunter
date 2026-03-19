@@ -1,3 +1,20 @@
+# Task: crates.io Publish Prep (Phase 19)
+
+## Plan
+- [x] Add crates.io package metadata and publish excludes in `Cargo.toml`.
+- [ ] Validate package contents with `cargo package --list` and `cargo package`.
+- [ ] Publish using `cargo publish` via environment token (without logging secrets).
+- [ ] Record publish outcome and crate URL.
+
+## Review
+- Added crates.io metadata in `Cargo.toml`:
+  - `description`, `license`, `readme`, `repository`, `homepage`, `documentation`,
+  - `keywords`, `categories`, and `rust-version`.
+- Added `exclude` patterns to keep release artifacts and local task/history folders out of published crate.
+- Pending: final packaging validation and networked publish step.
+
+---
+
 # Task: Naming & CI Hardening (Phase 18)
 
 ## Plan

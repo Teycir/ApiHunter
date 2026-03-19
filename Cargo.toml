@@ -3,6 +3,24 @@ name = "apihunter"
 version = "0.1.0"
 edition = "2021"
 default-run = "apihunter"
+rust-version = "1.76"
+description = "Async API security scanner with passive and active checks for CORS, CSP, GraphQL, JWT, OpenAPI, and API posture."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Teycir/ApiHunter"
+homepage = "https://github.com/Teycir/ApiHunter"
+documentation = "https://docs.rs/apihunter"
+keywords = ["security", "api", "scanner", "graphql", "jwt"]
+categories = ["command-line-utilities", "development-tools::testing", "web-programming"]
+exclude = [
+    "dist/**",
+    ".history/**",
+    ".tmp/**",
+    ".qodo/**",
+    ".trunk/**",
+    "tasks/**",
+    "targets/**",
+]
 
 [lib]
 name = "api_scanner"
