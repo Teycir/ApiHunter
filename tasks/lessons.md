@@ -41,3 +41,5 @@
 - Rule: for active probes and confirmation steps, convert every recoverable request/parse failure into explicit `CapturedError` entries (and add an informational finding when an entire check cannot run).
 - User correction pattern: repeated transport failures can drown real diagnostics when emitted as duplicate errors.
 - Rule: deduplicate identical `CapturedError` entries in final run aggregation (`context + url + type + message`) to keep reports actionable.
+- User correction pattern: production runtime paths must not panic on recoverable infrastructure failures (semaphore/client builder issues).
+- Rule: replace `expect`/`unwrap` in request pipeline and startup networking setup with recoverable fallbacks and explicit warnings/errors so scans degrade gracefully instead of crashing.

@@ -377,12 +377,19 @@ async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<Stri
     use futures::stream::{self, StreamExt};
     use tokio::time::Duration;
 
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .connect_timeout(Duration::from_secs(2))
         .redirect(reqwest::redirect::Policy::limited(3))
         .build()
-        .expect("Failed to build reqwest client");
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: Failed to build URL filter client: {e}");
+            eprintln!("Skipping URL accessibility filtering.");
+            return (urls.to_vec(), Vec::new());
+        }
+    };
 
     let results: Vec<(String, bool)> = stream::iter(urls)
         .map(|url| {

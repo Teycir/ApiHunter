@@ -1084,3 +1084,28 @@
   - `cargo fmt`
   - `cargo test --test cors_scanner --test jwt_scanner --test rate_limit_scanner --test mass_assignment_scanner --test oauth_oidc_scanner --test integration_runner`
   - `cargo test`
+
+---
+
+# Task: Panic-Safety Hardening (Phase 27)
+
+## Plan
+- [x] Remove panic in adaptive semaphore acquisition path in `http_client`.
+- [x] Remove panic in startup URL-filter client builder in `main`.
+- [x] Keep behavior stable while adding clarity improvements for cookie and host parsing in `http_client`.
+- [x] Run formatting and full suite outside sandbox.
+
+## Review
+- `src/http_client.rs`:
+  - `AdaptiveLimiter::acquire()` now returns `Result<OwnedSemaphorePermit, &'static str>` instead of panicking with `expect`.
+  - Request path now tolerates adaptive limiter acquire failure and continues with a debug log (`adaptive limiter acquire failed`).
+  - Added `parse_host_or_unknown(...)` helper with debug context for malformed URLs / missing host.
+  - Added `parse_set_cookie_pair(...)` helper and switched session cookie update loop to explicit parsing instead of chained `splitn + unwrap_or`.
+- `src/main.rs`:
+  - `filter_accessible_urls(...)` now handles reqwest client build failure gracefully:
+    - emits warnings via `eprintln!`
+    - skips accessibility filtering by returning `(urls.to_vec(), Vec::new())`
+    - avoids process panic.
+- Validation (tests run outside sandbox):
+  - `cargo fmt`
+  - `cargo test`

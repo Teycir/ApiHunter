@@ -106,12 +106,12 @@ impl AdaptiveLimiter {
         }
     }
 
-    async fn acquire(&self) -> OwnedSemaphorePermit {
+    async fn acquire(&self) -> Result<OwnedSemaphorePermit, &'static str> {
         self.semaphore
             .clone()
             .acquire_owned()
             .await
-            .expect("semaphore closed")
+            .map_err(|_| "semaphore closed")
     }
 
     async fn on_success(&self) {
@@ -289,7 +289,13 @@ impl HttpClient {
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
         let _adaptive_permit = if let Some(adaptive) = &self.adaptive {
-            Some(adaptive.acquire().await)
+            match adaptive.acquire().await {
+                Ok(permit) => Some(permit),
+                Err(e) => {
+                    debug!("[{method} {url}] adaptive limiter acquire failed: {e}");
+                    None
+                }
+            }
         } else {
             None
         };
@@ -637,10 +643,7 @@ impl HttpClient {
             return Ok(self.inner.clone());
         }
 
-        let host = Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(|h| h.to_string()))
-            .unwrap_or_else(|| "unknown".to_string());
+        let host = parse_host_or_unknown(url);
 
         if let Some(client) = self.clients.get(&host) {
             return Ok(client.value().clone());
@@ -657,10 +660,7 @@ impl HttpClient {
             return Ok(self.unauth_inner.clone());
         }
 
-        let host = Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(|h| h.to_string()))
-            .unwrap_or_else(|| "unknown".to_string());
+        let host = parse_host_or_unknown(url);
 
         if let Some(client) = self.unauth_clients.get(&host) {
             return Ok(client.value().clone());
@@ -709,11 +709,7 @@ impl HttpClient {
         let entry = map.entry(host).or_insert_with(HashMap::new);
 
         for raw in set_cookies {
-            let part = raw.split(';').next().unwrap_or("").trim();
-            let mut kv = part.splitn(2, '=');
-            let name = kv.next().unwrap_or("").trim();
-            let value = kv.next().unwrap_or("").trim();
-            if !name.is_empty() && !value.is_empty() {
+            if let Some((name, value)) = parse_set_cookie_pair(raw) {
                 entry.insert(name.to_string(), value.to_string());
             }
         }
@@ -736,6 +732,30 @@ impl HttpClient {
             .map_err(|e| ScannerError::Config(format!("Session write failed: {e}")))?;
         Ok(())
     }
+}
+
+fn parse_host_or_unknown(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(parsed) => parsed.host_str().map(|h| h.to_string()).unwrap_or_else(|| {
+            debug!("Failed to extract host from URL: {url}");
+            "unknown".to_string()
+        }),
+        Err(e) => {
+            debug!("Failed to parse URL {url}: {e}");
+            "unknown".to_string()
+        }
+    }
+}
+
+fn parse_set_cookie_pair(raw: &str) -> Option<(&str, &str)> {
+    let first_part = raw.split(';').next()?.trim();
+    let (name, value) = first_part.split_once('=')?;
+    let name = name.trim();
+    let value = value.trim();
+    if name.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some((name, value))
 }
 
 fn build_unauth_strip_headers(raws: &[String]) -> ScannerResult<Vec<HeaderName>> {
