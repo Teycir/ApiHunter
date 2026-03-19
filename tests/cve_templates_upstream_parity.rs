@@ -75,6 +75,11 @@ fn local_templates_reference_real_upstream_nuclei_snapshots() {
             "CVE-2020-13945",
         ),
         (
+            "assets/cve_templates/cve-2020-3452.toml",
+            "tests/fixtures/upstream_nuclei/CVE-2020-3452.yaml",
+            "CVE-2020-3452",
+        ),
+        (
             "assets/cve_templates/cve-2021-45232.toml",
             "tests/fixtures/upstream_nuclei/CVE-2021-45232.yaml",
             "CVE-2021-45232",

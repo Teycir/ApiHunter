@@ -182,6 +182,27 @@ printf "https://target.example.com/ws\n" | ./target/release/api-scanner \
 
 ---
 
+## Import a Nuclei CVE template into ApiHunter TOML
+
+Use `template-tool` to translate scanner-compatible Nuclei YAML into `assets/cve_templates/*.toml`.
+
+```bash
+cargo run --bin template-tool -- import-nuclei \
+  --input tests/fixtures/upstream_nuclei/CVE-2022-24288.yaml \
+  --output assets/cve_templates/cve-2022-24288.toml \
+  --check-suffix airflow-example-dag-params-rce-signal \
+  --context-hints /airflow,/admin,/dags,/code
+```
+
+Current importer scope:
+- GET-only request templates
+- first request path extraction (`path` or first `raw` request line)
+- request headers
+- status matchers
+- body word matchers
+
+---
+
 ## Auth helpers and session cookies
 
 ```bash

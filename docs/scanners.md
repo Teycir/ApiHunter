@@ -142,6 +142,7 @@ Template catalog location:
 Current translated checks include:
 - `cve/cve-2022-22947/spring-cloud-gateway-actuator-exposed`
 - `cve/cve-2022-24288/airflow-example-dag-params-rce-signal`
+- `cve/cve-2020-3452/cisco-asa-ftd-path-traversal-signal`
 - `cve/cve-2021-29442/nacos-auth-bypass-signal`
 - `cve/cve-2021-29441/nacos-user-agent-auth-bypass-signal`
 - `cve/cve-2020-13945/apisix-default-admin-key`

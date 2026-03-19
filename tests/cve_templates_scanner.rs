@@ -188,6 +188,38 @@ async fn translated_template_detects_apisix_dashboard_export_exposure() {
 }
 
 #[tokio::test]
+async fn translated_template_detects_cisco_asa_portal_lfi_signal() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/+CSCOT+/translation-table"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/plain")
+                .set_body_string(
+                    r#"if (INTERNAL_PASSWORD_ENABLED) { return CONF_VIRTUAL_KEYBOARD; }"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = CveTemplateScanner::new(cfg.as_ref());
+
+    let target = format!("{}/translation-table", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "cve/cve-2020-3452/cisco-asa-ftd-path-traversal-signal"),
+        "expected Cisco ASA CVE finding, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
 async fn translated_template_detects_nacos_user_agent_bypass_with_baseline() {
     let server = MockServer::start().await;
 

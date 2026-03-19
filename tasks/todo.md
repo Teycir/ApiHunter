@@ -683,3 +683,50 @@
   - `cargo fmt`
   - `cargo test --test cve_templates_real_data --test cve_templates_upstream_parity --test cve_templates_scanner`
   - `cargo test`
+
+---
+
+# Task: Initial Template Tooling CLI (Phase 22)
+
+## Plan
+- [x] Add a dedicated CLI utility to import a Nuclei YAML template into ApiHunter CVE TOML format.
+- [x] Support currently scanner-compatible fields (GET method, path, headers, status matcher, body word matchers).
+- [x] Add integration tests for successful conversion and unsupported-method rejection.
+- [x] Document usage and run targeted/full tests outside sandbox.
+
+## Review
+- Added new tooling binary:
+  - `src/bin/template-tool.rs`
+  - subcommand: `import-nuclei`
+  - imports scanner-compatible Nuclei YAML fields into ApiHunter template TOML:
+    - request method (`GET` only; explicit rejection for non-GET)
+    - primary path (`path[0]` or first `raw` request line)
+    - request headers
+    - status matchers
+    - body `word` matchers (`and` -> `body_contains_all`, default/or -> `body_contains_any`)
+    - contextual hints (derived or user-provided)
+- Added integration tests:
+  - `tests/template_tooling.rs`
+    - `import_nuclei_converts_get_template_into_apihunter_toml`
+    - `import_nuclei_extracts_status_matcher_when_present`
+    - `import_nuclei_rejects_non_get_methods`
+- Added initial template-tooling documentation:
+  - `HOWTO.md` section: "Import a Nuclei CVE template into ApiHunter TOML"
+  - `Readme.md` roadmap updated:
+    - marked initial template tooling completed
+    - shifted remaining work to tooling coverage expansion
+- Continued template expansion using the new tool with Exa-sourced upstream template:
+  - added upstream fixture:
+    - `tests/fixtures/upstream_nuclei/CVE-2020-3452.yaml`
+  - generated template:
+    - `assets/cve_templates/cve-2020-3452.toml`
+    - check: `cve/cve-2020-3452/cisco-asa-ftd-path-traversal-signal`
+  - scanner/parity coverage updates:
+    - `tests/cve_templates_scanner.rs` added `translated_template_detects_cisco_asa_portal_lfi_signal`
+    - `tests/cve_templates_upstream_parity.rs` includes `CVE-2020-3452` source-linkage parity check
+    - `docs/scanners.md` current translated checks list includes `CVE-2020-3452`
+    - `tests/fixtures/upstream_nuclei/README.md` updated with new pinned source URL
+- Validation (tests run outside sandbox):
+  - `cargo fmt`
+  - `cargo test --test template_tooling --test cve_templates_scanner --test cve_templates_upstream_parity --test cve_templates_real_data`
+  - `cargo test`

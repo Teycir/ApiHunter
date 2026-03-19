@@ -139,11 +139,12 @@ Complete documentation is available in `docs/`. Start with:
 - ✅ **OAuth2/OIDC scanner:** active-checks module for redirect URI, PKCE metadata, and legacy flow hardening checks.
 - ✅ **Rate Limit scanner:** active-checks module for burst-throttling and IP-header bypass checks.
 - ✅ **CVE template module:** translated Nuclei-style API CVE templates executed through a TOML-compatible catalog.
+- ✅ **Initial template tooling:** `template-tool import-nuclei` converts compatible Nuclei YAML checks into ApiHunter TOML format.
 
 ### Next Priorities
 
 - 🔜 **Template expansion:** grow `assets/cve_templates/*.toml` coverage with additional vetted API CVE probes.
-- 🔜 **Template tooling:** add import/translation helpers for Nuclei API templates into ApiHunter TOML format.
+- 🔜 **Template tooling expansion:** add broader translator coverage (multi-request/raw/header matchers) beyond current GET-focused import helper.
 
 ### What To Do Next After Quick Start
 
