@@ -1321,7 +1321,7 @@
   - Untracked `targets/gambling-sites.txt` from git while keeping local file.
   - Reinforced ignore rules in `.gitignore` for `.history/` and `targets/gambling*.txt`.
 - Changelog typo check:
-  - No root-level `Changlog.md` exists in current tree; canonical file is `Changelog.md`.
+  - No root-level `Changelog.md` exists in current tree; canonical file is `Changelog.md`.
   - The typo-like names were historical editor snapshots inside `.history/`, now untracked.
 - Validation:
   - `cargo fmt`
