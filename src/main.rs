@@ -137,13 +137,19 @@ async fn run(cli: Cli) -> Result<i32> {
         (raw_urls, Vec::new())
     };
 
+    // Keep inaccessible URL visibility in one canonical place to avoid double logging.
+    if !inaccessible_urls.is_empty() {
+        info!(
+            count = inaccessible_urls.len(),
+            "Inaccessible URLs filtered from scan seeds"
+        );
+        for url in &inaccessible_urls {
+            info!(url = %url, "Inaccessible URL");
+        }
+    }
+
     if filtered_urls.is_empty() {
         warn!("No accessible URLs remaining after filtering.");
-        if !inaccessible_urls.is_empty() {
-            for url in &inaccessible_urls {
-                info!(url = %url, "Filtered as inaccessible");
-            }
-        }
         return Ok(0);
     }
 
@@ -286,17 +292,6 @@ async fn run(cli: Cli) -> Result<i32> {
 
     let elapsed = start.elapsed();
     info!(elapsed_ms = elapsed.as_millis(), "Run lifecycle: completed");
-
-    // Log filtered URLs for operator visibility (subject to log level / --quiet).
-    if !inaccessible_urls.is_empty() {
-        info!(
-            count = inaccessible_urls.len(),
-            "Inaccessible URLs filtered from scan seeds"
-        );
-        for url in &inaccessible_urls {
-            info!(url = %url, "Inaccessible URL");
-        }
-    }
 
     // ── 9. Compute and return exit code ───────────────────────────────────────
     let summary = reports::build_summary(&filtered_result);

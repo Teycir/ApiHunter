@@ -424,7 +424,44 @@ See [HOWTO.md](HOWTO.md#import-a-nuclei-cve-template-into-apihunter-toml) and [d
 
 ## Scan Scripts
 
-`ScanScripts/` contains helpers: `quickscan.sh`, `deepscan.sh`, `baselinescan.sh`, `diffscan.sh`, `authscan.sh`, `sarifscan.sh`, `split-by-host.sh`.
+`ScanScripts/` contains convenience wrappers for common scan profiles:
+
+- **quickscan.sh** - Fast, low-impact scan (concurrency: 10, max-endpoints: 20, timeout: 5s, retries: 0, delay: 50ms)
+- **deepscan.sh** - Comprehensive scan with active checks (adaptive concurrency, per-host clients, unlimited endpoints, retries: 3, timeout: 20s, delay: 200ms)
+- **defaultscan.sh** - Run with CLI defaults (no preset flags)
+- **baselinescan.sh** - Generate baseline NDJSON for diffing
+- **diffscan.sh** - Compare against baseline and report only new findings
+- **authscan.sh** - Authenticated scan with auth flows (requires `--auth-flow`, enables active checks, WAF evasion, retries: 2, timeout: 15s, delay: 150ms)
+- **sarifscan.sh** - Output SARIF format for CI/CD integration
+- **scan-and-report.sh** - Run scan and print latest auto-saved report location
+- **split-by-host.sh** - Split URL list into per-host files and optionally scan them in parallel
+
+### Usage Examples
+
+```bash
+# Quick scan from file
+./ScanScripts/quickscan.sh targets/targets.txt
+
+# Deep scan from stdin
+cat targets.txt | ./ScanScripts/deepscan.sh --stdin
+
+# Generate baseline
+./ScanScripts/baselinescan.sh targets.txt
+
+# Compare against baseline
+./ScanScripts/diffscan.sh targets.txt baseline.ndjson
+
+# Authenticated scan
+./ScanScripts/authscan.sh targets.txt --auth-flow auth.json
+
+# SARIF output for GitHub Code Scanning
+./ScanScripts/sarifscan.sh targets.txt
+
+# Split by host and scan in parallel
+./ScanScripts/split-by-host.sh targets.txt --scan-cmd ./ScanScripts/quickscan.sh --jobs 4
+```
+
+All scripts support `--stdin` for piped input and accept additional CLI flags as trailing arguments.
 
 ## Documentation
 

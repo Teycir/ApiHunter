@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCAN_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCAN_ROOT_DIR="$(cd "$SCAN_SCRIPT_DIR/.." && pwd)"
-SCAN_BIN="$SCAN_ROOT_DIR/target/release/api-scanner"
+SCAN_BIN="$SCAN_ROOT_DIR/target/release/apihunter"
 
 usage_base() {
   echo "Usage: $(basename "$0") <urls_file> [extra args]"

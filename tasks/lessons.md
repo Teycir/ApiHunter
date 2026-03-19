@@ -95,3 +95,7 @@
 - Rule: all HTTP probe variants (including no-redirect and unauthenticated flows) must reuse cached clients and inherit retry/backoff behavior unless a scanner explicitly requires one-shot semantics.
 - User correction pattern: per-site discovery caps can silently drop coverage without visible accounting.
 - Rule: whenever discovery truncates endpoints, thread dropped counts into `RunResult.skipped` and keep regression tests proving summary accounting reflects capped URLs.
+- User correction pattern: duplicate operator logs can slip in when the same data is logged at multiple lifecycle stages.
+- Rule: keep one canonical logging site for filtered/inaccessible seed URLs and avoid mirrored per-URL logging loops in `main.rs`.
+- User correction pattern: docs issues can be marked "already fixed" without re-checking the exact referenced snippet.
+- Rule: before closing a docs bug, grep all `--urls` examples in `Readme.md`, `HOWTO.md`, and `docs/`, then cite the verified snippet/location.

@@ -1775,3 +1775,23 @@
   - Fixed: 1, 2, 3, 4, 7.
   - Not reproducible as stated: 5 (logging paths are mutually exclusive due early return).
   - Already fixed in current tree: 6 (`--urls` documented/implemented as file-path input).
+
+---
+
+# Task: Bug 5/6 Follow-up Correction (2026-03-19)
+
+## Plan
+- [x] Remove duplicate inaccessible-URL logging paths in `src/main.rs` by keeping one canonical log site.
+- [x] Re-verify `Readme.md` examples for `--urls` semantics and correct any raw-URL usage.
+- [x] Run formatting and targeted/full tests outside sandbox, then document outcomes.
+
+## Review
+- `src/main.rs` now logs filtered inaccessible URLs in a single canonical block immediately after URL accessibility filtering.
+  - Removed the extra lifecycle-end logging block that re-iterated `inaccessible_urls`.
+  - Removed the alternate per-URL message in the early-return branch so all runs use one consistent log format.
+- `Readme.md` was re-verified for bug 6:
+  - Quick start uses file-path input (`--urls ./targets/targets.txt`).
+  - No raw-URL `--urls https://...` examples were found in `Readme.md`, `HOWTO.md`, or `docs/`.
+- Validation:
+  - `cargo fmt`
+  - `cargo test` (outside sandbox, full suite): passed.
