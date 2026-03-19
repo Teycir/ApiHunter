@@ -37,34 +37,23 @@ Set these in the GitHub repository settings for discoverability:
 
 ```mermaid
 flowchart LR
-    A["CLI
-apihunter"] --> B["main.rs
-parse args + build config"]
-    D["Input Sources
---urls / --stdin / --har"] --> E["Pre-filter + Discovery"]
-    B --> C["HttpClient + Config"]
-    E --> F["runner.rs
-orchestration"]
+    A[CLI apihunter] --> B[main.rs]
+    D[Input Sources] --> E[Pre-filter + Discovery]
+    B --> C[HttpClient + Config]
+    E --> F[runner.rs]
     C --> F
 
-    F --> G1["Passive scanners
-CORS/CSP/GraphQL/JWT/OpenAPI/API Security"]
-    F --> G2["Active scanners
-API Security IDOR/BOLA, Mass Assignment
-OAuth/OIDC, Rate Limit, WebSocket, CVE Templates"]
+    F --> G1[Passive scanners]
+    F --> G2[Active scanners]
 
-    I["template-tool
-Nuclei YAML to TOML"] --> H["assets/cve_templates/*.toml"]
+    I[template-tool] --> H[CVE templates]
     H --> G2
 
-    G1 --> J["Findings + Captured Errors"]
+    G1 --> J[Findings]
     G2 --> J
-    J --> K["Reporter
-Pretty / NDJSON / SARIF"]
-    K --> L["Optional Auto Reports
-findings.json / summary.md / scan.log"]
-    K --> M["CI/CD Controls
-baseline diff + fail-on"]
+    J --> K[Reporter]
+    K --> L[Auto Reports]
+    K --> M[CI/CD Controls]
 ```
 
 ## Why ApiHunter?
