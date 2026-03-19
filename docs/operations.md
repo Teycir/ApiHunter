@@ -18,6 +18,7 @@ This runbook defines a safe production rollout path for ApiHunter and the minimu
 - Release artifacts are available with checksums/signatures/SBOM.
 - CI gates are green (`fmt`, `clippy -D warnings`, tests, dependency audit).
 - Branch protection is enabled for the default branch with required PR review and CODEOWNERS enforcement.
+- Release hardening smoke workflow is green (`Actions -> release-smoke -> workflow_dispatch`) before first production tag.
 
 ## Canary Rollout Strategy
 

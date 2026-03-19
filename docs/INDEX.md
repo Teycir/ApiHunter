@@ -32,6 +32,7 @@ Complete guide to ApiHunter documentation and resources.
 |----------|----------|---------|
 | **HOWTO** | [HOWTO.md](../HOWTO.md) | Detailed usage guide and examples |
 | **Security Policy** | [SECURITY.md](../SECURITY.md) | Vulnerability disclosure and supported-version policy |
+| **Release Smoke Workflow** | [release-smoke.yml](../.github/workflows/release-smoke.yml) | Manual CI check for build/sign/SBOM/attestation pipeline |
 | **Changelog** | [CHANGELOG.md](../CHANGELOG.md) | Version history and updates |
 | **License** | [Licence](../Licence) | MIT License information |
 | **Deep Review Checklist** | [deep-review-checklist.md](./deep-review-checklist.md) | Tracked checklist from the latest code review |

@@ -1,3 +1,26 @@
+# Task: Release Validation Hardening (Phase 17)
+
+## Plan
+- [x] Add a manual release-hardening smoke workflow (`workflow_dispatch`) to validate build/sign/SBOM/attestation without publishing a tag release.
+- [x] Document this smoke-check in operations guidance so operators can run it before first production tag.
+- [x] Verify workflow and documentation references.
+
+## Review
+- Added `.github/workflows/release-smoke.yml`:
+  - manual trigger (`workflow_dispatch`),
+  - dry-run archive build (`taiki-e/upload-rust-binary-action`),
+  - keyless blob signing (`cosign sign-blob`),
+  - SBOM generation (`anchore/sbom-action`),
+  - provenance + SBOM attestations (`actions/attest@v4`),
+  - artifact upload for smoke-run evidence.
+- Updated `docs/operations.md` preconditions to require a green release-smoke run before first production tag.
+- Added release-smoke discoverability entry in `docs/INDEX.md`.
+- Verification:
+  - `test -f .github/workflows/release-smoke.yml`
+  - `rg -n "release-smoke|workflow_dispatch|cosign|sbom-action|actions/attest@v4" -S .github/workflows/release-smoke.yml docs/operations.md docs/INDEX.md`
+
+---
+
 # Task: Ownership Governance Hardening (Phase 16)
 
 ## Plan

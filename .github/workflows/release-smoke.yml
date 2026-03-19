@@ -1,0 +1,88 @@
+name: release-smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release archive (dry-run)
+        id: build
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: apihunter
+          target: x86_64-unknown-linux-gnu
+          archive: apihunter-smoke-x86_64-unknown-linux-gnu
+          checksum: sha256
+          dry-run: true
+
+      - name: Select built archive
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ steps.build.outputs.tar }}" && -f "${{ steps.build.outputs.tar }}" ]]; then
+            echo "path=${{ steps.build.outputs.tar }}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ steps.build.outputs.zip }}" && -f "${{ steps.build.outputs.zip }}" ]]; then
+            echo "path=${{ steps.build.outputs.zip }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No smoke archive produced." >&2
+            exit 1
+          fi
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Keyless sign smoke archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${{ steps.archive.outputs.path }}"
+          cosign sign-blob \
+            --yes \
+            --bundle "${archive}.sigstore.json" \
+            --output-signature "${archive}.sig" \
+            --output-certificate "${archive}.pem" \
+            "$archive"
+
+      - name: Generate smoke SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: apihunter-smoke-sbom.spdx.json
+          artifact-name: apihunter-smoke-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest smoke archive provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.archive.outputs.path }}
+
+      - name: Attest smoke SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.archive.outputs.path }}
+          sbom-path: apihunter-smoke-sbom.spdx.json
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-artifacts
+          path: |
+            ${{ steps.archive.outputs.path }}
+            ${{ steps.archive.outputs.path }}.sha256
+            ${{ steps.archive.outputs.path }}.sig
+            ${{ steps.archive.outputs.path }}.pem
+            ${{ steps.archive.outputs.path }}.sigstore.json
+            apihunter-smoke-sbom.spdx.json
