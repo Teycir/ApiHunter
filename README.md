@@ -18,6 +18,8 @@
 Async, modular API security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Security) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
+Use cases: offense for red-team/API pentest discovery and exploit validation, and defense for CI/CD regression gating, continuous API hardening, and early misconfiguration detection.
+
 ## Naming
 
 - Project/repository: `ApiHunter`
