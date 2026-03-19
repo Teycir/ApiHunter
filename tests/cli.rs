@@ -231,6 +231,12 @@ fn quiet_and_summary_flags() {
     assert!(cli.summary);
 }
 
+#[test]
+fn no_auto_report_flag() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--no-auto-report"]).unwrap();
+    assert!(cli.no_auto_report);
+}
+
 // ── URL loader ───────────────────────────────────────────────────────────────
 
 #[test]

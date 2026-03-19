@@ -498,6 +498,68 @@ async fn api_security_id_range_request_errors_are_not_counted_as_success() {
     );
 }
 
+#[tokio::test]
+async fn api_security_id_range_severity_scales_with_success_breadth() {
+    let server = MockServer::start().await;
+
+    for id in 40..=44 {
+        let path_value = format!("/users/{id}");
+        let body = format!(
+            r#"{{"id":{},"owner":"user{}","profile":"{}"}}"#,
+            id,
+            id,
+            "x".repeat(72)
+        );
+
+        Mock::given(method("GET"))
+            .and(path(path_value))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+    }
+
+    Mock::given(method("OPTIONS"))
+        .respond_with(ResponseTemplate::new(405))
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config();
+    cfg.active_checks = true;
+    cfg.no_discovery = true;
+    cfg.toggles.cors = false;
+    cfg.toggles.csp = false;
+    cfg.toggles.graphql = false;
+    cfg.toggles.jwt = false;
+    cfg.toggles.openapi = false;
+    cfg.toggles.mass_assignment = false;
+    cfg.toggles.oauth_oidc = false;
+    cfg.toggles.rate_limit = false;
+    cfg.toggles.cve_templates = false;
+    cfg.toggles.websocket = false;
+    let config = Arc::new(cfg);
+    let client = Arc::new(HttpClient::new(&config).unwrap());
+
+    let target = format!("{}/users/42", server.uri());
+    let result = runner::run(vec![target], config, client, None, test_reporter(), false).await;
+
+    let idor = result
+        .findings
+        .iter()
+        .find(|f| f.check == "api_security/idor-id-enumerable")
+        .expect("expected IDOR enumerable finding");
+
+    assert_eq!(
+        idor.severity,
+        Severity::Critical,
+        "all adjacent IDs successful should escalate severity"
+    );
+    assert!(
+        idor.detail.contains("4 adjacent IDs"),
+        "detail should include observed success breadth, got: {}",
+        idor.detail
+    );
+}
+
 // ─── Runner behaviour tests ───────────────────────────────────────────────────
 
 #[tokio::test]

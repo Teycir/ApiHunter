@@ -84,6 +84,10 @@ pub struct Cli {
     #[arg(long)]
     pub summary: bool,
 
+    /// Disable automatic local report persistence under ~/Documents/ApiHunterReports.
+    #[arg(long)]
+    pub no_auto_report: bool,
+
     // ── Concurrency & limits ─────────────────────────────────────────────────
     /// Maximum number of concurrent in-flight requests.
     #[arg(short = 'c', long, default_value_t = 20, value_name = "N")]

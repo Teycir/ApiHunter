@@ -78,6 +78,12 @@ printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --o
 When `--output` is set, the report is written to the file. Stdout still prints
 unless `--quiet` is used.
 
+To disable automatic local report persistence in CI/non-interactive runs:
+
+```bash
+printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --no-auto-report
+```
+
 ---
 
 ## Stream findings as NDJSON

@@ -1258,3 +1258,54 @@
   - `cargo check`
   - `cargo test --test template_tooling --test cve_templates_runtime_ext --test cve_templates_scanner` (outside sandbox)
   - `cargo test` (outside sandbox, full suite)
+
+---
+
+# Task: Issues & Weaknesses Remediation (Phase 31)
+
+## Plan
+- [x] Standardize naming surface to reduce `ApiHunter` vs `api-scanner` confusion without breaking existing CLI usage.
+- [x] Make `--quiet` affect tracing initialization as intended.
+- [x] Relax seed URL accessibility filtering so auth-gated targets (for example `403`) are not dropped.
+- [x] Add an explicit CLI control to disable automatic local report persistence.
+- [x] Validate/disambiguate discovery politeness behavior; apply code changes only if a true gap exists.
+- [x] Improve IDOR range-walk severity scaling by observed breadth of successful object access.
+- [x] Remove local/editor and risky target artifacts from version control (`.history/`, gambling target lists) while preserving local files.
+- [x] Resolve changelog naming inconsistency if present in current tree.
+- [x] Run fmt + targeted/full tests outside sandbox and document final review notes.
+
+## Review
+- Naming clarity:
+  - Added an explicit naming section in `Readme.md` (project vs package vs lib vs binary) to remove ambiguity.
+  - No `webscan` references were found in the current repo state.
+- Logging + quiet mode:
+  - `init_tracing(quiet)` now uses default `error` in quiet mode and `info` otherwise (while still honoring `RUST_LOG` overrides).
+- URL prefilter behavior:
+  - `filter_accessible_urls(...)` now treats all non-5xx HTTP responses (`200..500`) as reachable so auth-gated endpoints such as `403`/`451` are not dropped.
+  - Added per-host delay enforcement to the prefilter phase using `--delay-ms` to avoid bursty pre-scan traffic.
+- Auto-report control:
+  - Added new CLI flag `--no-auto-report` in `src/cli.rs`.
+  - `src/main.rs` now skips `auto_report::save_auto_report(...)` when this flag is present.
+  - Updated `Readme.md` CLI table and `HOWTO.md` examples.
+- Discovery politeness validation:
+  - Confirmed discovery requests already route through `HttpClient` (`self.client.get/head`), which already enforces per-host delay.
+  - Applied additional politeness only to prefilter stage, where raw `reqwest` client requests were previously bursty.
+- IDOR severity scaling:
+  - `api_security/idor-id-enumerable` severity now scales with adjacent-ID success breadth:
+    - 2 successes -> `MEDIUM`
+    - 3 successes -> `HIGH`
+    - 4+ successes -> `CRITICAL`
+  - Finding detail now includes observed adjacent success count.
+  - Added integration test:
+    - `api_security_id_range_severity_scales_with_success_breadth` (`tests/integration_runner.rs`)
+- Repo hygiene:
+  - Untracked `.history/` from git while keeping local files.
+  - Untracked `targets/gambling-sites.txt` from git while keeping local file.
+  - Reinforced ignore rules in `.gitignore` for `.history/` and `targets/gambling*.txt`.
+- Changelog typo check:
+  - No root-level `Changlog.md` exists in current tree; canonical file is `Changelog.md`.
+  - The typo-like names were historical editor snapshots inside `.history/`, now untracked.
+- Validation:
+  - `cargo fmt`
+  - `cargo test --test cli --test integration_runner` (outside sandbox)
+  - `cargo test` (outside sandbox, full suite)

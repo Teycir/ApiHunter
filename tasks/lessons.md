@@ -43,3 +43,7 @@
 - Rule: deduplicate identical `CapturedError` entries in final run aggregation (`context + url + type + message`) to keep reports actionable.
 - User correction pattern: production runtime paths must not panic on recoverable infrastructure failures (semaphore/client builder issues).
 - Rule: replace `expect`/`unwrap` in request pipeline and startup networking setup with recoverable fallbacks and explicit warnings/errors so scans degrade gracefully instead of crashing.
+- User correction pattern: repository hygiene issues (editor history folders and personal target lists) must be treated as release blockers.
+- Rule: keep `.history/` and non-sanctioned target lists untracked by default; when they are accidentally tracked, remove from git index immediately while preserving local files.
+- User correction pattern: issue lists can include stale claims; fixes should be evidence-driven.
+- Rule: verify each claim against current code and document non-reproducible items explicitly rather than applying speculative changes.

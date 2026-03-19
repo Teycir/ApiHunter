@@ -13,7 +13,7 @@
 // 7. Drive runner::run().
 // 8. Hand RunResult to Reporter, print summary, emit exit code.
 
-use std::{io, process, sync::Arc, time::Instant};
+use std::{collections::HashMap, io, process, sync::Arc, time::Instant};
 
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64_STD;
@@ -69,7 +69,7 @@ async fn run(cli: Cli) -> Result<i32> {
     let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
         eprintln!("Filtering {} URLs...", raw_urls.len());
         let (accessible, inaccessible) =
-            filter_accessible_urls(&raw_urls, cli.filter_timeout).await;
+            filter_accessible_urls(&raw_urls, cli.filter_timeout, cli.delay_ms).await;
         eprintln!(
             "Filtering complete: {} accessible, {} inaccessible",
             accessible.len(),
@@ -268,8 +268,10 @@ async fn run(cli: Cli) -> Result<i32> {
         Some(s) => format!("{:?}", s),
         None => "Info".to_string(),
     };
-    if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc, &min_sev_str) {
-        eprintln!("Warning: Failed to auto-save report: {e}");
+    if !cli.no_auto_report {
+        if let Err(e) = auto_report::save_auto_report(&filtered_result, &doc, &min_sev_str) {
+            eprintln!("Warning: Failed to auto-save report: {e}");
+        }
     }
 
     if config.session_file.is_some() {
@@ -307,8 +309,8 @@ async fn run(cli: Cli) -> Result<i32> {
 
 // ── Tracing initialisation ────────────────────────────────────────────────────
 
-fn init_tracing(_quiet: bool) {
-    let default_level = "error";
+fn init_tracing(quiet: bool) {
+    let default_level = if quiet { "error" } else { "info" };
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
@@ -480,9 +482,13 @@ fn build_unauth_strip_headers(raws: Option<&[String]>) -> Vec<String> {
 
 // ── URL accessibility filter ──────────────────────────────────────────────
 
-async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<String>, Vec<String>) {
+async fn filter_accessible_urls(
+    urls: &[String],
+    timeout_secs: u64,
+    delay_ms: u64,
+) -> (Vec<String>, Vec<String>) {
     use futures::stream::{self, StreamExt};
-    use tokio::time::Duration;
+    use tokio::{sync::Mutex, time::Duration};
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
@@ -498,17 +504,22 @@ async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<Stri
         }
     };
 
+    let host_last_request: Arc<Mutex<HashMap<String, tokio::time::Instant>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     let results: Vec<(String, bool)> = stream::iter(urls)
         .map(|url| {
             let client = client.clone();
             let url = url.clone();
+            let host_last_request = Arc::clone(&host_last_request);
             async move {
+                enforce_filter_host_delay(host_last_request.as_ref(), &url, delay_ms).await;
                 let is_accessible = match client.get(&url).send().await {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
-                        // 2xx, 3xx, 4xx (except 403, 451) = accessible
-                        // 403, 451, 5xx, timeout = inaccessible
-                        matches!(status, 200..=399 | 400..=402 | 404..=450 | 452..=499)
+                        // Treat any non-5xx HTTP response as reachable.
+                        // 4xx often indicates auth-gated/live APIs rather than dead targets.
+                        (200..500).contains(&status)
                     }
                     Err(_) => false,
                 };
@@ -531,4 +542,57 @@ async fn filter_accessible_urls(urls: &[String], timeout_secs: u64) -> (Vec<Stri
     }
 
     (accessible, inaccessible)
+}
+
+async fn enforce_filter_host_delay(
+    host_last_request: &tokio::sync::Mutex<HashMap<String, tokio::time::Instant>>,
+    url: &str,
+    delay_ms: u64,
+) {
+    if delay_ms == 0 {
+        return;
+    }
+
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
+    let host = match parsed.host_str() {
+        Some(h) => h,
+        None => return,
+    };
+
+    let mut key = host.to_string();
+    if let Some(port) = parsed.port() {
+        key.push_str(&format!(":{port}"));
+    }
+
+    let min_gap = tokio::time::Duration::from_millis(delay_ms);
+    let now = tokio::time::Instant::now();
+
+    let sleep_for = {
+        let mut map = host_last_request.lock().await;
+        let next_allowed = match map.get(&key) {
+            Some(last) => {
+                let candidate = *last + min_gap;
+                if candidate > now {
+                    candidate
+                } else {
+                    now
+                }
+            }
+            None => now,
+        };
+        map.insert(key, next_allowed);
+        if next_allowed > now {
+            next_allowed - now
+        } else {
+            tokio::time::Duration::from_millis(0)
+        }
+    };
+
+    if !sleep_for.is_zero() {
+        tokio::time::sleep(sleep_for).await;
+    }
 }

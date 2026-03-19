@@ -18,6 +18,36 @@
 Async, modular web security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 
+## Naming
+
+- Project/repository: `ApiHunter`
+- Cargo package: `api-scanner`
+- Library crate: `api_scanner`
+- CLI binary: `api-scanner`
+
+## Repository Flow
+
+```mermaid
+flowchart LR
+    A[CLI<br/>api-scanner] --> B[main.rs<br/>parse args + build config]
+    D[Input Sources<br/>--urls / --stdin / --har] --> E[Pre-filter + Discovery]
+    B --> C[HttpClient + Config]
+    E --> F[runner.rs<br/>orchestration]
+    C --> F
+
+    F --> G1[Passive scanners<br/>CORS/CSP/GraphQL/JWT/OpenAPI/API Security]
+    F --> G2[Active scanners<br/>IDOR/Mass Assignment/OAuth/OIDC<br/>Rate Limit/WebSocket/CVE Templates]
+
+    I[template-tool<br/>Nuclei YAML -> TOML] --> H[assets/cve_templates/*.toml]
+    H --> G2
+
+    G1 --> J[Findings + Captured Errors]
+    G2 --> J
+    J --> K[Reporter<br/>Pretty / NDJSON / SARIF]
+    K --> L[Optional Auto Reports<br/>findings.json / summary.md / scan.log]
+    K --> M[CI/CD Controls<br/>baseline diff + fail-on]
+```
+
 ## Why ApiHunter?
 
 ### Core Advantages
@@ -185,7 +215,7 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/IDOR) usin
   - Generate baseline snapshots
   - Compare scans to report only new findings
   - Perfect for regression testing
-- **Auto-Save Reports**:
+- **Auto-Save Reports** (enabled by default, disable with `--no-auto-report`):
   - Saved to ~/Documents/ApiHunterReports/<timestamp>/
   - findings.json (structured findings)
   - summary.md (markdown report)
@@ -294,6 +324,30 @@ cat ./targets/targets.txt | ./target/release/api-scanner --stdin --min-severity 
 ```
 
 See [HOWTO.md](HOWTO.md) for detailed usage and [docs/](docs/) for internals.
+
+## Architecture
+
+```
+main.rs  ──► cli.rs (args) ──► config.rs (Config)
+                                     │
+                               runner.rs (orchestration)
+                              ┌──────┴────────────────────────────┐
+                    discovery/               scanner/
+                    ├─ robots.rs             ├─ cors.rs
+                    ├─ sitemap.rs            ├─ csp.rs
+                    ├─ swagger.rs            ├─ jwt.rs
+                    ├─ js.rs                 ├─ graphql.rs
+                    ├─ headers.rs            ├─ openapi.rs
+                    └─ common_paths.rs       ├─ mass_assignment.rs
+                                             ├─ oauth_oidc.rs
+                              http_client.rs ├─ rate_limit.rs
+                              auth.rs        ├─ cve_templates.rs
+                              waf.rs         └─ websocket.rs
+                              reports.rs
+                              error.rs
+```
+
+**Flow:** CLI args → Config → Runner orchestrates Discovery + Scanners → HTTP Client (with Auth/WAF) → Reports
 
 ## Template Tooling
 
@@ -406,6 +460,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--baseline` | none | Baseline NDJSON for diff-only findings |
 | `--quiet` | off | Suppress non-error stdout output |
 | `--summary` | off | Print summary even in quiet mode |
+| `--no-auto-report` | off | Skip writing local auto reports under `~/Documents/ApiHunterReports` |
 | `--min-severity` | `info` | Filter findings below this level |
 | `--fail-on` | `medium` | Exit non-zero at or above this severity |
 | `--concurrency` | `20` | Max in-flight requests |

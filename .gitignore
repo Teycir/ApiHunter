@@ -1,4 +1,5 @@
 .history
+.history/
 .qodo
 target
 _test_result.txt
@@ -9,3 +10,4 @@ targets/*
 !targets/cve-regression-real-public.txt
 !targets/cve-regression-vulhub-local.txt
 gambling_scan_short_results.json
+targets/gambling*.txt

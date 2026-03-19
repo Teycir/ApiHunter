@@ -1646,7 +1646,10 @@ async fn check_idor_bola(
         })
         .collect();
 
-    if other_successes.len() >= 2 {
+    let other_success_count = other_successes.len();
+    if other_success_count >= 2 {
+        let severity = idor_range_walk_severity(other_success_count);
+
         // At least 2 adjacent IDs return valid data — likely no per-object auth
         let evidence_lines: Vec<String> = range_results
             .iter()
@@ -1664,10 +1667,13 @@ async fn check_idor_bola(
                 url,
                 "api_security/idor-id-enumerable",
                 "Object IDs appear enumerable (IDOR/BOLA)",
-                Severity::High,
-                "Multiple adjacent numeric IDs return successful responses. \
-                 Object-level authorization may not be enforced per resource — \
-                 any authenticated user may be able to access other users' objects.",
+                severity,
+                format!(
+                    "{} adjacent IDs near the original resource returned successful responses. \
+                     Object-level authorization may not be enforced per resource — \
+                     any authenticated user may be able to access other users' objects.",
+                    other_success_count
+                ),
                 "api_security",
             )
             .with_evidence(format!(
@@ -1726,6 +1732,15 @@ async fn check_idor_bola(
                  that specific object — never rely solely on global authentication.",
             ),
         );
+    }
+}
+
+fn idor_range_walk_severity(other_success_count: usize) -> Severity {
+    match other_success_count {
+        0 | 1 => Severity::Low,
+        2 => Severity::Medium,
+        3 => Severity::High,
+        _ => Severity::Critical,
     }
 }
 
