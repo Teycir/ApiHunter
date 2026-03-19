@@ -532,6 +532,9 @@ ApiHunter testing is split by intent:
 - **Integration tests** (`tests/integration_runner.rs`, startup/CLI behavior): orchestration and runtime wiring.
 - **Fixture regression tests** (`tests/cve_templates_real_data.rs`, `tests/cve_templates_upstream_parity.rs`): replay real payloads and compare against pinned upstream templates.
 - **Mock-server tests** (multiple scanner suites): deterministic behavior checks without relying on internet targets.
+- **Live-target checks**: optional/manual only (not part of default `cargo test`).
+
+See the dedicated [Testing Guide](docs/testing.md) for the full test matrix and coverage map.
 
 Run focused suites:
 
@@ -555,6 +558,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Auth Flow](docs/auth-flow.md)
+- [Testing Guide](docs/testing.md)
 - [Scanners](docs/scanners.md)
 - [Findings & Remediation](docs/findings.md)
 - [HOWTO](HOWTO.md)

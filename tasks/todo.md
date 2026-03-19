@@ -1,3 +1,21 @@
+# Task: Clarify Testing Strategy in Docs (Phase 10)
+
+## Plan
+- [x] Add a dedicated testing strategy document describing what each test class covers.
+- [x] Link the testing strategy from `Readme.md` and `docs/INDEX.md` so it is discoverable.
+- [x] Verify updated doc links and summarize outcomes in a review section.
+
+## Review
+- Added `docs/testing.md` with a clear testing matrix covering scanner suites, runner integration, CLI/startup, HTTP/auth, fixture regression, and helper-level tests.
+- Explicitly documented that default `cargo test` coverage is local/deterministic (wiremock + fixtures) and does not require live internet targets.
+- Updated `Readme.md` testing section with explicit manual-only live target note and a direct link to the new testing guide.
+- Updated `docs/INDEX.md` navigation, development references, deep-dive list, metadata date, and document count to include the new testing guide.
+- Verification:
+  - `test -f docs/testing.md`
+  - `rg -n "\\[Testing Guide\\]\\(docs/testing\\.md\\)|\\[Testing Guide\\]\\(\\./testing\\.md\\)" Readme.md docs/INDEX.md`
+
+---
+
 # Task: Roadmap Advancement (Phase 1)
 
 ## Plan

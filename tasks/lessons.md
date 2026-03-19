@@ -127,3 +127,5 @@
 - Rule: when CVE templates are skipped for safety/quality, emit actionable template-ID diagnostics that remain visible in quiet mode.
 - User correction pattern: root-path (`path="/"`) CVE probes can be incorrectly gated by seed-path context hints.
 - Rule: treat root-path CVE probes as host-scoped checks and ignore context-path hints for those templates.
+- User correction pattern: contributors can be unsure what `tests/` actually validates when strategy is only implied by file names.
+- Rule: maintain a dedicated testing strategy doc (`docs/testing.md`) with an explicit test matrix (unit/scanner, integration, fixture, mock-server, live-target manual scope), and keep README + docs index linked to it.

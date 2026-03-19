@@ -21,6 +21,7 @@ Complete guide to ApiHunter documentation and resources.
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
 | [Auth Flow](./auth-flow.md) | Configuration Guide | Auth flow format and usage |
+| [Testing Guide](./testing.md) | Testing Guide | Test suite scope, strategy, and execution |
 | [Scanners](./scanners.md) | Scanner Modules | Detection capabilities for each scanner module |
 | [Findings](./findings.md) | Results Interpretation | Understanding severity levels, findings, and remediation |
 
@@ -48,6 +49,7 @@ Complete guide to ApiHunter documentation and resources.
 
 ### Development
 - [Architecture](./architecture.md) - `async-runtime`
+- [Testing Guide](./testing.md) - `testing, unit-tests, integration-tests, wiremock`
 - [HOWTO.md](../HOWTO.md) - Usage guide and development
 
 ---
@@ -63,6 +65,7 @@ Complete guide to ApiHunter documentation and resources.
 1. [Architecture.md](./architecture.md) - System design
 2. [Scanners.md](./scanners.md) - Scanner modules detail
 3. [Configuration.md](./configuration.md) - Configuration options
+4. [Testing.md](./testing.md) - Test scope and strategy
 
 ---
 
@@ -100,13 +103,13 @@ Complete guide to ApiHunter documentation and resources.
 **Author:** teycir ben soltane  
 **Email:** teycir@pxdmail.net  
 **Website:** teycirbensoltane.tn  
-**Last Updated:** 2026-03-14
+**Last Updated:** 2026-03-19
 
 ---
 
 ## Documentation Stats
 
-- **Total Documents:** 6 core documents (+ HOWTO, CHANGELOG, License)
+- **Total Documents:** 7 core documents (+ HOWTO, CHANGELOG, License)
 - **Scanner Modules:** 11 built-in scanners
 - **Configuration Parameters:** 16+ options
 - **Exit Codes:** 4 different exit codes
