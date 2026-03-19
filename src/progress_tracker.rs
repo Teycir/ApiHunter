@@ -138,7 +138,8 @@ impl ProgressTracker {
         };
 
         // Only display at specified frequency or when complete
-        if !current.is_multiple_of(update_freq) && current != self.config.total {
+        let is_multiple = update_freq != 0 && current % update_freq == 0;
+        if !is_multiple && current != self.config.total {
             return;
         }
 
@@ -251,7 +252,8 @@ impl ProgressHandle {
             self.config.non_tty_update_frequency
         };
 
-        if !current.is_multiple_of(update_freq) && current != self.config.total {
+        let is_multiple = update_freq != 0 && current % update_freq == 0;
+        if !is_multiple && current != self.config.total {
             return;
         }
 
