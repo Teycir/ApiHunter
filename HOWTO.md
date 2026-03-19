@@ -168,6 +168,20 @@ printf "https://target.example.com\n" | ./target/release/api-scanner --stdin --a
 
 ---
 
+## Dry-run active checks (no mutation probes)
+
+Use this mode to preview active-check behavior without sending mutation requests.
+
+```bash
+printf "https://target.example.com/users\n" | ./target/release/api-scanner \
+  --stdin \
+  --active-checks \
+  --dry-run \
+  --format ndjson
+```
+
+---
+
 ## Skip discovery for targeted checks
 
 Use this when you want to test only the seed URLs you provide (for example, focused WebSocket checks) without endpoint expansion.

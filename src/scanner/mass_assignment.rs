@@ -9,8 +9,19 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::Scanner;
+use super::{http_utils::parse_json_response, Scanner};
 
+/// Detects potential mass-assignment vulnerabilities by injecting privileged fields.
+///
+/// # How It Works
+/// 1. Baseline `GET` captures currently elevated sensitive fields.
+/// 2. Active probe sends `POST` with privileged fields.
+/// 3. Confirmation `GET` checks whether reflected fields persisted as newly elevated state.
+///
+/// # Findings
+/// - `mass_assignment/reflected-fields` (`MEDIUM`): privileged fields reflected in response.
+/// - `mass_assignment/persisted-state-change` (`HIGH`): reflected fields also persisted in state.
+/// - `mass_assignment/dry-run` (`INFO`): scanner configured to report planned probe only.
 pub struct MassAssignmentScanner;
 
 impl MassAssignmentScanner {
@@ -38,14 +49,19 @@ impl Scanner for MassAssignmentScanner {
         client: &HttpClient,
         config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
-        if !config.active_checks || !is_likely_mutation_target(url) {
+        if should_skip_scan(config, url) {
             return (Vec::new(), Vec::new());
+        }
+
+        let payload = create_probe_payload();
+        if config.dry_run {
+            return (vec![create_dry_run_finding(url, &payload)], Vec::new());
         }
 
         let mut findings = Vec::new();
         let mut errors = Vec::new();
 
-        let baseline_elevated = match fetch_elevated_fields(client, url).await {
+        let baseline_elevated = match fetch_elevated_fields(client, url, "baseline_get").await {
             Ok(fields) => Some(fields),
             Err(e) => {
                 errors.push(e);
@@ -53,13 +69,11 @@ impl Scanner for MassAssignmentScanner {
             }
         };
 
-        let payload = json!({
-            "is_admin": true,
-            "role": "admin",
-            "permissions": ["*"]
-        });
-
-        let resp = match client.post_json(url, &payload).await {
+        let resp = match client
+            .post_json(url, &payload)
+            .await
+            .map_err(|e| annotate_error(e, "probe_post"))
+        {
             Ok(r) => r,
             Err(e) => {
                 errors.push(e);
@@ -67,14 +81,11 @@ impl Scanner for MassAssignmentScanner {
             }
         };
 
-        if resp.status >= 400 {
+        if should_skip_response_status(resp.status) {
             return (findings, errors);
         }
 
-        let parsed_post = match parse_json_body(
-            &resp.body,
-            resp.headers.get("content-type").map(|s| s.as_str()),
-        ) {
+        let parsed_post = match parse_json_response(&resp) {
             Some(v) => v,
             None => return (findings, errors),
         };
@@ -86,17 +97,10 @@ impl Scanner for MassAssignmentScanner {
 
         let mut confirmed_fields = Vec::new();
         if let Some(before_elevated) = baseline_elevated.as_ref() {
-            match fetch_elevated_fields(client, url).await {
+            match fetch_elevated_fields(client, url, "confirm_get").await {
                 Ok(after_elevated) => {
-                    let before: HashSet<&'static str> = before_elevated.iter().copied().collect();
-                    let after: HashSet<&'static str> = after_elevated.into_iter().collect();
-                    let reflected_set: HashSet<&'static str> = reflected.iter().copied().collect();
-
-                    for field in after.difference(&before) {
-                        if reflected_set.contains(field) {
-                            confirmed_fields.push(*field);
-                        }
-                    }
+                    confirmed_fields =
+                        compute_newly_elevated_fields(before_elevated, after_elevated, &reflected);
                 }
                 Err(e) => errors.push(e),
             }
@@ -104,53 +108,36 @@ impl Scanner for MassAssignmentScanner {
 
         if !confirmed_fields.is_empty() {
             confirmed_fields.sort_unstable();
-            findings.push(
-                Finding::new(
-                    url,
-                    "mass_assignment/persisted-state-change",
-                    "Potential persisted privilege/state change",
-                    Severity::High,
-                    "Sensitive fields appear newly elevated after crafted field injection.",
-                    "mass_assignment",
-                )
-                .with_evidence(format!(
-                    "POST {url}\nStatus: {}\nReflected fields: {}\nNewly elevated after confirm GET: {}",
-                    resp.status,
-                    reflected.join(", "),
-                    confirmed_fields.join(", ")
-                ))
-                .with_remediation(
-                    "Block sensitive fields from client-controlled input and enforce server-side authorization invariants.",
-                ),
-            );
+            findings.push(create_mass_assignment_finding(
+                url,
+                resp.status,
+                &reflected,
+                Some(&confirmed_fields),
+            ));
         } else {
-            findings.push(
-                Finding::new(
-                    url,
-                    "mass_assignment/reflected-fields",
-                    "Potential mass-assignment via reflected fields",
-                    Severity::Medium,
-                    "Response reflected crafted sensitive fields from request payload.",
-                    "mass_assignment",
-                )
-                .with_evidence(format!(
-                    "POST {url}\nStatus: {}\nReflected fields: {}",
-                    resp.status,
-                    reflected.join(", ")
-                ))
-                .with_remediation(
-                    "Use explicit allowlists for writeable fields and reject unexpected attributes server-side.",
-                ),
-            );
+            findings.push(create_mass_assignment_finding(
+                url,
+                resp.status,
+                &reflected,
+                None,
+            ));
         }
 
         (findings, errors)
     }
 }
 
+fn should_skip_scan(config: &Config, url: &str) -> bool {
+    !config.active_checks || !is_likely_mutation_target(url)
+}
+
 fn is_likely_mutation_target(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     MUTATION_HINTS.iter().any(|k| lower.contains(k))
+}
+
+fn should_skip_response_status(status: u16) -> bool {
+    status >= 400
 }
 
 fn reflected_probe_fields_from_value(value: &serde_json::Value) -> Vec<&'static str> {
@@ -160,21 +147,41 @@ fn reflected_probe_fields_from_value(value: &serde_json::Value) -> Vec<&'static 
 async fn fetch_elevated_fields(
     client: &HttpClient,
     url: &str,
+    phase: &'static str,
 ) -> Result<Vec<&'static str>, CapturedError> {
-    let resp = client.get(url).await?;
+    let resp = client
+        .get(url)
+        .await
+        .map_err(|e| annotate_error(e, phase))?;
 
-    if resp.status >= 400 {
+    if should_skip_response_status(resp.status) {
         return Ok(Vec::new());
     }
 
-    let Some(parsed) = parse_json_body(
-        &resp.body,
-        resp.headers.get("content-type").map(|s| s.as_str()),
-    ) else {
+    let Some(parsed) = parse_json_response(&resp) else {
         return Ok(Vec::new());
     };
 
     Ok(elevated_fields_from_value(&parsed))
+}
+
+fn compute_newly_elevated_fields(
+    before: &[&'static str],
+    after: Vec<&'static str>,
+    reflected: &[&'static str],
+) -> Vec<&'static str> {
+    let before_set: HashSet<&'static str> = before.iter().copied().collect();
+    let after_set: HashSet<&'static str> = after.into_iter().collect();
+    let reflected_set: HashSet<&'static str> = reflected.iter().copied().collect();
+
+    let mut confirmed = Vec::new();
+    for field in after_set.difference(&before_set) {
+        if reflected_set.contains(field) {
+            confirmed.push(*field);
+        }
+    }
+    confirmed.sort_unstable();
+    confirmed
 }
 
 fn elevated_fields_from_value(parsed: &serde_json::Value) -> Vec<&'static str> {
@@ -321,25 +328,69 @@ fn key_matches_normalized(key: &str, normalized: &str) -> bool {
     key_iter.next().is_none()
 }
 
-fn parse_json_body(body: &str, content_type: Option<&str>) -> Option<serde_json::Value> {
-    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
-    let is_json_content_type = content_type.map(content_type_is_json).unwrap_or(false);
-
-    if is_json_content_type || parsed.is_some() {
-        parsed
+fn create_mass_assignment_finding(
+    url: &str,
+    status: u16,
+    reflected: &[&'static str],
+    confirmed: Option<&[&'static str]>,
+) -> Finding {
+    if let Some(confirmed_fields) = confirmed {
+        Finding::new(
+            url,
+            "mass_assignment/persisted-state-change",
+            "Potential persisted privilege/state change",
+            Severity::High,
+            "Sensitive fields appear newly elevated after crafted field injection.",
+            "mass_assignment",
+        )
+        .with_evidence(format!(
+            "POST {url}\nStatus: {status}\nReflected fields: {}\nNewly elevated after confirm GET: {}",
+            reflected.join(", "),
+            confirmed_fields.join(", ")
+        ))
+        .with_remediation(
+            "Block sensitive fields from client-controlled input and enforce server-side authorization invariants.",
+        )
     } else {
-        None
+        Finding::new(
+            url,
+            "mass_assignment/reflected-fields",
+            "Potential mass-assignment via reflected fields",
+            Severity::Medium,
+            "Response reflected crafted sensitive fields from request payload.",
+            "mass_assignment",
+        )
+        .with_evidence(format!(
+            "POST {url}\nStatus: {status}\nReflected fields: {}",
+            reflected.join(", ")
+        ))
+        .with_remediation(
+            "Use explicit allowlists for writeable fields and reject unexpected attributes server-side.",
+        )
     }
 }
 
-fn content_type_is_json(content_type: &str) -> bool {
-    let media_type = content_type
-        .split(';')
-        .next()
-        .unwrap_or(content_type)
-        .trim();
-    media_type
-        .as_bytes()
-        .windows(4)
-        .any(|window| window.eq_ignore_ascii_case(b"json"))
+fn create_probe_payload() -> serde_json::Value {
+    json!({
+        "is_admin": true,
+        "role": "admin",
+        "permissions": ["*"]
+    })
+}
+
+fn create_dry_run_finding(url: &str, payload: &serde_json::Value) -> Finding {
+    Finding::new(
+        url,
+        "mass_assignment/dry-run",
+        "Mass assignment dry run",
+        Severity::Info,
+        "Dry-run mode enabled; no mutation probe was sent.",
+        "mass_assignment",
+    )
+    .with_evidence(format!("Would POST payload: {payload}"))
+}
+
+fn annotate_error(mut err: CapturedError, phase: &'static str) -> CapturedError {
+    err.message = format!("{phase}: {}", err.message);
+    err
 }

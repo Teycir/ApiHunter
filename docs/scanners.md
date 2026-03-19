@@ -93,10 +93,12 @@ The OpenAPI scanner discovers JSON/YAML spec files at common endpoints:
 Dedicated active-checks scanner for mass-assignment style field injection probes.
 
 This scanner currently runs only when `--active-checks` is enabled.
+With `--dry-run`, it emits informational findings about intended probes and does not send mutation requests.
 
 **Detects:**
 - `mass_assignment/reflected-fields` when crafted sensitive fields (for example `is_admin`, `role`, `permissions`) are reflected
 - `mass_assignment/persisted-state-change` when reflected fields also appear newly elevated in a post-injection confirmation read
+- `mass_assignment/dry-run` when dry-run mode is enabled for active checks
 
 ---
 

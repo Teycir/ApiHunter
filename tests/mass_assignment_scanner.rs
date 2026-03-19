@@ -4,6 +4,9 @@ use std::sync::{
 };
 use std::time::Duration;
 
+mod helpers;
+
+use helpers::{assert_finding_exists, mock_json_response};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -11,6 +14,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
+    reports::Severity,
     scanner::mass_assignment::MassAssignmentScanner,
     scanner::Scanner,
 };
@@ -20,6 +24,10 @@ fn test_config(active_checks: bool) -> Config {
 }
 
 fn test_config_with_timeout(active_checks: bool, timeout_secs: u64) -> Config {
+    test_config_custom(active_checks, false, timeout_secs)
+}
+
+fn test_config_custom(active_checks: bool, dry_run: bool, timeout_secs: u64) -> Config {
     Config {
         max_endpoints: 10,
         concurrency: 2,
@@ -37,6 +45,7 @@ fn test_config_with_timeout(active_checks: bool, timeout_secs: u64) -> Config {
         proxy: None,
         danger_accept_invalid_certs: false,
         active_checks,
+        dry_run,
         stream_findings: false,
         baseline_path: None,
         session_file: None,
@@ -109,24 +118,20 @@ async fn reflected_sensitive_fields_are_reported() {
 
     Mock::given(method("GET"))
         .and(path("/users"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "application/json")
-                .set_body_string(r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#),
-        )
+        .respond_with(mock_json_response(
+            200,
+            r#"{"user":{"id":1,"is_admin":false,"role":"user"}}"#,
+        ))
         .expect(2)
         .mount(&server)
         .await;
 
     Mock::given(method("POST"))
         .and(path("/users"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "application/json")
-                .set_body_string(
-                    r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
-                ),
-        )
+        .respond_with(mock_json_response(
+            200,
+            r#"{"ok":true,"is_admin":true,"role":"admin","permissions":["*"]}"#,
+        ))
         .expect(1)
         .mount(&server)
         .await;
@@ -140,11 +145,10 @@ async fn reflected_sensitive_fields_are_reported() {
     let requests = server.received_requests().await.expect("received requests");
 
     assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
-    assert!(
-        findings
-            .iter()
-            .any(|f| f.check == "mass_assignment/reflected-fields"),
-        "expected mass-assignment finding, got: {findings:#?}"
+    assert_finding_exists(
+        &findings,
+        "mass_assignment/reflected-fields",
+        Severity::Medium,
     );
     assert_expected_mass_assignment_payload(&requests, "/users", 1);
 }
@@ -644,6 +648,26 @@ async fn baseline_get_failure_still_reports_reflected_fields() {
         "expected baseline GET transport error, got: {errors:#?}"
     );
     assert_expected_mass_assignment_payload(&requests, "/users", 1);
+}
+
+#[tokio::test]
+async fn dry_run_reports_info_and_sends_no_requests() {
+    let server = MockServer::start().await;
+
+    let cfg = Arc::new(test_config_custom(true, true, 5));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = MassAssignmentScanner::new(cfg.as_ref());
+
+    let target = format!("{}/users", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+    let requests = server.received_requests().await.expect("received requests");
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert_finding_exists(&findings, "mass_assignment/dry-run", Severity::Info);
+    assert!(
+        requests.is_empty(),
+        "expected dry-run to avoid network probes, got: {requests:#?}"
+    );
 }
 
 #[tokio::test]

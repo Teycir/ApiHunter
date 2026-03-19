@@ -944,3 +944,75 @@
   - `cargo fmt`
   - `cargo test --test mass_assignment_scanner`
   - `cargo test`
+
+---
+
+# Task: Mass Assignment Reusable Refactor Pass (Phase 23)
+
+## Plan
+- [x] Extract shared response/body parsing helper usage to reduce branching duplication in scanner flow.
+- [x] Extract reusable finding-construction helper for reflected vs persisted findings.
+- [x] Extract reusable confirmation-diff helper for newly elevated fields.
+- [x] Refactor `scan()` guard/flow for readability while preserving detection behavior.
+- [x] Run formatting and targeted/full tests outside sandbox; document outcomes.
+
+## Review
+- Refactored `src/scanner/mass_assignment.rs` into reusable helpers without changing behavior:
+  - guard helpers:
+    - `should_skip_scan(...)`
+    - `should_skip_response_status(...)`
+  - response parsing helper:
+    - `parse_json_http_response(...)` (shared by `scan` and `fetch_elevated_fields`)
+  - confirmation diff helper:
+    - `compute_newly_elevated_fields(...)`
+  - finding builder helper:
+    - `create_mass_assignment_finding(...)`
+- `scan(...)` now reads as a high-level workflow (guard -> baseline -> probe -> parse -> confirm -> emit finding), with less duplicated branching/building code.
+- Kept recall-safe behavior intact:
+  - no heuristic URL/path-based skips were introduced.
+  - JSON parsing still accepts valid JSON bodies even with non-JSON `Content-Type`.
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test mass_assignment_scanner`
+  - `cargo test`
+
+---
+
+# Task: Mass Assignment Quick-Win Maintainability Pass (Phase 24)
+
+## Plan
+- [x] Extract shared JSON HTTP helpers to a scanner-common module and reuse in mass-assignment scanner.
+- [x] Add step-aware error annotations for baseline/probe/confirm paths.
+- [x] Add `--dry-run` / `Config.dry_run` and mass-assignment dry-run behavior (no POST sent).
+- [x] Add reusable test helpers under `tests/helpers/` and use them in mass-assignment tests.
+- [x] Add rustdoc API documentation for mass-assignment scanner behavior/findings.
+- [x] Run formatting, targeted tests, and full suite outside sandbox; document outcomes.
+
+## Review
+- Added shared scanner HTTP JSON utilities in `src/scanner/http_utils.rs`:
+  - `parse_json_response(...)`
+  - `parse_json_body(...)`
+  - `is_json_content_type(...)`
+- Reused the shared helper in `src/scanner/mass_assignment.rs` and removed duplicate local response-parsing utilities.
+- Added step-aware error annotation in `mass_assignment` path:
+  - baseline GET: `baseline_get: ...`
+  - probe POST: `probe_post: ...`
+  - confirm GET: `confirm_get: ...`
+  - implemented via `annotate_error(...)`.
+- Added dry-run support:
+  - CLI: `--dry-run` (`src/cli.rs`)
+  - config: `Config.dry_run` (`src/config.rs`, wired in `src/main.rs`)
+  - scanner behavior: `mass_assignment/dry-run` info finding and no network probe requests in dry-run mode.
+- Added reusable test helpers:
+  - `tests/helpers/mod.rs` with `mock_json_response(...)` and `assert_finding_exists(...)`
+  - adopted in `tests/mass_assignment_scanner.rs`.
+- Added scanner rustdoc on `MassAssignmentScanner` documenting workflow and finding IDs.
+- Updated docs for the new flag/behavior:
+  - `Readme.md` CLI table (`--dry-run`)
+  - `HOWTO.md` dry-run recipe
+  - `docs/configuration.md` (`dry_run` field)
+  - `docs/scanners.md` mass-assignment dry-run note
+- Validation (outside sandbox for tests):
+  - `cargo fmt`
+  - `cargo test --test cli --test mass_assignment_scanner`
+  - `cargo test`

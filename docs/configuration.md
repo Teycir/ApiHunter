@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-18
+last_updated: 2026-03-19
 tags: [configuration, cli, settings, parameters]
 category: Configuration Guide
 ---
@@ -40,6 +40,7 @@ Durations are in milliseconds unless noted.
 | `proxy` | `Option<String>` | `None` | Proxy URL |
 | `danger_accept_invalid_certs` | `bool` | `false` | Skip TLS verification |
 | `active_checks` | `bool` | `false` | Enable active (potentially invasive) probes |
+| `dry_run` | `bool` | `false` | Dry-run active checks (report intended probes without sending mutation requests) |
 | `per_host_clients` | `bool` | `false` | Use per-host HTTP client pools |
 | `adaptive_concurrency` | `bool` | `false` | Adaptive concurrency (AIMD) |
 | `no_jwt` | `bool` | `false` | Disable JWT scanner |

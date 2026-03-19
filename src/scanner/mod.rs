@@ -7,6 +7,7 @@ pub mod cors;
 pub mod csp;
 pub mod cve_templates;
 pub mod graphql;
+pub mod http_utils;
 pub mod jwt;
 pub mod mass_assignment;
 pub mod oauth_oidc;

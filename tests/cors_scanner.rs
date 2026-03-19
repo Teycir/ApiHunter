@@ -30,6 +30,7 @@ fn test_config() -> Config {
         proxy: None,
         danger_accept_invalid_certs: false,
         active_checks: false,
+        dry_run: false,
         stream_findings: false,
         baseline_path: None,
         session_file: None,

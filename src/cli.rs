@@ -137,6 +137,10 @@ pub struct Cli {
     #[arg(long)]
     pub active_checks: bool,
 
+    /// Dry-run active checks: do not send mutation probes, emit informational "would test" findings.
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// Use per-host HTTP client pools.
     #[arg(long)]
     pub per_host_clients: bool,

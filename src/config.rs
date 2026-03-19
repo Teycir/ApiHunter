@@ -35,6 +35,9 @@ pub struct Config {
     /// Enable active (potentially invasive) checks.
     pub active_checks: bool,
 
+    /// Do not send active-check mutation requests; emit informational "would test" findings.
+    pub dry_run: bool,
+
     /// Enable streaming NDJSON findings (reports while scan is running).
     pub stream_findings: bool,
 

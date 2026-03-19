@@ -31,3 +31,7 @@
 - Rule: include variant-key regression tests (`snake_case`, `camelCase`, mixed case) and baseline-failure/reflected-only edge cases whenever detection logic changes.
 - User preference: performance improvements must not trade off recall.
 - Rule: accept only recall-safe optimizations by default (parse/alloc/traversal efficiencies), and reject heuristic request-skips unless explicitly approved as a detection tradeoff.
+- User correction pattern: scanner implementations should favor reusable helpers over repeated inline logic when behavior is shared.
+- Rule: extract shared finding creation, response parsing, and confirmation-diff logic into dedicated functions to keep `scan()` readable and easier to maintain.
+- User preference: provide safety controls for active checks when requested.
+- Rule: when adding invasive-check improvements, include an explicit dry-run path that reports intended actions without sending mutation probes.

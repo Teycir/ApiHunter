@@ -249,6 +249,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--proxy` | none | HTTP/HTTPS proxy URL |
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
 | `--active-checks` | off | Enable active (potentially invasive) probes |
+| `--dry-run` | off | Dry-run active checks (report intended probes without sending mutation requests) |
 | `--per-host-clients` | off | Use per-host HTTP client pools |
 | `--adaptive-concurrency` | off | Adaptive concurrency (AIMD) |
 | `--no-cors` | off | Disable the CORS scanner |

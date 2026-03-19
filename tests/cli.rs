@@ -75,6 +75,18 @@ fn parses_no_discovery_flag() {
 }
 
 #[test]
+fn parses_dry_run_flag() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--dry-run"]).unwrap();
+    assert!(cli.dry_run);
+}
+
+#[test]
+fn dry_run_default_is_disabled() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
+    assert!(!cli.dry_run);
+}
+
+#[test]
 fn scanner_toggle_flags() {
     let cli = Cli::try_parse_from([
         "scanner",

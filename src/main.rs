@@ -120,6 +120,7 @@ async fn run(cli: Cli) -> Result<i32> {
         proxy: cli.proxy.clone(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
         active_checks: cli.active_checks,
+        dry_run: cli.dry_run,
         stream_findings: cli.stream,
         baseline_path: cli.baseline.clone(),
         session_file: cli.session_file.clone(),
