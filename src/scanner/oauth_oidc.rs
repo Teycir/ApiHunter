@@ -12,7 +12,7 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::Scanner;
+use super::{common::http_utils::is_json_response, Scanner};
 
 pub struct OAuthOidcScanner;
 
@@ -272,7 +272,7 @@ async fn analyze_openid_metadata(
             }
         };
 
-        if resp.status >= 400 || !looks_json_like(&resp) {
+        if resp.status >= 400 || !is_json_response(&resp.headers, &resp.body) {
             return (findings, errors);
         }
 
@@ -394,17 +394,6 @@ async fn analyze_openid_metadata(
     }
 
     (findings, errors)
-}
-
-fn looks_json_like(resp: &HttpResponse) -> bool {
-    let ct = resp
-        .headers
-        .get("content-type")
-        .map(|s| s.as_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    ct.contains("json") || serde_json::from_str::<Value>(&resp.body).is_ok()
 }
 
 fn get_string_array(v: &Value, key: &str) -> Vec<String> {

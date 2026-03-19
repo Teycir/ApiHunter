@@ -22,7 +22,7 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::Scanner;
+use super::{common::http_utils::is_json_content_type, Scanner};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -110,7 +110,7 @@ impl Scanner for JwtScanner {
             .map(|s| s.as_str())
             .unwrap_or("");
         let scannable = ct.is_empty()
-            || ct.contains("json")
+            || is_json_content_type(ct)
             || ct.contains("text/")
             || ct.contains("javascript")
             || ct.contains("xml");

@@ -27,7 +27,11 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::Scanner;
+use super::{
+    common::http_utils::is_html_content_type as common_is_html_content_type,
+    common::string_utils::{redact_secret, slugify, snippet as shared_snippet},
+    Scanner,
+};
 
 pub struct ApiSecurityScanner {
     client_b: Option<Arc<HttpClient>>,
@@ -662,8 +666,7 @@ impl Scanner for ApiSecurityScanner {
 
 /// Returns `true` if the Content-Type looks like HTML.
 fn is_html_content_type(ct: &str) -> bool {
-    let lower = ct.to_ascii_lowercase();
-    lower.contains("text/html") || lower.contains("application/xhtml")
+    common_is_html_content_type(ct)
 }
 
 /// Returns `true` if the Content-Type matches any of the expected types.
@@ -1458,39 +1461,15 @@ fn header_remediation(check: &HeaderCheck) -> &'static str {
 }
 
 fn redact(s: &str) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= 8 {
-        return "*".repeat(chars.len());
-    }
-    let head: String = chars[..4].iter().collect();
-    let tail: String = chars[chars.len() - 4..].iter().collect();
-    let stars = "*".repeat(chars.len().saturating_sub(8).min(12));
-    format!("{head}{stars}{tail}")
+    redact_secret(s, 4)
 }
 
 fn slug(s: &str) -> String {
-    s.to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .split("--")
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
+    slugify(s)
 }
 
 fn snippet(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        let boundary = s
-            .char_indices()
-            .take_while(|&(i, _)| i < max_len)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        format!("{}... ({} bytes total)", &s[..boundary], s.len())
-    }
+    shared_snippet(s, max_len)
 }
 
 // ── Active checks (opt-in) ────────────────────────────────────────────────────

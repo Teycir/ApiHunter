@@ -9,7 +9,9 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::{http_utils::parse_json_response, Scanner};
+use super::{
+    common::finding_builder::FindingBuilder, common::http_utils::parse_json_response, Scanner,
+};
 
 /// Detects potential mass-assignment vulnerabilities by injecting privileged fields.
 ///
@@ -335,14 +337,12 @@ fn create_mass_assignment_finding(
     confirmed: Option<&[&'static str]>,
 ) -> Finding {
     if let Some(confirmed_fields) = confirmed {
-        Finding::new(
-            url,
-            "mass_assignment/persisted-state-change",
-            "Potential persisted privilege/state change",
-            Severity::High,
-            "Sensitive fields appear newly elevated after crafted field injection.",
-            "mass_assignment",
-        )
+        FindingBuilder::new(url, "mass_assignment")
+        .check("mass_assignment/persisted-state-change")
+        .title("Potential persisted privilege/state change")
+        .severity(Severity::High)
+        .detail("Sensitive fields appear newly elevated after crafted field injection.")
+        .build()
         .with_evidence(format!(
             "POST {url}\nStatus: {status}\nReflected fields: {}\nNewly elevated after confirm GET: {}",
             reflected.join(", "),
@@ -352,14 +352,12 @@ fn create_mass_assignment_finding(
             "Block sensitive fields from client-controlled input and enforce server-side authorization invariants.",
         )
     } else {
-        Finding::new(
-            url,
-            "mass_assignment/reflected-fields",
-            "Potential mass-assignment via reflected fields",
-            Severity::Medium,
-            "Response reflected crafted sensitive fields from request payload.",
-            "mass_assignment",
-        )
+        FindingBuilder::new(url, "mass_assignment")
+        .check("mass_assignment/reflected-fields")
+        .title("Potential mass-assignment via reflected fields")
+        .severity(Severity::Medium)
+        .detail("Response reflected crafted sensitive fields from request payload.")
+        .build()
         .with_evidence(format!(
             "POST {url}\nStatus: {status}\nReflected fields: {}",
             reflected.join(", ")
@@ -379,15 +377,13 @@ fn create_probe_payload() -> serde_json::Value {
 }
 
 fn create_dry_run_finding(url: &str, payload: &serde_json::Value) -> Finding {
-    Finding::new(
-        url,
-        "mass_assignment/dry-run",
-        "Mass assignment dry run",
-        Severity::Info,
-        "Dry-run mode enabled; no mutation probe was sent.",
-        "mass_assignment",
-    )
-    .with_evidence(format!("Would POST payload: {payload}"))
+    FindingBuilder::new(url, "mass_assignment")
+        .check("mass_assignment/dry-run")
+        .title("Mass assignment dry run")
+        .severity(Severity::Info)
+        .detail("Dry-run mode enabled; no mutation probe was sent.")
+        .build()
+        .with_evidence(format!("Would POST payload: {payload}"))
 }
 
 fn annotate_error(mut err: CapturedError, phase: &'static str) -> CapturedError {

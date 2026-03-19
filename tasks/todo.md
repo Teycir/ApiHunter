@@ -1016,3 +1016,34 @@
   - `cargo fmt`
   - `cargo test --test cli --test mass_assignment_scanner`
   - `cargo test`
+
+---
+
+# Task: Cross-Scanner Common Utilities Refactor (Phase 25)
+
+## Plan
+- [x] Add `src/scanner/common/` modules for shared HTTP, finding-builder, string, probe, and error-collection utilities.
+- [x] Rewire existing scanner HTTP helper exports to the new common module without breaking existing imports.
+- [x] Adopt common utilities in selected scanners (`mass_assignment`, `oauth_oidc`, `api_security`, `rate_limit`) for immediate reuse.
+- [x] Preserve scanner behavior and finding semantics while reducing duplicated helper logic.
+- [x] Run formatting, targeted tests, and full suite outside sandbox; document outcomes.
+
+## Review
+- Added shared utility modules:
+  - `src/scanner/common/http_utils.rs`
+  - `src/scanner/common/finding_builder.rs`
+  - `src/scanner/common/string_utils.rs`
+  - `src/scanner/common/probe.rs`
+  - `src/scanner/common/errors.rs`
+- Added common module exports via `src/scanner/common/mod.rs` and `pub mod common;` in `src/scanner/mod.rs`.
+- Kept compatibility for legacy imports by turning `src/scanner/http_utils.rs` into a re-export of `common::http_utils`.
+- Adopted utilities across scanners:
+  - `mass_assignment`: JSON parsing helper + fluent finding builder.
+  - `oauth_oidc`: shared JSON response detection.
+  - `jwt`: shared JSON content-type detection.
+  - `api_security`: shared HTML/content-type and string redaction/snippet/slug helpers.
+  - `rate_limit`: shared burst probe execution + shared error collection for probe results.
+- Validation (tests run outside sandbox):
+  - `cargo fmt`
+  - `cargo test --test rate_limit_scanner --test mass_assignment_scanner --test cli`
+  - `cargo test`

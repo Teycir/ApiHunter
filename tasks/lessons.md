@@ -35,3 +35,5 @@
 - Rule: extract shared finding creation, response parsing, and confirmation-diff logic into dedicated functions to keep `scan()` readable and easier to maintain.
 - User preference: provide safety controls for active checks when requested.
 - Rule: when adding invasive-check improvements, include an explicit dry-run path that reports intended actions without sending mutation probes.
+- User correction pattern: repeated helper logic across scanners should be centralized instead of reimplemented per scanner.
+- Rule: when 3+ scanners duplicate response/content-type, string, or finding-construction helpers, extract a `scanner/common` utility and keep compatibility re-exports during transition.

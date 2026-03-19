@@ -11,7 +11,10 @@ use crate::{
     reports::{Finding, Severity},
 };
 
-use super::Scanner;
+use super::{
+    common::{errors::collect_results, probe::BurstProbe},
+    Scanner,
+};
 
 pub struct RateLimitScanner {
     checked_hosts: Arc<DashSet<String>>,
@@ -177,17 +180,11 @@ async fn burst_gets(
     errors: &mut Vec<CapturedError>,
 ) -> BurstStats {
     let mut stats = BurstStats::default();
+    let probe = BurstProbe::new(count, headers.map(|h| h.to_vec()));
+    let responses = probe.execute(client, url).await;
 
-    for _ in 0..count {
-        let resp = match headers {
-            Some(h) => client.get_with_headers(url, h).await,
-            None => client.get(url).await,
-        };
-
-        match resp {
-            Ok(r) => update_stats(&mut stats, &r),
-            Err(e) => errors.push(e),
-        }
+    for response in collect_results(responses, errors) {
+        update_stats(&mut stats, &response);
     }
 
     stats
