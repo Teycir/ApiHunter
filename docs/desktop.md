@@ -66,6 +66,20 @@ npm run tauri dev
 Note: `npm run tauri ...` now runs a Linux preflight dependency check first and fails fast with an install command if GTK/WebKit libs are missing.
 Note: dev startup now builds and serves the bundled `dist` assets directly (no `localhost:1420` dependency), avoiding “Could not connect to localhost” windows when a separate dev server is not running.
 
+## Install Desktop Icon (Linux)
+
+Create a clickable launcher icon in your app menu (and Desktop shortcut when `~/Desktop` exists):
+
+```bash
+cd apps/desktop
+npm run desktop:install-icon
+```
+
+This command builds the release desktop binary if needed, then installs:
+- `~/.local/share/applications/apihunter-desktop.desktop`
+- `~/.local/share/icons/hicolor/256x256/apps/apihunter-desktop.png`
+- `~/Desktop/ApiHunter Desktop.desktop` (if the Desktop directory exists)
+
 ## Frontend Build Check
 
 ```bash

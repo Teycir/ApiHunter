@@ -1,3 +1,33 @@
+# Task: Desktop Clickable Launcher Icon (Phase 34)
+
+## Plan
+- [x] Add Linux launcher installer script for ApiHunter Desktop.
+- [x] Expose one-command npm script to install/update the launcher icon.
+- [x] Document launcher installation in desktop docs and README.
+- [x] Execute installer and verify generated `.desktop` entries.
+
+## Review
+- Changes made:
+  - Added launcher scripts:
+    - `apps/desktop/scripts/launch-apihunter-desktop.sh` (stable executable entrypoint for desktop launchers)
+    - `apps/desktop/scripts/install-desktop-launcher.sh` (Linux installer for app-menu + Desktop shortcut)
+  - Added npm command:
+    - `apps/desktop/package.json` -> `desktop:install-icon`
+  - Updated docs:
+    - `docs/desktop.md` with launcher install instructions and installed file paths
+    - `README.md` desktop quick-start section with icon install command
+- Installer behavior:
+  - Builds release desktop binary if missing.
+  - Installs launcher entry at `~/.local/share/applications/apihunter-desktop.desktop`.
+  - Installs icon at `~/.local/share/icons/hicolor/256x256/apps/apihunter-desktop.png`.
+  - Installs Desktop shortcut at `~/Desktop/ApiHunter Desktop.desktop` when `~/Desktop` exists.
+  - Uses absolute icon path in `.desktop` entries to avoid environment-specific theme lookup failures that show a generic gear icon.
+- Validation:
+  - `npm run desktop:install-icon` (in `apps/desktop`) ✅
+  - Verified installed files and launcher entry content ✅
+
+---
+
 # Task: Desktop Multi-Target Input (Phase 33)
 
 ## Plan

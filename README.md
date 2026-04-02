@@ -401,6 +401,38 @@ cargo build --release
 cat ./targets/cve-regression-real-public.txt | ./target/release/apihunter --stdin --min-severity medium
 ```
 
+### Desktop Quick Start (Tauri + React)
+
+ApiHunter also ships a desktop app in `apps/desktop`.
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri dev
+```
+
+Desktop scan input supports:
+- Manual multi-target entry (one URL per line or comma-separated)
+- CSV import via `Load CSV`
+- Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
+
+If you want a release desktop binary:
+
+```bash
+cd apps/desktop
+npm run tauri build
+./src-tauri/target/release/apihunter-desktop
+```
+
+Install a clickable Linux app icon/launcher:
+
+```bash
+cd apps/desktop
+npm run desktop:install-icon
+```
+
+Note: desktop dev startup now uses built frontend assets directly and does not require a separate `localhost:1420` server.
+
 See [HOWTO.md](HOWTO.md) for detailed usage, [docs/lab-setup.md](docs/lab-setup.md) for Vulhub-based CVE validation labs, and [docs/](docs/) for internals.
 
 ### Example NDJSON Finding

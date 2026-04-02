@@ -7,7 +7,8 @@
     "dev": "node ./node_modules/vite/bin/vite.js --port 1420",
     "build": "node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
-    "tauri": "bash ./scripts/check-tauri-linux-deps.sh && bash ./scripts/run-tauri.sh"
+    "tauri": "bash ./scripts/check-tauri-linux-deps.sh && bash ./scripts/run-tauri.sh",
+    "desktop:install-icon": "bash ./scripts/install-desktop-launcher.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

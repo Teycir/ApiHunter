@@ -151,3 +151,7 @@
 - Rule: in `listen(...).then(...)` effects, guard with a disposed flag and immediately call returned unlisten if the effect was already cleaned up.
 - User correction pattern: browser-style blob download anchors are unreliable in Linux Tauri WebKit windows.
 - Rule: for desktop export actions, use a backend save command (or Tauri filesystem APIs) and show the final saved path in UI feedback.
+- User correction pattern: desktop users may expect an app-menu/Desktop launcher, not only terminal startup commands.
+- Rule: when desktop UX is requested, provide a one-command launcher installer that creates `.desktop` entries with icon assets and verifies installed paths.
+- User correction pattern: icon-theme lookup by symbolic name in `.desktop` files can still render as generic gear on some Linux desktop setups.
+- Rule: default launcher installer to an absolute `Icon=/path/to/icon.png` value (not only icon theme name) for reliable shortcut rendering.
