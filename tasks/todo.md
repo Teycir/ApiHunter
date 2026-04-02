@@ -1,3 +1,27 @@
+# Task: crates.io Release 0.1.2 (Phase 24)
+
+## Plan
+- [x] Bump crate version to `0.1.2` in release metadata.
+- [x] Validate lockfile/build consistency after the version bump.
+- [x] Re-run quality gates (`fmt`, `clippy`, `test`) before publish.
+- [x] Publish `0.1.2` to crates.io and record the result.
+
+## Review
+- Changes made:
+  - `Cargo.toml` package version bumped from `0.1.1` to `0.1.2`.
+  - `Cargo.lock` root package entry now reflects `apihunter 0.1.2`.
+- Verification:
+  - `cargo check --locked` ✅
+  - `cargo fmt --all -- --check` ✅
+  - `cargo clippy --all-targets --all-features -- -D warnings` ✅
+  - `cargo test --all-targets` (outside sandbox) ✅
+- Publish outcome (2026-04-02):
+  - `cargo publish --locked --allow-dirty` ✅
+  - crates.io upload + publish completed for `apihunter v0.1.2`
+  - Crate URL: `https://crates.io/crates/apihunter`
+
+---
+
 # Task: Publish Readiness Completion (Phase 23)
 
 ## Plan
