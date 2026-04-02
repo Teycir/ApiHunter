@@ -83,6 +83,7 @@ struct ScannerRunStats {
 type ScannerStatsMap = BTreeMap<String, ScannerRunStats>;
 type StreamFindingKey = (String, String);
 type StreamSeenSet = Arc<Mutex<HashSet<StreamFindingKey>>>;
+pub type ProgressEventSender = mpsc::UnboundedSender<ProgressEvent>;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct UrlScanSummary {
@@ -92,6 +93,26 @@ struct UrlScanSummary {
     medium: usize,
 }
 
+#[derive(Debug, Clone)]
+pub enum ProgressEvent {
+    Started {
+        total_urls: usize,
+    },
+    UrlCompleted {
+        url: String,
+        findings: usize,
+        critical: usize,
+        high: usize,
+        medium: usize,
+    },
+    Finished {
+        scanned: usize,
+        skipped: usize,
+        findings: usize,
+        errors: usize,
+    },
+}
+
 /// Entry point called from `main`.
 pub async fn run(
     urls: Vec<String>,
@@ -99,7 +120,28 @@ pub async fn run(
     http_client: Arc<HttpClient>,
     http_client_b: Option<Arc<HttpClient>>,
     reporter: Arc<Reporter>,
+    quiet: bool,
+) -> RunResult {
+    run_with_progress(
+        urls,
+        config,
+        http_client,
+        http_client_b,
+        reporter,
+        quiet,
+        None,
+    )
+    .await
+}
+
+pub async fn run_with_progress(
+    urls: Vec<String>,
+    config: Arc<Config>,
+    http_client: Arc<HttpClient>,
+    http_client_b: Option<Arc<HttpClient>>,
+    reporter: Arc<Reporter>,
     _quiet: bool,
+    progress_tx: Option<ProgressEventSender>,
 ) -> RunResult {
     let start = Instant::now();
 
@@ -141,8 +183,21 @@ pub async fn run(
 
     let scanned = work_list.len();
     let skipped = skipped_dedup + skipped_merged + skipped_cap;
+    if let Some(tx) = &progress_tx {
+        let _ = tx.send(ProgressEvent::Started {
+            total_urls: scanned,
+        });
+    }
 
     if scanned == 0 {
+        if let Some(tx) = &progress_tx {
+            let _ = tx.send(ProgressEvent::Finished {
+                scanned: 0,
+                skipped,
+                findings: 0,
+                errors: 0,
+            });
+        }
         return RunResult {
             elapsed: start.elapsed(),
             skipped,
@@ -199,6 +254,7 @@ pub async fn run(
         let rpt = Arc::clone(&reporter);
         let stream_seen = Arc::clone(&stream_seen);
         let progress_handle = tracker.handle();
+        let progress_tx = progress_tx.clone();
 
         join_set.spawn(async move {
             let _permit = match sem.acquire().await {
@@ -222,6 +278,15 @@ pub async fn run(
 
             if !scanner_stats.is_empty() {
                 let _ = stx.send(scanner_stats);
+            }
+            if let Some(tx) = &progress_tx {
+                let _ = tx.send(ProgressEvent::UrlCompleted {
+                    url: url.clone(),
+                    findings: url_summary.findings,
+                    critical: url_summary.critical,
+                    high: url_summary.high,
+                    medium: url_summary.medium,
+                });
             }
 
             // Build summary message for detailed logging
@@ -318,6 +383,14 @@ pub async fn run(
         elapsed_secs = elapsed.as_secs_f64(),
         "Scan finished"
     );
+    if let Some(tx) = &progress_tx {
+        let _ = tx.send(ProgressEvent::Finished {
+            scanned,
+            skipped,
+            findings: findings.len(),
+            errors: errors.len(),
+        });
+    }
 
     RunResult {
         findings,

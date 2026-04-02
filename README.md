@@ -566,6 +566,7 @@ cargo test
 Complete documentation is available in `docs/`. Start with:
 
 - [Documentation Index](docs/INDEX.md)
+- [Desktop App Guide](docs/desktop.md)
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Auth Flow](docs/auth-flow.md)

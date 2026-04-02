@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-19
+last_updated: 2026-04-02
 tags: [index, documentation, guide, navigation]
 category: Documentation Index
 ---
@@ -18,6 +18,7 @@ Complete guide to ApiHunter documentation and resources.
 | Document | Category | Purpose |
 |----------|----------|---------|
 | [README.md](../README.md) | Getting Started | Project overview, features, quick start, and CLI reference |
+| [Desktop App Guide](./desktop.md) | Desktop Guide | Tauri + Vite + React setup, prerequisites, and run flow |
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
 | [Auth Flow](./auth-flow.md) | Configuration Guide | Auth flow format and usage |
@@ -53,6 +54,7 @@ Complete guide to ApiHunter documentation and resources.
 
 ### Development
 - [Architecture](./architecture.md) - `async-runtime`
+- [Desktop App Guide](./desktop.md) - `desktop, tauri, react, vite, ui`
 - [Testing Guide](./testing.md) - `testing, unit-tests, integration-tests, wiremock`
 - [HOWTO.md](../HOWTO.md) - Usage guide and development
 
@@ -70,7 +72,8 @@ Complete guide to ApiHunter documentation and resources.
 2. [Scanners.md](./scanners.md) - Scanner modules detail
 3. [Configuration.md](./configuration.md) - Configuration options
 4. [Testing.md](./testing.md) - Test scope and strategy
-5. [Operations.md](./operations.md) - Production rollout and monitoring runbook
+5. [Desktop.md](./desktop.md) - Desktop app setup and execution
+6. [Operations.md](./operations.md) - Production rollout and monitoring runbook
 
 ---
 
@@ -109,13 +112,13 @@ Complete guide to ApiHunter documentation and resources.
 **Author:** teycir ben soltane  
 **Email:** teycir@pxdmail.net  
 **Website:** teycirbensoltane.tn  
-**Last Updated:** 2026-03-19
+**Last Updated:** 2026-04-02
 
 ---
 
 ## Documentation Stats
 
-- **Total Documents:** 8 core documents (+ HOWTO, CHANGELOG, License)
+- **Total Documents:** 9 core documents (+ HOWTO, CHANGELOG, License)
 - **Scanner Modules:** 11 built-in scanners
 - **Configuration Parameters:** 16+ options
 - **Exit Codes:** 4 different exit codes
