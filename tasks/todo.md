@@ -1,3 +1,40 @@
+# Task: Publish Readiness Completion (Phase 23)
+
+## Plan
+- [ ] Re-validate crate packaging with `cargo package --list --allow-dirty` and `cargo package --allow-dirty`.
+- [ ] Fix any remaining package-content or metadata issues discovered during validation.
+- [ ] Re-run quality gates (`fmt`, `clippy`, `test`) and capture evidence.
+- [ ] Document final publish-readiness status, including any external blockers for live `cargo publish`.
+
+## Review
+- Pending.
+
+---
+
+# Task: Packaging Hygiene & Ignore Guardrails (Phase 22)
+
+## Plan
+- [x] Inspect crate package contents for obvious non-runtime files.
+- [x] Tighten `Cargo.toml` package `exclude` rules for local/dev-only paths.
+- [x] Add ignore guards for local Codex/editor state files.
+- [x] Re-run quality gates and full test suite (outside sandbox) to confirm no regressions.
+
+## Review
+- Root cause:
+  - `cargo package --list --allow-dirty` showed crate tarball included local Codex state (`.codex`) and test/workflow files that are not required for runtime use.
+- Changes made:
+  - `Cargo.toml`:
+    - added `".codex"`, `".github/**"`, and `"tests/**"` to package `exclude`.
+  - `.gitignore`:
+    - added `.codex` and `.mypy_cache/` to prevent accidental local-state commits.
+- Verification:
+  - `cargo package --list --allow-dirty` confirms `.codex`, `.github/**`, and `tests/**` are no longer included in package contents.
+  - `cargo fmt --all -- --check` ✅
+  - `cargo clippy --all-targets --all-features -- -D warnings` ✅
+  - `cargo test --all-targets` (outside sandbox) ✅
+
+---
+
 # Task: CI Audit Integration Permission Fix (Phase 21)
 
 ## Plan

@@ -1,6 +1,8 @@
 .history
 .history/
+.codex
 .qodo
+.mypy_cache/
 target
 _test_result.txt
 final_results.json

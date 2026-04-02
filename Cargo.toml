@@ -13,11 +13,14 @@ documentation = "https://docs.rs/apihunter"
 keywords = ["security", "api", "scanner", "graphql", "jwt"]
 categories = ["command-line-utilities", "development-tools::testing", "web-programming"]
 exclude = [
+    ".codex",
+    ".github/**",
     "dist/**",
     ".history/**",
     ".tmp/**",
     ".qodo/**",
     ".trunk/**",
+    "tests/**",
     "tasks/**",
     "targets/**",
 ]
