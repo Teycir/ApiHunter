@@ -46,12 +46,50 @@ body {
 }
 
 .scan-form input[type="url"],
+.scan-form textarea,
 .scan-form input[type="number"] {
-  height: 40px;
   border: 1px solid #b3c2d4;
   border-radius: 10px;
-  padding: 0 12px;
+  padding: 10px 12px;
   font-size: 0.95rem;
+}
+
+.scan-form input[type="url"],
+.scan-form input[type="number"] {
+  height: 40px;
+  padding: 0 12px;
+}
+
+.scan-form textarea {
+  resize: vertical;
+  min-height: 120px;
+  font-family: "Consolas", "Menlo", monospace;
+}
+
+.target-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.csv-import {
+  border: 1px solid #b3c2d4;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f8fbff;
+  cursor: pointer;
+}
+
+.csv-import input {
+  display: block;
+  margin-top: 6px;
+}
+
+.target-count-error {
+  color: #9f2424;
+  font-weight: 600;
 }
 
 .grid-options {

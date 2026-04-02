@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_TARGETS: usize = 100;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +65,8 @@ impl Default for ScanToggleRequest {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct FullScanRequest {
-    target_url: String,
+    target_url: Option<String>,
+    target_urls: Option<Vec<String>>,
     active_checks: bool,
     dry_run: bool,
     no_discovery: bool,
@@ -78,7 +80,8 @@ struct FullScanRequest {
 impl FullScanRequest {
     fn quick(target_url: String) -> Self {
         Self {
-            target_url,
+            target_url: Some(target_url),
+            target_urls: None,
             active_checks: false,
             dry_run: true,
             no_discovery: true,
@@ -100,6 +103,40 @@ impl FullScanRequest {
                 websocket: false,
             },
         }
+    }
+
+    fn resolve_targets(&self) -> Result<Vec<String>, String> {
+        let mut combined = Vec::new();
+        if let Some(target_url) = &self.target_url {
+            combined.push(target_url.clone());
+        }
+        if let Some(target_urls) = &self.target_urls {
+            combined.extend(target_urls.iter().cloned());
+        }
+
+        let mut seen = HashSet::new();
+        let mut normalized = Vec::new();
+        for target in combined {
+            let trimmed = target.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if seen.insert(trimmed.to_string()) {
+                normalized.push(trimmed.to_string());
+            }
+        }
+
+        if normalized.is_empty() {
+            return Err("Add at least one target URL.".to_string());
+        }
+        if normalized.len() > MAX_TARGETS {
+            return Err(format!(
+                "A maximum of {MAX_TARGETS} targets is allowed per scan (received {}).",
+                normalized.len()
+            ));
+        }
+
+        Ok(normalized)
     }
 }
 
@@ -301,7 +338,8 @@ fn save_export(
         .map_err(|e| format!("cannot resolve output directory: {e}"))?;
 
     let output_path = base_dir.join(file_name);
-    std::fs::write(&output_path, request.content).map_err(|e| format!("failed to save file: {e}"))?;
+    std::fs::write(&output_path, request.content)
+        .map_err(|e| format!("failed to save file: {e}"))?;
 
     Ok(SaveExportResponse {
         path: output_path.to_string_lossy().to_string(),
@@ -312,10 +350,23 @@ async fn run_full_scan_impl(
     app: tauri::AppHandle,
     request: FullScanRequest,
 ) -> Result<FullScanResponse, String> {
-    let parsed_url = url::Url::parse(&request.target_url)
-        .map_err(|_| "targetUrl must be a valid absolute URL (http/https).".to_string())?;
-    if !matches!(parsed_url.scheme(), "http" | "https") {
-        return Err("targetUrl scheme must be http or https.".to_string());
+    let targets = request.resolve_targets()?;
+
+    for (idx, target) in targets.iter().enumerate() {
+        let parsed_url = url::Url::parse(target).map_err(|_| {
+            format!(
+                "Target #{} must be a valid absolute URL (http/https): {}",
+                idx + 1,
+                target
+            )
+        })?;
+        if !matches!(parsed_url.scheme(), "http" | "https") {
+            return Err(format!(
+                "Target #{} must use http or https: {}",
+                idx + 1,
+                target
+            ));
+        }
     }
 
     let scan_id = NEXT_SCAN_ID.fetch_add(1, Ordering::Relaxed);
@@ -324,7 +375,7 @@ async fn run_full_scan_impl(
         ScanEventPayload {
             scan_id,
             event: "log".to_string(),
-            message: format!("Starting scan for {}", request.target_url),
+            message: format!("Starting scan for {} targets", targets.len()),
             total_urls: None,
             completed_urls: None,
             url: None,
@@ -483,7 +534,7 @@ async fn run_full_scan_impl(
 
     let progress_tx_for_runner = progress_tx.clone();
     let run_result = runner::run_with_progress(
-        vec![request.target_url.clone()],
+        targets.clone(),
         Arc::clone(&config),
         http_client,
         None,
@@ -496,7 +547,7 @@ async fn run_full_scan_impl(
     drop(progress_tx);
     let _ = progress_task.await;
 
-    let summary = summarize_run(&request.target_url, &run_result);
+    let summary = summarize_run(&targets, &run_result);
     let exports = build_exports(&run_result)?;
 
     emit_scan_event(
@@ -527,7 +578,7 @@ async fn run_full_scan_impl(
     })
 }
 
-fn summarize_run(target_url: &str, run_result: &runner::RunResult) -> ScanSummary {
+fn summarize_run(targets: &[String], run_result: &runner::RunResult) -> ScanSummary {
     let summary = reports::build_summary(run_result);
 
     let mut top_checks_map: BTreeMap<String, usize> = BTreeMap::new();
@@ -543,7 +594,11 @@ fn summarize_run(target_url: &str, run_result: &runner::RunResult) -> ScanSummar
     top_checks.truncate(10);
 
     ScanSummary {
-        target: target_url.to_string(),
+        target: if targets.len() == 1 {
+            targets[0].clone()
+        } else {
+            format!("{} targets", targets.len())
+        },
         scanned: run_result.scanned,
         skipped: run_result.skipped,
         findings_total: run_result.findings.len(),

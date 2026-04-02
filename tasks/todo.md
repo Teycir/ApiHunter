@@ -1,3 +1,36 @@
+# Task: Desktop Multi-Target Input (Phase 33)
+
+## Plan
+- [x] Add desktop UI support for up to 100 targets entered manually.
+- [x] Add CSV import flow that appends targets into the same scan target set.
+- [x] Enforce target-count and URL validation limits in backend scan command.
+- [x] Update desktop docs and verify build/runtime checks.
+
+## Review
+- Changes made:
+  - `apps/desktop/src/App.tsx`:
+    - replaced single `targetUrl` input with multi-target `textarea` input.
+    - added CSV import (`Load CSV`) that merges imported rows with manual targets.
+    - added frontend cap validation (`MAX_TARGETS=100`) and target counter.
+    - request payload now sends `targetUrls: string[]` to backend.
+  - `apps/desktop/src-tauri/src/main.rs`:
+    - `FullScanRequest` now supports `target_urls` and compatibility `target_url`.
+    - added `resolve_targets()` dedupe/trim + hard cap enforcement (`MAX_TARGETS=100`).
+    - validates every target as absolute `http/https` URL before launching scan.
+    - runner now executes all provided targets in one run.
+    - summary label now reports either single URL or `<n> targets`.
+  - `apps/desktop/src/styles.css`:
+    - added styles for multi-target textarea, CSV import controls, and cap warning state.
+  - `docs/desktop.md`:
+    - documented manual multi-target entry, CSV import, and 100-target backend limit.
+- Validation:
+  - `npm run build` (in `apps/desktop`) ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+
+---
+
 # Task: Desktop Runtime WebKit Crash (Phase 31)
 
 ## Plan

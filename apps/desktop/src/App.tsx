@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -23,7 +23,7 @@ type ScanToggleState = {
 };
 
 type FullScanRequest = {
-  targetUrl: string;
+  targetUrls: string[];
   activeChecks: boolean;
   dryRun: boolean;
   noDiscovery: boolean;
@@ -113,9 +113,11 @@ const TOGGLE_FIELDS: Array<{ key: keyof ScanToggleState; label: string }> = [
   { key: "websocket", label: "WebSocket" },
 ];
 
+const MAX_TARGETS = 100;
+
 export default function App() {
   const tauriRuntimeAvailable = hasTauriIpc();
-  const [targetUrl, setTargetUrl] = useState("https://httpbin.org");
+  const [targetInput, setTargetInput] = useState("https://httpbin.org");
   const [activeChecks, setActiveChecks] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [noDiscovery, setNoDiscovery] = useState(true);
@@ -182,6 +184,10 @@ export default function App() {
     if (totalUrls <= 0) return 0;
     return Math.min(100, Math.round((completedUrls / totalUrls) * 100));
   }, [completedUrls, totalUrls]);
+  const targetCount = useMemo(
+    () => parseTargetsText(targetInput).length,
+    [targetInput],
+  );
 
   async function fetchHealth() {
     setError(null);
@@ -195,6 +201,16 @@ export default function App() {
 
   async function runFullScan(e: FormEvent) {
     e.preventDefault();
+    const targetUrls = parseTargetsText(targetInput);
+    if (targetUrls.length === 0) {
+      setError("Add at least one target URL.");
+      return;
+    }
+    if (targetUrls.length > MAX_TARGETS) {
+      setError(`A maximum of ${MAX_TARGETS} targets is allowed per scan.`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setLogs([]);
@@ -205,7 +221,7 @@ export default function App() {
     setCompletedUrls(0);
 
     const request: FullScanRequest = {
-      targetUrl,
+      targetUrls,
       activeChecks,
       dryRun,
       noDiscovery,
@@ -226,6 +242,40 @@ export default function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function importTargetsFromCsv(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const csvTargets = parseTargetsCsv(text);
+      if (csvTargets.length === 0) {
+        setError("No targets were detected in the CSV file.");
+        return;
+      }
+
+      const merged = dedupeTargets([
+        ...parseTargetsText(targetInput),
+        ...csvTargets,
+      ]);
+      if (merged.length > MAX_TARGETS) {
+        setError(
+          `CSV import would exceed ${MAX_TARGETS} targets. Remove some entries first.`,
+        );
+        return;
+      }
+
+      setTargetInput(merged.join("\n"));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      e.target.value = "";
     }
   }
 
@@ -314,15 +364,38 @@ export default function App() {
       <section className="panel">
         <h2>Full Scan</h2>
         <form onSubmit={runFullScan} className="scan-form">
-          <label htmlFor="targetUrl">Target URL</label>
-          <input
-            id="targetUrl"
-            type="url"
+          <label htmlFor="targetInput">Targets (max 100)</label>
+          <textarea
+            id="targetInput"
+            rows={6}
             required
-            value={targetUrl}
-            onChange={(e) => setTargetUrl(e.target.value)}
-            placeholder="https://api.example.com"
+            value={targetInput}
+            onChange={(e) => setTargetInput(e.target.value)}
+            placeholder={
+              "https://api.example.com\nhttps://httpbin.org\nhttps://example.org/v1"
+            }
           />
+          <div className="target-toolbar">
+            <label className="csv-import">
+              Load CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={importTargetsFromCsv}
+              />
+            </label>
+            <span
+              className={
+                targetCount > MAX_TARGETS ? "target-count-error" : "muted"
+              }
+            >
+              {targetCount}/{MAX_TARGETS} targets
+            </span>
+          </div>
+          <p className="muted">
+            Enter one URL per line (or comma separated). CSV import appends to
+            the same list.
+          </p>
 
           <div className="grid-options">
             <label>
@@ -518,6 +591,62 @@ export default function App() {
       )}
     </main>
   );
+}
+
+function parseTargetsText(input: string): string[] {
+  const tokens = input
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return dedupeTargets(tokens);
+}
+
+function parseTargetsCsv(csvText: string): string[] {
+  const rows = csvText.split(/\r?\n/);
+  const targets: string[] = [];
+
+  rows.forEach((row, rowIdx) => {
+    const columns = row
+      .split(",")
+      .map((column) => column.trim().replace(/^"(.*)"$/, "$1"))
+      .filter((column) => column.length > 0);
+
+    if (columns.length === 0) {
+      return;
+    }
+
+    for (const value of columns) {
+      const lower = value.toLowerCase();
+      if (
+        rowIdx === 0 &&
+        (lower === "url" ||
+          lower === "urls" ||
+          lower === "target" ||
+          lower === "targets" ||
+          lower === "endpoint" ||
+          lower === "endpoints")
+      ) {
+        continue;
+      }
+      targets.push(value);
+    }
+  });
+
+  return dedupeTargets(targets);
+}
+
+function dedupeTargets(values: string[]): string[] {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim();
+    if (value.length === 0 || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    targets.push(value);
+  }
+  return targets;
 }
 
 function hasTauriIpc(): boolean {

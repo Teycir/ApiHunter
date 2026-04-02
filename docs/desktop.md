@@ -16,6 +16,8 @@ ApiHunter now includes a desktop app under `apps/desktop`.
 - Tauri 2 backend (`apps/desktop/src-tauri`) wired to the existing Rust scanner core.
 - React + Vite frontend (`apps/desktop/src`) with:
   - full scan profile form (active checks, dry-run, discovery, concurrency/timeouts/retries),
+  - manual multi-target entry (one-per-line or comma-separated),
+  - CSV target import,
   - per-scanner toggles,
   - live event/log stream with progress bar,
   - findings summary cards and top-check list,
@@ -31,6 +33,7 @@ ApiHunter now includes a desktop app under `apps/desktop`.
 - active checks disabled.
 
 `run_full_scan` exposes full desktop-configurable scanning and emits live progress events (`scan-event`) to the UI.
+It accepts up to 100 targets per run (deduped, validated as `http/https` absolute URLs).
 
 ## Prerequisites
 
@@ -77,5 +80,4 @@ Recommended next implementation phases:
 
 1. Add cancellable/background scan jobs so UI control is non-blocking.
 2. Add richer report explorer (findings table filters, grouping, drill-down).
-3. Add target-list input/import support and multi-target scan profiles.
-4. Add auth-flow/session-file UI wiring and secure local credential storage ergonomics.
+3. Add auth-flow/session-file UI wiring and secure local credential storage ergonomics.
