@@ -1,3 +1,30 @@
+# Task: Release v0.3.0 (Phase 37)
+
+## Plan
+- [x] Finalize `CHANGELOG.md` by moving current `Unreleased` notes into a dated `0.3.0` section.
+- [x] Bump project/app version metadata for this release (`Cargo.toml`, desktop package/config versions).
+- [x] Validate release build health (`cargo check`, desktop production build).
+- [ ] Commit release changes, create git tag `v0.3.0`, and push commit + tag.
+
+## Review
+- Changes made:
+  - `CHANGELOG.md`:
+    - created `## [0.3.0] - 2026-04-03` section from current release-ready notes.
+    - reset `Unreleased` with placeholders.
+    - updated compare links for `Unreleased` and added `0.3.0` release link target.
+  - Version metadata aligned to `0.3.0`:
+    - root crate: `Cargo.toml`
+    - desktop npm package: `apps/desktop/package.json`
+    - desktop tauri crate: `apps/desktop/src-tauri/Cargo.toml`
+    - tauri app config: `apps/desktop/src-tauri/tauri.conf.json`
+    - lock update: `Cargo.lock`
+- Validation:
+  - `cargo check` ✅
+  - `npm run build` (in `apps/desktop`) ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+
+---
+
 # Task: Desktop Feature Parity Batch 1 (Transport/Auth + Scope + Performance) (Phase 36)
 
 ## Plan
