@@ -34,9 +34,9 @@ use crate::{
     progress_tracker::{ProgressConfig, ProgressTracker},
     reports::{Finding, Reporter},
     scanner::{
-        api_security::ApiSecurityScanner, cors::CorsScanner, csp::CspScanner,
-        cve_templates::CveTemplateScanner, graphql::GraphqlScanner, jwt::JwtScanner,
-        mass_assignment::MassAssignmentScanner, oauth_oidc::OAuthOidcScanner,
+        api_security::ApiSecurityScanner, api_versioning::ApiVersioningScanner, cors::CorsScanner,
+        csp::CspScanner, cve_templates::CveTemplateScanner, graphql::GraphqlScanner,
+        jwt::JwtScanner, mass_assignment::MassAssignmentScanner, oauth_oidc::OAuthOidcScanner,
         openapi::OpenApiScanner, rate_limit::RateLimitScanner, websocket::WebSocketScanner,
         Scanner,
     },
@@ -526,6 +526,11 @@ fn build_scanners(
     }
     if config.toggles.openapi {
         scanners.push(RegisteredScanner::new(Arc::new(OpenApiScanner::new(
+            config,
+        ))));
+    }
+    if config.toggles.api_versioning {
+        scanners.push(RegisteredScanner::new(Arc::new(ApiVersioningScanner::new(
             config,
         ))));
     }

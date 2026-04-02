@@ -114,6 +114,7 @@ async fn run(cli: Cli) -> Result<i32> {
             api_security: !cli.no_api_security,
             jwt: !cli.no_jwt,
             openapi: !cli.no_openapi,
+            api_versioning: !cli.no_api_versioning,
             mass_assignment: !cli.no_mass_assignment,
             oauth_oidc: !cli.no_oauth_oidc,
             rate_limit: !cli.no_rate_limit,

@@ -57,6 +57,33 @@ fn alias_dos_payload() -> Value {
     json!({ "query": format!("{{ {aliases} }}") })
 }
 
+fn mutation_fuzz_payloads() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "create-user-admin-role",
+            json!({"query": "mutation { createUser(input:{email:\"probe@apihunter.local\",role:\"admin\",isAdmin:true}) { id } }"}),
+        ),
+        (
+            "update-user-privilege",
+            json!({"query": "mutation { updateUser(id:\"1\",input:{role:\"admin\",permissions:[\"*\"]}) { id } }"}),
+        ),
+        (
+            "set-role-direct",
+            json!({"query": "mutation { setRole(userId:\"1\",role:\"admin\") { success } }"}),
+        ),
+    ]
+}
+
+const MUTATION_ERROR_MARKERS: &[&str] = &[
+    "sql syntax",
+    "syntax error",
+    "traceback",
+    "exception",
+    "internal server error",
+    "stack trace",
+    "panic",
+];
+
 // ── Sensitive type / field names that warrant a finding ───────────────────────
 static SENSITIVE_TYPES: &[&str] = &[
     "user",
@@ -87,7 +114,7 @@ impl Scanner for GraphqlScanner {
         &self,
         url: &str,
         client: &HttpClient,
-        _config: &Config,
+        config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
@@ -112,7 +139,7 @@ impl Scanner for GraphqlScanner {
         }
 
         for candidate in &candidates {
-            probe_endpoint(candidate, client, &mut findings, &mut errors).await;
+            probe_endpoint(candidate, client, config, &mut findings, &mut errors).await;
         }
 
         (findings, errors)
@@ -124,6 +151,7 @@ impl Scanner for GraphqlScanner {
 async fn probe_endpoint(
     url: &str,
     client: &HttpClient,
+    config: &Config,
     findings: &mut Vec<Finding>,
     errors: &mut Vec<CapturedError>,
 ) {
@@ -346,6 +374,11 @@ async fn probe_endpoint(
             );
         }
     }
+
+    // ── Step 6: Mutation fuzzing (active checks only) ───────────────────────
+    if config.active_checks {
+        run_mutation_fuzzing(url, client, config, findings, errors).await;
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -362,4 +395,122 @@ fn seed_path_looks_graphql(url: &str) -> bool {
     };
     let path = parsed.path().to_ascii_lowercase();
     path.contains("graphql") || path.ends_with("/gql")
+}
+
+async fn run_mutation_fuzzing(
+    url: &str,
+    client: &HttpClient,
+    config: &Config,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let payloads = mutation_fuzz_payloads();
+
+    if config.dry_run {
+        findings.push(
+            Finding::new(
+                url,
+                "graphql/mutation-fuzzing-dry-run",
+                "GraphQL mutation fuzzing planned (dry-run)",
+                Severity::Info,
+                format!(
+                    "Dry-run enabled. Would execute {} GraphQL mutation fuzzing probe(s).",
+                    payloads.len()
+                ),
+                "graphql",
+            )
+            .with_evidence(
+                payloads
+                    .iter()
+                    .map(|(name, _)| (*name).to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+            .with_remediation(
+                "Re-run with --active-checks without --dry-run to execute mutation probes.",
+            ),
+        );
+        return;
+    }
+
+    let mut accepted_mutations: Vec<String> = Vec::new();
+    let mut server_error_mutations: Vec<String> = Vec::new();
+
+    for (name, payload) in payloads {
+        let response = match client.post_json(url, &payload).await {
+            Ok(response) => response,
+            Err(err) => {
+                errors.push(err);
+                continue;
+            }
+        };
+
+        let lower = response.body.to_ascii_lowercase();
+        if response.status >= 500
+            || MUTATION_ERROR_MARKERS
+                .iter()
+                .any(|marker| lower.contains(marker))
+        {
+            server_error_mutations.push(format!("{name} (status {})", response.status));
+            continue;
+        }
+
+        let Ok(parsed) = serde_json::from_str::<Value>(&response.body) else {
+            continue;
+        };
+
+        let has_data = parsed
+            .get("data")
+            .map(|value| !value.is_null())
+            .unwrap_or(false);
+        let has_errors = parsed
+            .get("errors")
+            .and_then(|value| value.as_array())
+            .map(|errors| !errors.is_empty())
+            .unwrap_or(false);
+
+        if response.status < 400 && has_data && !has_errors {
+            accepted_mutations.push(name.to_string());
+        }
+    }
+
+    if !accepted_mutations.is_empty() {
+        findings.push(
+            Finding::new(
+                url,
+                "graphql/mutation-fuzzing-accepted",
+                "GraphQL mutation fuzzing accepted potentially sensitive operations",
+                Severity::Medium,
+                "Mutation probes completed without GraphQL errors and returned data, which may indicate weak mutation authorization.",
+                "graphql",
+            )
+            .with_evidence(format!(
+                "Accepted payload(s): {}",
+                accepted_mutations.join(", ")
+            ))
+            .with_remediation(
+                "Enforce authorization checks for each mutation resolver and validate privilege-sensitive fields.",
+            ),
+        );
+    }
+
+    if !server_error_mutations.is_empty() {
+        findings.push(
+            Finding::new(
+                url,
+                "graphql/mutation-fuzzing-server-errors",
+                "GraphQL mutation fuzzing triggered server-side errors",
+                Severity::Low,
+                "Mutation probes triggered server-side errors or stack-like responses.",
+                "graphql",
+            )
+            .with_evidence(format!(
+                "Erroring payload(s): {}",
+                server_error_mutations.join(", ")
+            ))
+            .with_remediation(
+                "Harden mutation input validation and generic error handling to avoid backend exception leakage.",
+            ),
+        );
+    }
 }

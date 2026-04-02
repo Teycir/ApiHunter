@@ -7,10 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- _Nothing yet._
+- New passive scanner: `api_versioning`:
+  - version header disclosure checks (`api_versioning/version-header-disclosed`)
+  - deprecation/sunset header signals (`api_versioning/deprecation-signaled`)
+  - sibling version reachability checks (`api_versioning/multiple-active-versions`, `api_versioning/legacy-version-still-accessible`)
+  - initial response-diff checks for benign query/version variants (`response_diff/*`)
+- GraphQL active mutation fuzzing checks:
+  - `graphql/mutation-fuzzing-accepted`
+  - `graphql/mutation-fuzzing-server-errors`
+  - `graphql/mutation-fuzzing-dry-run`
+- New input source: `--collection <file>` for Postman/Insomnia export JSON URL import.
+- Added targeted regression coverage:
+  - `tests/api_versioning_scanner.rs`
+  - GraphQL mutation fuzzing tests in `tests/graphql_scanner.rs`
+  - Collection import tests in `tests/cli.rs`
 
 ### Changed
-- _Nothing yet._
+- CLI input group now supports exactly one of `--urls`, `--stdin`, `--har`, or `--collection`.
+- Added scanner toggle flag `--no-api-versioning`.
+- Documentation updates for scanner inventory, CLI flags, and API versioning coverage.
 
 ### Fixed
 - _Nothing yet._

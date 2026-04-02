@@ -121,7 +121,7 @@ flowchart LR
 
 ## Scanner Modules
 
-ApiHunter includes 11 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
+ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
 
 | Scanner | Type | What It Detects |
 |---------|------|----------------|
@@ -130,6 +130,7 @@ ApiHunter includes 11 built-in scanner modules. See [docs/scanners.md](docs/scan
 | **GraphQL** | Passive | Introspection enabled, sensitive schema fields (user/password/token types), field suggestions (schema leakage), query batching, alias amplification (DoS), GraphiQL/Playground exposure |
 | **JWT** | Passive | alg=none tokens, weak HS256 secrets (wordlist-based), missing/excessive expiry, sensitive claims in payload, algorithm confusion vulnerabilities |
 | **OpenAPI** | Passive | Missing security schemes, operations without auth requirements, file upload endpoints, deprecated operations still present, unsecured sensitive endpoints |
+| **API Versioning** | Passive | Version header disclosure, concurrent legacy/new API versions, deprecation headers, and response drift across benign query/version variants |
 | **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, and active IDOR/BOLA checks |
 | **Mass Assignment** | Active | Reflected sensitive fields (is_admin, role, permissions), persisted state changes, privilege escalation via field injection |
 | **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
@@ -152,6 +153,7 @@ These notes summarize how findings are emitted and what typically causes noise:
 | GraphQL | `graphql/*` with endpoint + capability signal | Public playground intended for internal/testing tenants | Schema controls enabled only after auth |
 | JWT | `jwt/*` with token claim/header evidence | Test/demo tokens in synthetic responses | Token never appears in scanned responses |
 | OpenAPI | `openapi/*` with operation/security context | Spec intentionally includes deprecated but blocked endpoints | Spec unavailable or split across private docs |
+| API Versioning | `api_versioning/*` + `response_diff/*` | Multiple supported versions during controlled migrations | Versioned paths not discoverable from current seed set |
 | API Security | `api_security/*` with header/path/method evidence | Debug/test endpoints intentionally exposed in non-prod | Controls enforced behind auth/session context |
 | Mass Assignment | `mass_assignment/*` with reflected/persisted deltas | Echo behavior that does not persist backend state | Mutations rejected by hidden validation rules |
 | OAuth/OIDC | `oauth/*` with redirect/metadata evidence | Non-production IdP config with relaxed policies | Dynamic policy enforcement not visible in metadata |
@@ -180,6 +182,7 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
   - Sensitive type/field name analysis
   - Query batching support detection
   - Alias amplification (DoS) probing
+  - Active mutation fuzzing (`--active-checks`, supports `--dry-run`)
   - GraphiQL/Playground exposure
 - **JWT Token Analysis**:
   - Algorithm confusion (alg=none, HS256→RS256)
@@ -249,6 +252,7 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
   - sitemap.xml parsing
   - OpenAPI/Swagger spec import
   - HAR file import (Excalibur integration)
+  - Postman/Insomnia collection import (`--collection`)
   - JavaScript endpoint extraction
   - Same-host filtering
 - **URL Accessibility Pre-filtering**:
@@ -334,6 +338,7 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
   - File-based URL lists
   - stdin (pipe from other tools)
   - HAR file import
+  - Postman/Insomnia collection import
   - OpenAPI spec import
 - **Granular Scanner Control**:
   - Enable/disable individual scanners
@@ -468,7 +473,8 @@ main.rs  ──► cli.rs (args) ──► config.rs (Config)
                     ├─ swagger.rs            ├─ jwt.rs
                     ├─ js.rs                 ├─ graphql.rs
                     ├─ headers.rs            ├─ openapi.rs
-                    └─ common_paths.rs       ├─ mass_assignment.rs
+                    └─ common_paths.rs       ├─ api_versioning.rs
+                                             ├─ mass_assignment.rs
                                              ├─ oauth_oidc.rs
                               http_client.rs ├─ rate_limit.rs
                               auth.rs        ├─ cve_templates.rs
@@ -705,6 +711,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--urls` | required* | Path to newline-delimited URL file |
 | `--stdin` | off | Read newline-delimited URLs from stdin |
 | `--har` | off | Import likely API request URLs from HAR (`log.entries[].request.url`) |
+| `--collection` | off | Import likely API request URLs from Postman/Insomnia collection export JSON |
 | `--output` | stdout | Write results to a file instead of stdout |
 | `--format` | `pretty` | Output format: `pretty`, `ndjson`, or `sarif` |
 | `--stream` | off | Stream NDJSON findings as they arrive |
@@ -744,13 +751,14 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--no-api-security` | off | Disable the API security scanner |
 | `--no-jwt` | off | Disable the JWT scanner |
 | `--no-openapi` | off | Disable the OpenAPI scanner |
+| `--no-api-versioning` | off | Disable the API versioning scanner |
 | `--no-mass-assignment` | off | Disable the Mass Assignment scanner (active checks) |
 | `--no-oauth-oidc` | off | Disable the OAuth/OIDC scanner (active checks) |
 | `--no-rate-limit` | off | Disable the Rate Limit scanner (active checks) |
 | `--no-cve-templates` | off | Disable the CVE template scanner (active checks) |
 | `--no-websocket` | off | Disable the WebSocket scanner (active checks) |
 
-*You must provide exactly one of `--urls`, `--stdin`, or `--har`.
+*You must provide exactly one of `--urls`, `--stdin`, `--har`, or `--collection`.
 
 ## Exit Codes
 
@@ -839,7 +847,7 @@ AWS/Google/GitHub/Slack/Stripe keys, bearer tokens, DB URLs, private keys. Conte
 AIMD: increases by 1 every 5s, halves on errors (429/503/timeouts). Enable with `--adaptive-concurrency`.
 
 **Q: Disable scanners?**  
-`--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`, `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
+`--no-cors`, `--no-csp`, `--no-graphql`, `--no-api-security`, `--no-jwt`, `--no-openapi`, `--no-api-versioning`, `--no-mass-assignment`, `--no-oauth-oidc`, `--no-rate-limit`, `--no-cve-templates`, `--no-websocket`.
 
 **Q: Is ApiHunter stealthy?**  
 A: Yes. Features: UA rotation from 100+ real browsers (assets/user_agents.txt), randomized delays with jitter, per-host rate limiting, adaptive backoff on 429/503, no scanner fingerprints in headers, exponential retry logic, custom header injection. Enable with `--waf-evasion`.

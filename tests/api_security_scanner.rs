@@ -48,6 +48,7 @@ fn test_config(active_checks: bool) -> Config {
             api_security: true,
             jwt: false,
             openapi: false,
+            api_versioning: false,
             mass_assignment: false,
             oauth_oidc: false,
             rate_limit: false,

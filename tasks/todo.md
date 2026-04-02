@@ -1,3 +1,45 @@
+# Task: API Fuzzing Expansion Roadmap + Phase 1 Delivery (Phase 39)
+
+## Plan
+- [x] Publish an implementation roadmap for requested capabilities:
+  - API Specification Fuzzing (status + next upgrades)
+  - Postman/Insomnia Collection Import
+  - API Versioning Scanner
+  - GraphQL Mutation Fuzzing
+  - Tier 2: Blind SSRF detection, API gateway detection/bypass, response diff deep mode, gRPC/Protobuf support
+- [x] Implement collection import as a first-class CLI input source (`--collection`) with support for common Postman + Insomnia export structures.
+- [x] Implement a new passive `api_versioning` scanner module with version drift/deprecation checks.
+- [x] Implement GraphQL mutation fuzzing probes behind `--active-checks` and `--dry-run`.
+- [x] Implement an initial response diff analysis pass (low-noise) for variant response drift detection.
+- [x] Add or update tests in `tests/` for CLI parsing, collection loading, scanner naming, and scanner behavior.
+- [x] Run formatting and targeted tests outside sandbox.
+- [x] Update docs (`README.md`, `docs/scanners.md`) and write review notes.
+
+## Review
+- Roadmap (requested set) status:
+  - API Specification Fuzzing: already present in `openapi` active checks (`schema-fuzzing`, race probe, OAST dispatch/reflection). Planned next upgrades: schema-aware auth-context fuzzing and per-operation baseline replay.
+  - Postman/Insomnia Collection Import: delivered via `--collection` input mode in `src/cli.rs`.
+  - API Versioning Scanner: delivered as new passive module `src/scanner/api_versioning.rs`.
+  - GraphQL Mutation Fuzzing: delivered in `src/scanner/graphql.rs` behind `--active-checks`, with `--dry-run` support.
+  - Response Diff Analysis: delivered initial low-noise checks under `response_diff/*` in `api_versioning`.
+  - Tier 2 (Blind SSRF, Gateway bypass, gRPC/Protobuf): kept as next roadmap tranche (not implemented in this phase).
+- Core code changes:
+  - `src/cli.rs`: new `--collection` input source parsing Postman/Insomnia exports; new `--no-api-versioning` scanner toggle.
+  - `src/config.rs`, `src/main.rs`, `src/runner.rs`, `src/scanner/mod.rs`: scanner toggle/registration wiring for `api_versioning`.
+  - `src/scanner/api_versioning.rs`: version exposure + lifecycle checks and initial response-diff probes.
+  - `src/scanner/graphql.rs`: mutation fuzzing probes + dry-run finding mode.
+- Tests added/updated:
+  - new `tests/api_versioning_scanner.rs`
+  - updated `tests/graphql_scanner.rs`, `tests/cli.rs`, `tests/scanner_names.rs`
+  - updated all test `ScannerToggles` constructors for `api_versioning`.
+- Validation executed:
+  - `cargo check` ✅
+  - `cargo test --test cli --test graphql_scanner --test api_versioning_scanner --test scanner_names --test openapi_scanner` (outside sandbox) ✅
+- Docs/release notes updated:
+  - `README.md`, `docs/scanners.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/INDEX.md`, `CHANGELOG.md`.
+
+---
+
 # Task: README Installation Split (CLI + Desktop) (Phase 38)
 
 ## Plan

@@ -54,6 +54,7 @@ fn test_config_with_timeout(timeout_secs: u64) -> Config {
             api_security: false,
             jwt: false,
             openapi: false,
+            api_versioning: false,
             mass_assignment: false,
             oauth_oidc: false,
             rate_limit: false,

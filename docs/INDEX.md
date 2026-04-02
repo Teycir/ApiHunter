@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-04-02
+last_updated: 2026-04-03
 tags: [index, documentation, guide, navigation]
 category: Documentation Index
 ---
@@ -44,7 +44,7 @@ Complete guide to ApiHunter documentation and resources.
 
 ### Security Scanning
 - [README.md](../README.md) - `security, scanner, api`
-- [Scanners](./scanners.md) - `cors, csp, graphql, api-security, jwt, openapi, active-checks`
+- [Scanners](./scanners.md) - `cors, csp, graphql, api-security, api-versioning, jwt, openapi, active-checks`
 - [Findings](./findings.md) - `findings, severity, remediation`
 
 ### Technical Design
@@ -86,6 +86,7 @@ Complete guide to ApiHunter documentation and resources.
 - **API Security** - General API hardening checks
 - **JWT** - Token inspection and weak-signature checks
 - **OpenAPI** - API specification security posture checks
+- **API Versioning** - Version lifecycle drift and response-diff checks
 - **Mass Assignment** - Active field-injection persistence checks
 - **OAuth/OIDC** - Authorization flow and metadata hardening checks
 - **Rate Limit** - Throttling and bypass checks
@@ -119,7 +120,7 @@ Complete guide to ApiHunter documentation and resources.
 ## Documentation Stats
 
 - **Total Documents:** 9 core documents (+ HOWTO, CHANGELOG, License)
-- **Scanner Modules:** 11 built-in scanners
+- **Scanner Modules:** 12 built-in scanners
 - **Configuration Parameters:** 16+ options
 - **Exit Codes:** 4 different exit codes
 

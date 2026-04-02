@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-19
+last_updated: 2026-04-03
 tags: [configuration, cli, settings, parameters]
 category: Configuration Guide
 ---
@@ -14,7 +14,7 @@ Durations are in milliseconds unless noted.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `urls` | `Vec<String>` | required* | Target URLs (newline-delimited file or stdin) |
+| `urls` | `Vec<String>` | required* | Target URLs (newline-delimited file, stdin, HAR, or collection import) |
 | `concurrency` | `usize` | `20` | Max parallel tasks |
 | `max_endpoints` | `usize` | `0` | Hard cap on discovered endpoints (0 = unlimited) |
 | `no_discovery` | `bool` | `false` | Skip endpoint discovery and scan only provided seed URLs |
@@ -45,14 +45,16 @@ Durations are in milliseconds unless noted.
 | `adaptive_concurrency` | `bool` | `false` | Adaptive concurrency (AIMD) |
 | `no_jwt` | `bool` | `false` | Disable JWT scanner |
 | `no_openapi` | `bool` | `false` | Disable OpenAPI scanner |
+| `no_api_versioning` | `bool` | `false` | Disable API versioning scanner |
 | `no_mass_assignment` | `bool` | `false` | Disable Mass Assignment scanner (active checks) |
 | `no_oauth_oidc` | `bool` | `false` | Disable OAuth/OIDC scanner (active checks) |
 | `no_rate_limit` | `bool` | `false` | Disable Rate Limit scanner (active checks) |
 | `no_cve_templates` | `bool` | `false` | Disable CVE template scanner (active checks) |
 | `no_websocket` | `bool` | `false` | Disable WebSocket scanner (active checks) |
 
-*You must provide exactly one of `--urls`, `--stdin`, or `--har`.
+*You must provide exactly one of `--urls`, `--stdin`, `--har`, or `--collection`.
 HAR parsing is API-focused by default: static/CDN entries are filtered out automatically.
+Collection parsing supports common Postman/Insomnia export JSON and applies the same API-focused filtering heuristics.
 For Excalibur workflows, use `--har <session.har>` with `--session-file <excalibur-session-...-cookies.json>`.
 
 Accepted session file format (JSON, only):

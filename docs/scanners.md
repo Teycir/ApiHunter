@@ -2,8 +2,8 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-19
-tags: [scanners, cors, csp, graphql, api-security, jwt, openapi, mass-assignment, oauth, oidc, rate-limit, cve, templates, websocket, active-checks]
+last_updated: 2026-04-03
+tags: [scanners, cors, csp, graphql, api-security, api-versioning, response-diff, jwt, openapi, mass-assignment, oauth, oidc, rate-limit, cve, templates, websocket, active-checks]
 category: Scanner Modules
 ---
 
@@ -21,6 +21,7 @@ This document describes all built-in scanner modules and their detection capabil
 | [API Security](#api-security-scannerapi_security) | Passive | Info-Medium | Missing headers, version disclosure, unauth access, debug endpoints |
 | [JWT](#jwt-scannerjwt) | Passive | Medium-Critical | alg=none, weak secrets, missing expiry, sensitive claims |
 | [OpenAPI](#openapi-scanneropenapi) | Passive | Low-Medium | Missing security schemes, unsecured operations, file uploads |
+| [API Versioning](#api-versioning-scannerapi_versioning) | Passive | Info-Medium | Version headers, legacy version exposure, response diff drift |
 | [Mass Assignment](#mass-assignment-scannermass_assignment) | Active | High-Critical | Reflected fields, persisted changes, privilege escalation |
 | [OAuth/OIDC](#oauth2--oidc-scanneroauth_oidc) | Active | Medium-High | Redirect URI bypass, missing state, PKCE issues, unsafe flows |
 | [Rate Limit](#rate-limit-scannerrate_limit) | Active | Medium | Missing throttling, bypass via IP headers |
@@ -51,6 +52,7 @@ This keeps scanner output machine-consumable for NDJSON/SARIF pipelines while pr
 | API Security | Missing hardening headers, debug route exposure | Non-prod endpoints exposed in shared environments | Sensitive routes only visible after authenticated crawl |
 | JWT | `alg=none`, weak secret, sensitive claim leakage | Synthetic/non-production tokens in test fixtures | JWT never appears in sampled traffic |
 | OpenAPI | Missing security requirements and exposed upload routes | Internal specs intentionally broad while backend enforces auth | Spec unavailable or split into private fragments |
+| API Versioning | Version disclosure, legacy version reachability, response drift across benign variants | Planned transition windows with intentionally parallel versions | Versioned routes outside discovered path corpus |
 | Mass Assignment | Persisted sensitive-field elevation after mutation | Echoed request fields not actually persisted | Server-side validators block mutation path silently |
 | OAuth/OIDC | Redirect validation bypass and weak PKCE metadata | Lab IdP environments with intentionally relaxed defaults | Runtime auth policy differs from published metadata |
 | Rate Limit | Missing throttling signal under burst + bypass attempts | Upstream CDN/rate controls mask application behavior | Long windows not triggered by short probe windows |
@@ -84,6 +86,7 @@ The table below combines what each module checks, what finding IDs look like, an
 | API Security | Secret patterns in body, stack/error disclosure, TRACE/write methods, debug/admin endpoint exposure, directory listing, missing `security.txt`, hardening header checks, active IDOR/BOLA | `api_security/secret-in-response/<slug>`, `api_security/error-disclosure/<slug>`, `api_security/http-method/trace-enabled`, `api_security/http-method/write-methods-enabled`, `api_security/debug-endpoint<path>`, `api_security/directory-listing<path>`, `api_security/security-txt/missing`, `api_security/headers/<slug>`, `api_security/headers/<slug>-weak`, `api_security/unauthenticated-access`, `api_security/partial-unauth-access`, `api_security/idor-id-enumerable`, `api_security/idor-cross-user` | Medium | Public status/debug routes in non-prod; frontend keys flagged as potential secrets; expected unauth behavior for public resources |
 | JWT | `alg=none`, suspicious `kid`, sensitive claims, missing/long expiry, weak HS256 secret checks, RS256/HS256 confusion probe (active) | `jwt/alg-none`, `jwt/suspicious-kid`, `jwt/sensitive-claims`, `jwt/no-exp`, `jwt/long-lived`, `jwt/weak-secret`, `jwt/alg-confusion` | Low-Medium | Test/demo tokens, intentionally long-lived service tokens, non-security JWT usage patterns |
 | OpenAPI | Missing security schemes, operations without security requirements, upload surfaces, deprecated operations | `openapi/no-security-schemes`, `openapi/unauthenticated-operations`, `openapi/file-upload`, `openapi/deprecated-operations` | Medium | Specs lagging behind backend auth enforcement; mixed public/private operations in shared specs |
+| API Versioning | Version headers, deprecation/sunset hints, adjacent version probes, benign query/version response diff analysis | `api_versioning/version-header-disclosed`, `api_versioning/deprecation-signaled`, `api_versioning/multiple-active-versions`, `api_versioning/legacy-version-still-accessible`, `response_diff/query-variant-server-error`, `response_diff/query-variant-drift`, `response_diff/version-variant-server-error`, `response_diff/version-variant-drift` | Medium | Multiple supported versions during planned migration can look risky without environment context |
 | Mass Assignment (active) | Sensitive field injection reflection and persistence confirmation, dry-run signal | `mass_assignment/reflected-fields`, `mass_assignment/persisted-state-change`, `mass_assignment/dry-run` | Low-Medium | Echoed request bodies mistaken for persistence if follow-up state context is weak |
 | OAuth/OIDC (active) | Redirect URI validation, `state` round-trip, PKCE metadata presence/strength, implicit and password grant exposure | `oauth/redirect-uri-not-validated`, `oauth/state-not-returned`, `oauth/pkce-metadata-missing`, `oauth/pkce-s256-not-supported`, `oauth/pkce-plain-supported`, `oauth/implicit-flow-enabled`, `oauth/ropc-grant-enabled` | Medium | Lab IdP configs intentionally permissive; metadata not matching runtime policy |
 | Rate Limit (active) | Burst throttling response, missing `Retry-After`, spoofed IP header bypass attempts | `rate_limit/not-detected`, `rate_limit/missing-retry-after`, `rate_limit/ip-header-bypass`, `rate_limit/check-failed` | Medium-High | Long-window throttles not triggered by short bursts; CDN/gateway shielding app-level controls |
@@ -156,6 +159,7 @@ Probes common GraphQL endpoints for misconfigurations.
 - Introspection enabled in production
 - Batch query support (DoS amplification risk)
 - Missing depth/complexity limits (heuristic)
+- Active mutation fuzzing signals (`graphql/mutation-fuzzing-*`) when `--active-checks` is enabled
 
 ---
 
@@ -199,6 +203,19 @@ The OpenAPI scanner discovers JSON/YAML spec files at common endpoints:
 - File upload endpoints (e.g., `multipart/form-data`)
 - Deprecated operations still present in the spec
 - Unsecured endpoints that should require authentication
+
+---
+
+## API Versioning (`scanner::api_versioning`)
+
+Passive scanner focused on API lifecycle drift and version-transition risk.
+
+**Detects:**
+- Version metadata disclosure in response headers (`api-version`, `x-api-version`, etc.)
+- Deprecation/sunset header signals
+- Concurrent active sibling versions (for example `v1` + `v2` both reachable)
+- Legacy version exposure for current versioned endpoints
+- Response drift checks under benign query/version variants (`response_diff/*`)
 
 ---
 

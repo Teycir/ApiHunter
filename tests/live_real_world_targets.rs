@@ -72,6 +72,7 @@ fn live_config(enable_active: bool, enable_websocket: bool) -> Config {
             api_security: true,
             jwt: true,
             openapi: true,
+            api_versioning: false,
             mass_assignment: true,
             oauth_oidc: true,
             rate_limit: false,

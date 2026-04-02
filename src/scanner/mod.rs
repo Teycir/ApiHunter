@@ -3,6 +3,7 @@
 // Scanner trait definition and shared types.
 
 pub mod api_security;
+pub mod api_versioning;
 pub mod common;
 pub mod cors;
 pub mod csp;

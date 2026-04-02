@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-14
+last_updated: 2026-04-03
 tags: [architecture, design, modules, async-runtime]
 category: Technical Documentation
 ---
@@ -17,7 +17,7 @@ main.rs
        └─ Runner
             ├─ Discovery       → normalise + dedup URLs
             ├─ HttpClient      → politeness / retry / UA / WAF / TLS
-            ├─ Scanner trait   → cors | csp | graphql | api_security | jwt | openapi
+            ├─ Scanner trait   → cors | csp | graphql | api_security | jwt | openapi | api_versioning
             └─ Reporter        → Pretty / NDJSON / SARIF (stdout or file)
 ```
 

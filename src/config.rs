@@ -82,6 +82,7 @@ pub struct ScannerToggles {
     pub api_security: bool,
     pub jwt: bool,
     pub openapi: bool,
+    pub api_versioning: bool,
     pub mass_assignment: bool,
     pub oauth_oidc: bool,
     pub rate_limit: bool,

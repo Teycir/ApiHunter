@@ -53,6 +53,7 @@ async fn refresh_task_can_be_cancelled_immediately() {
             api_security: false,
             jwt: false,
             openapi: false,
+            api_versioning: false,
             mass_assignment: false,
             oauth_oidc: false,
             rate_limit: false,

@@ -36,8 +36,20 @@ fn parses_har_arg() {
 }
 
 #[test]
+fn parses_collection_arg() {
+    let cli =
+        Cli::try_parse_from(["scanner", "--collection", "/tmp/requests.postman.json"]).unwrap();
+    assert_eq!(
+        cli.collection,
+        Some(std::path::PathBuf::from("/tmp/requests.postman.json"))
+    );
+    assert!(cli.urls.is_none());
+    assert!(!cli.stdin);
+}
+
+#[test]
 fn rejects_no_input_source() {
-    // Must provide --urls, --stdin, or --har
+    // Must provide --urls, --stdin, --har, or --collection
     let result = Cli::try_parse_from(["scanner"]);
     assert!(result.is_err());
 }
@@ -55,6 +67,22 @@ fn rejects_har_with_other_input_sources() {
     assert!(with_urls.is_err());
 
     let with_stdin = Cli::try_parse_from(["scanner", "--har", "/tmp/a.har", "--stdin"]);
+    assert!(with_stdin.is_err());
+}
+
+#[test]
+fn rejects_collection_with_other_input_sources() {
+    let with_urls = Cli::try_parse_from([
+        "scanner",
+        "--collection",
+        "/tmp/a.postman.json",
+        "--urls",
+        "/tmp/urls.txt",
+    ]);
+    assert!(with_urls.is_err());
+
+    let with_stdin =
+        Cli::try_parse_from(["scanner", "--collection", "/tmp/a.postman.json", "--stdin"]);
     assert!(with_stdin.is_err());
 }
 
@@ -97,6 +125,7 @@ fn scanner_toggle_flags() {
         "--no-api-security",
         "--no-jwt",
         "--no-openapi",
+        "--no-api-versioning",
     ])
     .unwrap();
     assert!(cli.no_cors);
@@ -105,6 +134,7 @@ fn scanner_toggle_flags() {
     assert!(cli.no_api_security);
     assert!(cli.no_jwt);
     assert!(cli.no_openapi);
+    assert!(cli.no_api_versioning);
 }
 
 #[test]
@@ -344,6 +374,72 @@ fn load_urls_from_har_enforces_api_filtering() {
     );
 }
 
+#[test]
+fn load_urls_from_postman_collection_extracts_nested_requests() {
+    let mut f = NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{{
+  "variable": [{{"key":"baseUrl","value":"https://api.example.com"}}],
+  "item": [
+    {{
+      "name": "Users",
+      "item": [
+        {{
+          "name": "List users",
+          "request": {{
+            "method": "GET",
+            "url": "{{{{baseUrl}}}}/v1/users"
+          }}
+        }},
+        {{
+          "name": "HTML page",
+          "request": {{
+            "method": "GET",
+            "url": "https://www.example.com/index.html"
+          }}
+        }}
+      ]
+    }}
+  ]
+}}"#
+    )
+    .unwrap();
+
+    let cli = Cli::try_parse_from(["scanner", "--collection", f.path().to_str().unwrap()]).unwrap();
+    let urls = load_urls(&cli).unwrap();
+    assert_eq!(urls, vec!["https://api.example.com/v1/users"]);
+}
+
+#[test]
+fn load_urls_from_insomnia_export_extracts_requests() {
+    let mut f = NamedTempFile::new().unwrap();
+    write!(
+        f,
+        r#"{{
+  "_type": "export",
+  "__export_format": 4,
+  "resources": [
+    {{
+      "_type": "request",
+      "method": "POST",
+      "url": "https://example.com/api/login"
+    }},
+    {{
+      "_type": "request",
+      "method": "GET",
+      "url": "https://example.com/assets/app.js"
+    }}
+  ]
+}}"#
+    )
+    .unwrap();
+
+    let cli = Cli::try_parse_from(["scanner", "--collection", f.path().to_str().unwrap()]).unwrap();
+    let urls = load_urls(&cli).unwrap();
+    assert_eq!(urls, vec!["https://example.com/api/login"]);
+}
+
 // ── Severity / format conversions ────────────────────────────────────────────
 
 #[test]
@@ -463,6 +559,7 @@ fn toggles_all_on_by_default() {
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
+        api_versioning: !cli.no_api_versioning,
         mass_assignment: !cli.no_mass_assignment,
         oauth_oidc: !cli.no_oauth_oidc,
         rate_limit: !cli.no_rate_limit,
@@ -475,6 +572,7 @@ fn toggles_all_on_by_default() {
     assert!(toggles.api_security);
     assert!(toggles.jwt);
     assert!(toggles.openapi);
+    assert!(toggles.api_versioning);
     assert!(toggles.mass_assignment);
     assert!(toggles.oauth_oidc);
     assert!(toggles.rate_limit);
@@ -490,6 +588,7 @@ fn toggles_selectively_disabled() {
         "--no-cors",
         "--no-graphql",
         "--no-mass-assignment",
+        "--no-api-versioning",
         "--no-websocket",
     ])
     .unwrap();
@@ -500,6 +599,7 @@ fn toggles_selectively_disabled() {
         api_security: !cli.no_api_security,
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
+        api_versioning: !cli.no_api_versioning,
         mass_assignment: !cli.no_mass_assignment,
         oauth_oidc: !cli.no_oauth_oidc,
         rate_limit: !cli.no_rate_limit,
@@ -512,6 +612,7 @@ fn toggles_selectively_disabled() {
     assert!(toggles.api_security);
     assert!(toggles.jwt);
     assert!(toggles.openapi);
+    assert!(!toggles.api_versioning);
     assert!(!toggles.mass_assignment);
     assert!(toggles.oauth_oidc);
     assert!(toggles.rate_limit);
