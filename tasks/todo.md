@@ -21,7 +21,8 @@
   - `cargo clippy --all-targets --all-features -- -D warnings` ✅
   - `cargo test --all-targets` (outside sandbox) ✅
 - Publish status:
-  - Live `cargo publish` not executed in this phase (requires explicit release intent and a configured crates.io token in environment).
+  - Live `cargo publish --locked --allow-dirty` executed on 2026-04-02.
+  - crates.io response: `crate apihunter@0.1.1 already exists on crates.io index`.
 
 ---
 
@@ -103,8 +104,8 @@
 ## Plan
 - [x] Add crates.io package metadata and publish excludes in `Cargo.toml`.
 - [x] Validate package contents with `cargo package --list` and `cargo package`.
-- [ ] Publish using `cargo publish` via environment token (without logging secrets).
-- [ ] Record publish outcome and crate URL.
+- [x] Publish using `cargo publish` via environment token (without logging secrets).
+- [x] Record publish outcome and crate URL.
 
 ## Review
 - Added crates.io metadata in `Cargo.toml`:
@@ -112,7 +113,10 @@
   - `keywords`, `categories`, and `rust-version`.
 - Added `exclude` patterns to keep release artifacts and local task/history folders out of published crate.
 - Completed packaging validation with `cargo package --list --allow-dirty` and `cargo package --allow-dirty`.
-- Pending: networked `cargo publish` step with release token and explicit release approval.
+- Publish outcome (2026-04-02):
+  - `cargo publish --locked --allow-dirty` returned `crate apihunter@0.1.1 already exists on crates.io index`.
+  - Crate URL: `https://crates.io/crates/apihunter`
+  - Interpretation: publish target version is already live; no additional publish action required for `0.1.1`.
 
 ---
 
