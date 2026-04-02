@@ -155,6 +155,27 @@ impl fmt::Display for Severity {
     }
 }
 
+/// Confidence score for a finding, based on confirmation depth and evidence quality.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Confidence {
+    High,
+    Medium,
+    #[default]
+    Low,
+}
+
+impl Confidence {
+    #[inline]
+    pub fn rank(&self) -> u8 {
+        match self {
+            Confidence::High => 2,
+            Confidence::Medium => 1,
+            Confidence::Low => 0,
+        }
+    }
+}
+
 // ── Finding ────────────────────────────────────────────────────────────────────
 
 /// A single security or informational observation produced by a scanner.
@@ -183,6 +204,10 @@ pub struct Finding {
     /// Concrete remediation advice.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<String>,
+
+    /// Confidence score reflecting how strongly the finding was confirmed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<Confidence>,
 
     /// Which scanner produced this finding (e.g. `"cors"`, `"csp"`).
     pub scanner: String,
@@ -229,6 +254,13 @@ impl Finding {
     #[allow(dead_code)]
     pub fn with_remediation(mut self, rem: impl Into<String>) -> Self {
         self.remediation = Some(rem.into());
+        self
+    }
+
+    /// Builder: attach a confidence score.
+    #[must_use]
+    pub fn with_confidence(mut self, confidence: Confidence) -> Self {
+        self.confidence = Some(confidence);
         self
     }
 

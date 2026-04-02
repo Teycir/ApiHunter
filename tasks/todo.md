@@ -1,3 +1,48 @@
+# Task: Bug-Hunting Capacity Expansion (Phase 25)
+
+## Plan
+- [x] Add a reusable stateful sequence engine for actor-based multi-step probes (`primary`, `secondary`, `unauthenticated`).
+- [x] Integrate sequence execution into active authorization probing and add an auth-matrix check for sensitive non-numeric endpoints.
+- [x] Add finding confidence scoring primitives (`LOW`/`MEDIUM`/`HIGH`) and apply them to multi-step authorization findings.
+- [x] Add regression tests under `tests/` for sequence engine behavior, auth-matrix detection, and confidence serialization.
+- [x] Re-run quality gates (`fmt`, `clippy`, `test`) and capture outcomes.
+
+## Review
+- Changes made:
+  - Added `src/scanner/common/sequence.rs`:
+    - actor-aware sequence runner (`SequenceRunner`) and typed sequence steps/results.
+    - supports `Primary`, `Secondary`, and `Unauthenticated` actors with captured-error reporting.
+  - Updated `src/scanner/common/mod.rs` to expose the sequence module.
+  - Extended reporting model in `src/reports.rs`:
+    - added `Confidence` enum (`LOW` / `MEDIUM` / `HIGH`).
+    - added optional `Finding.confidence` and `Finding::with_confidence(...)`.
+  - Upgraded active authorization logic in `src/scanner/api_security.rs`:
+    - refactored IDOR tier-1/tier-3 request flow to use `SequenceRunner`.
+    - added `check_authorization_matrix` for sensitive non-numeric paths.
+    - emits new checks:
+      - `api_security/authz-matrix-broken`
+      - `api_security/authz-matrix-cross-identity`
+      - `api_security/authz-matrix-public`
+    - attaches sequence metadata (`sequence_confirmed`, `confirmation_depth`) and confidence scoring.
+    - removed `CONNECT` from dangerous-method probing to avoid transport/mocking instability.
+- Tests added/updated:
+  - `tests/stateful_sequence_engine.rs` (new):
+    - actor-matrix step execution.
+    - invalid unauthenticated method error capture.
+  - `tests/api_security_scanner.rs`:
+    - new auth-matrix cross-identity detection regression test.
+  - `tests/reports.rs`:
+    - confidence serde + finding confidence field behavior coverage.
+- Verification:
+  - `cargo fmt --all` ✅
+  - `cargo clippy --all-targets --all-features -- -D warnings` ✅
+  - `cargo test --all-targets` (outside sandbox) ✅
+- Scope note:
+  - This phase delivers concrete groundwork for selected improvements #1, #2, and #7.
+  - Selected improvements #3 (schema-aware fuzzing), #4 (race probes), and #5 (OAST callbacks) are queued for next incremental phases.
+
+---
+
 # Task: crates.io Release 0.1.2 (Phase 24)
 
 ## Plan

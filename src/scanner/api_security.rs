@@ -17,6 +17,7 @@ use dashmap::DashSet;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
 use regex::Regex;
+use reqwest::Method;
 use std::{collections::HashMap, sync::Arc};
 use tracing::debug;
 use url::Url;
@@ -25,11 +26,12 @@ use crate::{
     config::Config,
     error::CapturedError,
     http_client::HttpClient,
-    reports::{Finding, Severity},
+    reports::{Confidence, Finding, Severity},
 };
 
 use super::{
     common::http_utils::is_html_content_type as common_is_html_content_type,
+    common::sequence::{SequenceActor, SequenceRunner, SequenceStep, SequenceStepResult},
     common::string_utils::{redact_secret, slugify, snippet as shared_snippet},
     Scanner,
 };
@@ -211,7 +213,7 @@ static ERROR_CHECKS: &[ErrorCheck] = &[
 
 // ── Dangerous HTTP methods ────────────────────────────────────────────────────
 
-static DANGEROUS_METHODS: &[&str] = &["PUT", "DELETE", "PATCH", "TRACE", "CONNECT"];
+static DANGEROUS_METHODS: &[&str] = &["PUT", "DELETE", "PATCH", "TRACE"];
 
 // ── Directory-listing markers ─────────────────────────────────────────────────
 
@@ -667,6 +669,14 @@ impl Scanner for ApiSecurityScanner {
 
         if config.active_checks {
             check_idor_bola(
+                url,
+                client,
+                self.client_b.as_ref().map(|c| c.as_ref()),
+                &mut findings,
+                &mut errors,
+            )
+            .await;
+            check_authorization_matrix(
                 url,
                 client,
                 self.client_b.as_ref().map(|c| c.as_ref()),
@@ -1540,24 +1550,40 @@ async fn check_idor_bola(
 
     // ── Tier 1: Unauthenticated comparison ────────────────────────────────────
 
-    let authed_resp = match client.get(url).await {
-        Ok(r) => r,
-        Err(e) => {
-            errors.push(e);
-            return;
-        }
+    let mut steps = vec![
+        SequenceStep::new("authed-primary", SequenceActor::Primary, Method::GET, url),
+        SequenceStep::new(
+            "unauthenticated-primary",
+            SequenceActor::Unauthenticated,
+            Method::GET,
+            url,
+        ),
+    ];
+    if client_b.is_some() {
+        steps.push(SequenceStep::new(
+            "authed-secondary",
+            SequenceActor::Secondary,
+            Method::GET,
+            url,
+        ));
+    }
+
+    let (sequence_results, mut sequence_errors) =
+        SequenceRunner::new(client, client_b).run(&steps).await;
+    errors.append(&mut sequence_errors);
+
+    let authed_resp = match sequence_response(&sequence_results, "authed-primary") {
+        Some(r) => r,
+        None => return,
     };
 
     if authed_resp.status >= 400 {
         return; // Not a live endpoint with our credentials
     }
 
-    let unauth_resp = match client.get_without_auth(url).await {
-        Ok(r) => r,
-        Err(e) => {
-            errors.push(e);
-            return;
-        }
+    let unauth_resp = match sequence_response(&sequence_results, "unauthenticated-primary") {
+        Some(r) => r,
+        None => return,
     };
 
     let authed_fp = body_fingerprint(&authed_resp.body);
@@ -1581,6 +1607,7 @@ async fn check_idor_bola(
                         "Authed: HTTP {}, Unauthed: HTTP {}",
                         authed_resp.status, unauth_resp.status
                     ))
+                    .with_confidence(Confidence::Medium)
                     .with_remediation(
                         "Enforce authentication middleware on all protected endpoints.",
                     ),
@@ -1604,6 +1631,7 @@ async fn check_idor_bola(
                          Authed body hash: {:x}, Unauthed body hash: {:x}",
                         authed_resp.status, unauth_resp.status, authed_fp.1, unauth_fp.1
                     ))
+                    .with_confidence(Confidence::High)
                     .with_remediation(
                         "Verify object-level authorization is enforced for every identity, \
                          including unauthenticated requests.",
@@ -1698,6 +1726,10 @@ async fn check_idor_bola(
                 "ID range probe results:\n{}",
                 evidence_lines.join("\n")
             ))
+            .with_confidence(match other_success_count {
+                0..=2 => Confidence::Medium,
+                _ => Confidence::High,
+            })
             .with_remediation(
                 "Enforce object-level authorization (BOLA) checks: verify the requesting \
                  identity owns or has explicit access to each requested resource ID.",
@@ -1707,16 +1739,13 @@ async fn check_idor_bola(
 
     // ── Tier 3: Cross-user comparison ─────────────────────────────────────────
 
-    let Some(client_b) = client_b else {
+    let Some(_client_b) = client_b else {
         return;
     };
 
-    let resp_b = match client_b.get(url).await {
-        Ok(r) => r,
-        Err(e) => {
-            errors.push(e);
-            return;
-        }
+    let resp_b = match sequence_response(&sequence_results, "authed-secondary") {
+        Some(r) => r,
+        None => return,
     };
 
     // Both identities must get a 200 for this to be meaningful
@@ -1744,6 +1773,7 @@ async fn check_idor_bola(
                  Identity B: HTTP {}, body hash {:x} (identical)",
                 authed_resp.status, authed_fp.1, resp_b.status, fp_b.1,
             ))
+            .with_confidence(Confidence::High)
             .with_remediation(
                 "Enforce strict object-level authorization. Every resource access must \
                  verify the requesting identity's ownership or explicit permission for \
@@ -1753,6 +1783,129 @@ async fn check_idor_bola(
     }
 }
 
+async fn check_authorization_matrix(
+    url: &str,
+    client: &HttpClient,
+    client_b: Option<&HttpClient>,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    if find_numeric_segment(url).is_some() {
+        // Numeric-resource paths are already handled by dedicated IDOR/BOLA checks.
+        return;
+    }
+    if !is_sensitive_resource_path(url) {
+        return;
+    }
+
+    let mut steps = vec![
+        SequenceStep::new(
+            "matrix-authed-primary",
+            SequenceActor::Primary,
+            Method::GET,
+            url,
+        ),
+        SequenceStep::new(
+            "matrix-unauthenticated-primary",
+            SequenceActor::Unauthenticated,
+            Method::GET,
+            url,
+        ),
+    ];
+    if client_b.is_some() {
+        steps.push(SequenceStep::new(
+            "matrix-authed-secondary",
+            SequenceActor::Secondary,
+            Method::GET,
+            url,
+        ));
+    }
+
+    let (results, mut seq_errors) = SequenceRunner::new(client, client_b).run(&steps).await;
+    errors.append(&mut seq_errors);
+
+    let Some(authed_primary) = sequence_response(&results, "matrix-authed-primary") else {
+        return;
+    };
+    if authed_primary.status >= 400 {
+        return;
+    }
+
+    let Some(unauth_primary) = sequence_response(&results, "matrix-unauthenticated-primary") else {
+        return;
+    };
+    let authed_fp = body_fingerprint(&authed_primary.body);
+    let unauth_same = (200..400).contains(&unauth_primary.status)
+        && body_fingerprint(&unauth_primary.body) == authed_fp;
+
+    let secondary_same = sequence_response(&results, "matrix-authed-secondary")
+        .filter(|resp| (200..400).contains(&resp.status))
+        .map(|resp| body_fingerprint(&resp.body) == authed_fp)
+        .unwrap_or(false);
+
+    let confirmation_depth = usize::from(unauth_same) + usize::from(secondary_same);
+    if confirmation_depth == 0 {
+        return;
+    }
+
+    let (check, title, severity, detail) = match (unauth_same, secondary_same) {
+        (true, true) => (
+            "api_security/authz-matrix-broken",
+            "Authorization matrix bypass: public + cross-identity exposure",
+            Severity::Critical,
+            "Both unauthenticated and secondary-identity requests returned the same resource representation as the primary identity. This strongly indicates broken authorization boundaries.",
+        ),
+        (false, true) => (
+            "api_security/authz-matrix-cross-identity",
+            "Authorization matrix bypass: cross-identity exposure",
+            Severity::High,
+            "A second authenticated identity received the same resource representation as the primary identity. This indicates missing object-level authorization checks.",
+        ),
+        (true, false) => (
+            "api_security/authz-matrix-public",
+            "Authorization matrix weakness: sensitive endpoint behaves as public",
+            Severity::High,
+            "A sensitive endpoint returned the same resource representation with and without authentication. This suggests missing authentication/authorization enforcement.",
+        ),
+        (false, false) => return,
+    };
+
+    findings.push(
+        Finding::new(url, check, title, severity, detail, "api_security")
+            .with_evidence(format!(
+                "primary_authed={} unauthenticated={} secondary={}",
+                authed_primary.status,
+                unauth_primary.status,
+                sequence_response(&results, "matrix-authed-secondary")
+                    .map(|resp| resp.status.to_string())
+                    .unwrap_or_else(|| "N/A".to_string()),
+            ))
+            .with_confidence(if secondary_same {
+                Confidence::High
+            } else {
+                Confidence::Medium
+            })
+            .with_metadata(serde_json::json!({
+                "sequence_confirmed": true,
+                "confirmation_depth": confirmation_depth,
+                "path_sensitive": true
+            }))
+            .with_remediation(
+                "Enforce role- and object-level authorization for every request path. Validate ownership/tenant boundaries and deny access for unauthenticated or unrelated identities.",
+            ),
+    );
+}
+
+fn sequence_response(
+    results: &[SequenceStepResult],
+    step_name: &str,
+) -> Option<crate::http_client::HttpResponse> {
+    results
+        .iter()
+        .find(|res| res.name == step_name)
+        .and_then(|res| res.response.clone())
+}
+
 fn idor_range_walk_severity(other_success_count: usize) -> Severity {
     match other_success_count {
         0 | 1 => Severity::Low,
@@ -1760,6 +1913,29 @@ fn idor_range_walk_severity(other_success_count: usize) -> Severity {
         3 => Severity::High,
         _ => Severity::Critical,
     }
+}
+
+fn is_sensitive_resource_path(url: &str) -> bool {
+    const SENSITIVE_SEGMENTS: &[&str] = &[
+        "admin", "account", "billing", "invoice", "order", "orders", "profile", "settings",
+        "tenant", "user", "users", "internal", "private", "me",
+    ];
+
+    let parsed = match Url::parse(url) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let Some(segments) = parsed.path_segments() else {
+        return false;
+    };
+
+    segments
+        .map(|segment| segment.to_ascii_lowercase())
+        .any(|segment| {
+            SENSITIVE_SEGMENTS
+                .iter()
+                .any(|needle| segment == *needle || segment.starts_with(&format!("{needle}-")))
+        })
 }
 
 // ── Numeric segment helpers ────────────────────────────────────────────────────

@@ -8,8 +8,8 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 use api_scanner::reports::{
-    dedup_findings, exit_code, filter_findings, load_baseline_keys, Finding, ReportConfig,
-    ReportFormat, ReportSummary, Reporter, Severity,
+    dedup_findings, exit_code, filter_findings, load_baseline_keys, Confidence, Finding,
+    ReportConfig, ReportFormat, ReportSummary, Reporter, Severity,
 };
 use api_scanner::runner::{RunResult, RuntimeMetrics};
 
@@ -45,6 +45,14 @@ fn severity_serde_round_trips() {
     assert_eq!(back, Severity::High);
 }
 
+#[test]
+fn confidence_serde_round_trips() {
+    let json = serde_json::to_string(&Confidence::High).unwrap();
+    assert_eq!(json, r#""HIGH""#);
+    let back: Confidence = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, Confidence::High);
+}
+
 // ── Finding builders ─────────────────────────────────────────────────────────
 
 #[test]
@@ -58,10 +66,12 @@ fn finding_builder_sets_optional_fields() {
         "cors",
     )
     .with_evidence("acao: *")
+    .with_confidence(Confidence::High)
     .with_remediation("Restrict CORS origin")
     .with_metadata(serde_json::json!({"cve": "N/A"}));
 
     assert_eq!(f.evidence.as_deref(), Some("acao: *"));
+    assert_eq!(f.confidence, Some(Confidence::High));
     assert_eq!(f.remediation.as_deref(), Some("Restrict CORS origin"));
     assert!(f.metadata.is_some());
 }
@@ -79,6 +89,7 @@ fn finding_serialises_without_none_fields() {
 
     let v: serde_json::Value = serde_json::to_value(&f).unwrap();
     assert!(!v.as_object().unwrap().contains_key("evidence"));
+    assert!(!v.as_object().unwrap().contains_key("confidence"));
     assert!(!v.as_object().unwrap().contains_key("remediation"));
     assert!(!v.as_object().unwrap().contains_key("metadata"));
 }

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use wiremock::matchers::{method, path, path_regex};
+use wiremock::matchers::{header, method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
+    reports::Confidence,
     scanner::api_security::ApiSecurityScanner,
     scanner::Scanner,
 };
@@ -154,4 +155,51 @@ async fn security_txt_probe_runs_once_per_host() {
         security_txt_hits, 2,
         "expected one host-level security.txt probe set (2 requests), got {security_txt_hits}"
     );
+}
+
+#[tokio::test]
+async fn authz_matrix_cross_identity_is_reported_for_sensitive_non_numeric_path() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(header("authorization", "Bearer user-a"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(r#"{"owner":"alice","tier":"gold"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(header("authorization", "Bearer user-b"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(r#"{"owner":"alice","tier":"gold"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let mut cfg_a = test_config(true);
+    cfg_a.default_headers = vec![("Authorization".to_string(), "Bearer user-a".to_string())];
+    let client_a = HttpClient::new(&cfg_a).expect("http client A");
+
+    let mut cfg_b = cfg_a.clone();
+    cfg_b.default_headers = vec![("Authorization".to_string(), "Bearer user-b".to_string())];
+    let client_b = Arc::new(HttpClient::new(&cfg_b).expect("http client B"));
+
+    let scanner = ApiSecurityScanner::new(&cfg_a, Some(client_b));
+    let target = format!("{}/api/profile", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client_a, &cfg_a).await;
+
+    assert!(
+        errors.is_empty(),
+        "unexpected errors from authz matrix probe: {errors:#?}"
+    );
+
+    let finding = findings
+        .iter()
+        .find(|f| f.check == "api_security/authz-matrix-cross-identity")
+        .expect("expected authz matrix cross-identity finding");
+    assert_eq!(finding.severity.to_string(), "HIGH");
+    assert_eq!(finding.confidence, Some(Confidence::High));
 }
