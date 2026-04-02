@@ -621,6 +621,8 @@ Complete documentation is available in `docs/`. Start with:
 
 ## Installation
 
+### CLI Installation
+
 Requires Rust stable (tested on 1.76+).
 
 ```bash
@@ -645,6 +647,40 @@ Each release also publishes supply-chain artifacts:
 - GitHub artifact attestations (provenance and SBOM attestation metadata)
 
 Download from [GitHub Releases](https://github.com/Teycir/ApiHunter/releases).
+
+### Desktop Installation (Tauri + React)
+
+Desktop app source lives in `apps/desktop`.
+
+Build and run a production desktop binary:
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri build
+./src-tauri/target/release/apihunter-desktop
+```
+
+For development mode:
+
+```bash
+cd apps/desktop
+npm run tauri dev
+```
+
+Install a clickable Linux launcher icon:
+
+```bash
+cd apps/desktop
+npm run desktop:install-icon
+```
+
+Desktop features (brief):
+- Multi-target scans (up to 100 targets) with manual input + CSV import
+- Live progress UI with per-target status cards
+- Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
+- Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
+- One-click export for JSON, NDJSON, and SARIF reports
 
 ### Docker
 

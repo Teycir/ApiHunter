@@ -159,3 +159,5 @@
 - Rule: after UI changes, always rebuild and then verify launcher target (`.desktop` Exec path) points to the current repo `src-tauri/target/release/apihunter-desktop`; explicitly instruct restart from that binary.
 - User correction pattern: desktop users can expect near-CLI feature coverage and quickly notice missing operational controls.
 - Rule: after each desktop milestone, run a feature-parity audit (`src/cli.rs` flags vs desktop request/UI) and prioritize wiring missing scope/transport/auth/performance controls before polishing visuals.
+- User correction pattern: README consumers need installation instructions split by interface (CLI vs desktop), not mixed into quick-start only.
+- Rule: keep a dedicated `Installation` section with explicit `CLI` and `Desktop` subsections plus a brief desktop feature snapshot for faster onboarding.

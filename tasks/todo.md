@@ -1,10 +1,28 @@
+# Task: README Installation Split (CLI + Desktop) (Phase 38)
+
+## Plan
+- [x] Update `README.md` installation section to clearly separate CLI and desktop installation.
+- [x] Add a concise desktop feature summary in installation docs.
+- [x] Keep existing desktop quick-start details intact while improving discoverability from installation.
+
+## Review
+- Updated `README.md`:
+  - added `CLI Installation` heading under `## Installation`.
+  - added dedicated `Desktop Installation (Tauri + React)` subsection with:
+    - production build/run commands,
+    - dev startup command,
+    - Linux launcher icon install command.
+  - added brief desktop features list for quick onboarding.
+
+---
+
 # Task: Release v0.3.0 (Phase 37)
 
 ## Plan
 - [x] Finalize `CHANGELOG.md` by moving current `Unreleased` notes into a dated `0.3.0` section.
 - [x] Bump project/app version metadata for this release (`Cargo.toml`, desktop package/config versions).
 - [x] Validate release build health (`cargo check`, desktop production build).
-- [ ] Commit release changes, create git tag `v0.3.0`, and push commit + tag.
+- [x] Commit release changes, create git tag `v0.3.0`, and push commit + tag.
 
 ## Review
 - Changes made:
@@ -22,6 +40,9 @@
   - `cargo check` ✅
   - `npm run build` (in `apps/desktop`) ✅
   - `npm run tauri build` (in `apps/desktop`) ✅
+- Release publication:
+  - commit: `7c3600f` (`release: cut v0.3.0`) ✅
+  - tag: `v0.3.0` pushed to origin ✅
 
 ---
 
