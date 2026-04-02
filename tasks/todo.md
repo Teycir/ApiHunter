@@ -23,10 +23,13 @@
     - added styles for multi-target textarea, CSV import controls, and cap warning state.
   - `docs/desktop.md`:
     - documented manual multi-target entry, CSV import, and 100-target backend limit.
+  - `apps/desktop/src-tauri/tauri.conf.json`:
+    - changed dev startup to `beforeDevCommand: npm run build` and removed `devUrl` so desktop dev no longer depends on a separate localhost Vite server.
 - Validation:
   - `npm run build` (in `apps/desktop`) ✅
   - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
   - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run tauri dev` (in `apps/desktop`) ✅
   - `npm run tauri build` (in `apps/desktop`) ✅
 
 ---

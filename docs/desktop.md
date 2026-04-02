@@ -64,6 +64,7 @@ npm run tauri dev
 ```
 
 Note: `npm run tauri ...` now runs a Linux preflight dependency check first and fails fast with an install command if GTK/WebKit libs are missing.
+Note: dev startup now builds and serves the bundled `dist` assets directly (no `localhost:1420` dependency), avoiding “Could not connect to localhost” windows when a separate dev server is not running.
 
 ## Frontend Build Check
 
