@@ -137,3 +137,5 @@
 - Rule: when asked to validate against vulnerable APIs, use Exa to curate target lists under `targets/`, add an ignored live test in `tests/`, and execute it outside sandbox with explicit opt-in.
 - User correction pattern: validation target inventories may need breadth, not just a minimal verified set.
 - Rule: when asked for more vulnerable targets, keep a stable default live list and add a separate expanded candidate list (capped to 10) to balance coverage with reliability.
+- User correction pattern: “10 targets” can mean 10 fully completed live scans, not just 10 listed candidates.
+- Rule: when a full-count validation is requested, require evidence of 10/10 completed scan summaries (single combined run preferred) before promoting target lists.

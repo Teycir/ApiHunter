@@ -1,3 +1,30 @@
+# Task: Full 10-Target Live Validation Completion (Phase 28)
+
+## Plan
+- [x] Build a deterministic sweep that validates targets individually with hard timeout protection.
+- [x] Collect a set of 10 targets that each complete scanning and emit findings.
+- [x] Re-run one combined ignored live test against the validated 10-target set.
+- [x] Promote validated targets to the canonical in-repo live target list and document outcomes.
+
+## Review
+- Validation approach:
+  - Executed per-target live checks using `tests/live_vulnerable_apis.rs` with `APIHUNTER_LIVE_VULN_TARGETS=<single_target>`.
+  - Accepted only targets with successful test completion and findings (`test result: ok. 1 passed`).
+  - Consolidated validated targets into `/tmp/apihunter_live_validated_10.txt` (10/10).
+- Final combined verification (outside sandbox):
+  - Command:
+    - `APIHUNTER_LIVE_VULN_TARGET_FILE=/tmp/apihunter_live_validated_10.txt cargo test --test live_vulnerable_apis -- --ignored --nocapture`
+  - Outcome: ✅ `test live_vulnerable_targets_emit_findings ... ok`
+  - Summary:
+    - `targets_with_findings=10`
+    - `aggregate_findings=109`
+    - finished in `169.62s`
+- Promoted canonical target lists:
+  - `targets/vuln-api-regression-real-public.txt` now contains the validated 10 fully scanned targets.
+  - `targets/vuln-api-regression-public-candidates-10.txt` reordered to the same proven set for stability.
+
+---
+
 # Task: Live Validation On Intentionally Vulnerable APIs (Phase 27)
 
 ## Plan
