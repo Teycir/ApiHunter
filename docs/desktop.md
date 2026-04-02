@@ -15,13 +15,14 @@ ApiHunter now includes a desktop app under `apps/desktop`.
 
 - Tauri 2 backend (`apps/desktop/src-tauri`) wired to the existing Rust scanner core.
 - React + Vite frontend (`apps/desktop/src`) with:
+  - branded header icon symbol for quick product recognition,
   - full scan profile form (active checks, dry-run, discovery, concurrency/timeouts/retries),
   - manual multi-target entry (one-per-line or comma-separated),
   - CSV target import,
   - per-scanner toggles,
-  - live event/log stream with progress bar,
+  - live event/log stream with progress bar and per-target completion cards for parallel runs,
   - findings summary cards and top-check list,
-  - export buttons for JSON, NDJSON, and SARIF.
+  - export controls for JSON, NDJSON, SARIF with size labels and one-click `Save All Reports`.
 - First backend commands:
   - `health_check`
   - `run_quick_scan`

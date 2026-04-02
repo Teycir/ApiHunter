@@ -1,3 +1,32 @@
+# Task: Desktop UX Upgrade (Icon + Parallel Targets + Exports) (Phase 35)
+
+## Plan
+- [x] Add a visible ApiHunter icon symbol in the desktop UI header.
+- [x] Improve multi-target parallel scan UX with clearer per-target progress visibility.
+- [x] Improve export UX for large multi-target runs (size visibility, save-all flow, safer filenames).
+- [x] Verify desktop frontend build passes and document outcomes.
+
+## Review
+- Changes made:
+  - `apps/desktop/src/App.tsx`:
+    - added branded SVG icon symbol to header (`BrandSymbol`).
+    - added target-quality indicators (`valid/invalid`) and effective parallel workers visibility.
+    - added per-target progress cards driven by streamed `progress` events to make multi-target concurrent runs easier to track.
+    - added export improvements:
+      - `Save All Reports` action
+      - per-format save buttons with approximate file size labels
+      - per-run safe filename prefix (`scanId + targetCount + timestamp`)
+      - saved-file list feedback for single/all exports.
+  - `apps/desktop/src/styles.css`:
+    - added styling for header icon/chips, target progress cards, and expanded export layout.
+  - `docs/desktop.md` + `README.md`:
+    - updated desktop feature descriptions to reflect parallel-target progress UI and export UX improvements.
+- Validation:
+  - `npm run build` (in `apps/desktop`) ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+
+---
+
 # Task: Desktop Clickable Launcher Icon (Phase 34)
 
 ## Plan

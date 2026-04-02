@@ -85,6 +85,15 @@ type ScanEventPayload = {
   elapsedMs?: number;
 };
 
+type TargetProgress = {
+  url: string;
+  status: "pending" | "completed";
+  findings: number;
+  critical: number;
+  high: number;
+  medium: number;
+};
+
 const DEFAULT_TOGGLES: ScanToggleState = {
   cors: true,
   csp: true,
@@ -114,6 +123,7 @@ const TOGGLE_FIELDS: Array<{ key: keyof ScanToggleState; label: string }> = [
 ];
 
 const MAX_TARGETS = 100;
+const TEXT_ENCODER = new TextEncoder();
 
 export default function App() {
   const tauriRuntimeAvailable = hasTauriIpc();
@@ -131,11 +141,15 @@ export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [exports, setExports] = useState<ScanExports | null>(null);
-  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [savedPaths, setSavedPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [totalUrls, setTotalUrls] = useState(0);
   const [completedUrls, setCompletedUrls] = useState(0);
+  const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
+  const [exportPrefix, setExportPrefix] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   useEffect(() => {
     if (!tauriRuntimeAvailable) {
@@ -156,6 +170,25 @@ export default function App() {
       }
       if (typeof payload.completedUrls === "number") {
         setCompletedUrls(payload.completedUrls);
+      }
+      if (payload.url && payload.event === "progress") {
+        setTargetProgress((prev) => {
+          const idx = prev.findIndex((item) => item.url === payload.url);
+          const updated: TargetProgress = {
+            url: payload.url ?? "",
+            status: "completed",
+            findings: payload.findings ?? 0,
+            critical: payload.critical ?? 0,
+            high: payload.high ?? 0,
+            medium: payload.medium ?? 0,
+          };
+          if (idx === -1) {
+            return [...prev, updated];
+          }
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        });
       }
     })
       .then((fn) => {
@@ -184,10 +217,29 @@ export default function App() {
     if (totalUrls <= 0) return 0;
     return Math.min(100, Math.round((completedUrls / totalUrls) * 100));
   }, [completedUrls, totalUrls]);
-  const targetCount = useMemo(
-    () => parseTargetsText(targetInput).length,
-    [targetInput],
+  const parsedTargets = useMemo(() => parseTargetsText(targetInput), [targetInput]);
+  const invalidTargets = useMemo(
+    () => parsedTargets.filter((target) => !isValidHttpUrl(target)),
+    [parsedTargets],
   );
+  const targetCount = parsedTargets.length;
+  const validTargetCount = targetCount - invalidTargets.length;
+  const effectiveParallel = useMemo(() => {
+    if (validTargetCount <= 0) {
+      return 0;
+    }
+    return Math.min(Math.max(1, concurrency), validTargetCount);
+  }, [concurrency, validTargetCount]);
+  const exportStats = useMemo(() => {
+    if (!exports) {
+      return null;
+    }
+    return {
+      json: TEXT_ENCODER.encode(exports.prettyJson).length,
+      ndjson: TEXT_ENCODER.encode(exports.ndjson).length,
+      sarif: TEXT_ENCODER.encode(exports.sarif).length,
+    };
+  }, [exports]);
 
   async function fetchHealth() {
     setError(null);
@@ -201,7 +253,7 @@ export default function App() {
 
   async function runFullScan(e: FormEvent) {
     e.preventDefault();
-    const targetUrls = parseTargetsText(targetInput);
+    const targetUrls = parsedTargets;
     if (targetUrls.length === 0) {
       setError("Add at least one target URL.");
       return;
@@ -210,15 +262,33 @@ export default function App() {
       setError(`A maximum of ${MAX_TARGETS} targets is allowed per scan.`);
       return;
     }
+    if (invalidTargets.length > 0) {
+      setError(
+        `Found ${invalidTargets.length} invalid target URL(s). Example: ${invalidTargets[0]}`,
+      );
+      return;
+    }
 
+    const startedAt = Date.now();
     setLoading(true);
     setError(null);
     setLogs([]);
     setSummary(null);
     setExports(null);
-    setSavedPath(null);
+    setSavedPaths([]);
     setTotalUrls(0);
     setCompletedUrls(0);
+    setExportPrefix(null);
+    setTargetProgress(
+      targetUrls.map((url) => ({
+        url,
+        status: "pending",
+        findings: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+      })),
+    );
 
     const request: FullScanRequest = {
       targetUrls,
@@ -238,6 +308,9 @@ export default function App() {
       });
       setSummary(result.summary);
       setExports(result.exports);
+      setExportPrefix(
+        buildExportPrefix(result.scanId, targetUrls.length, startedAt),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -309,36 +382,89 @@ export default function App() {
     filename: string,
     mimeType: string,
     content: string,
-  ): Promise<void> {
-    setError(null);
-    setSavedPath(null);
-
+  ): Promise<string> {
     if (!tauriRuntimeAvailable) {
       downloadText(filename, mimeType, content);
+      return filename;
+    }
+
+    const result = await invokeCommand<SaveExportResponse>("save_export", {
+      request: {
+        fileName: filename,
+        content,
+      },
+    });
+    return result.path;
+  }
+
+  async function saveSingleExport(
+    key: "json" | "ndjson" | "sarif",
+    filename: string,
+    mimeType: string,
+    content: string,
+  ): Promise<void> {
+    setError(null);
+    setSavedPaths([]);
+    setSavingKey(key);
+
+    try {
+      const path = await saveExport(filename, mimeType, content);
+      setSavedPaths([path]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function saveAllExports(): Promise<void> {
+    if (!exports) {
       return;
     }
 
+    setSavingAll(true);
+    setSavingKey(null);
+    setError(null);
+    setSavedPaths([]);
+
+    const jsonName = getExportFilename(exportPrefix, "json");
+    const ndjsonName = getExportFilename(exportPrefix, "ndjson");
+    const sarifName = getExportFilename(exportPrefix, "sarif");
+
     try {
-      const result = await invokeCommand<SaveExportResponse>("save_export", {
-        request: {
-          fileName: filename,
-          content,
-        },
-      });
-      setSavedPath(result.path);
+      const outputs = await Promise.all([
+        saveExport(jsonName, "application/json", exports.prettyJson),
+        saveExport(ndjsonName, "application/x-ndjson", exports.ndjson),
+        saveExport(sarifName, "application/json", exports.sarif),
+      ]);
+      setSavedPaths(outputs);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingAll(false);
     }
   }
 
   return (
     <main className="app-shell">
       <section className="panel panel-hero">
-        <h1>ApiHunter Desktop</h1>
+        <h1 className="hero-title">
+          <BrandSymbol />
+          <span>ApiHunter Desktop</span>
+        </h1>
         <p>
           Configure a scan profile, watch real-time progress events, and export
           reports directly from the desktop app.
         </p>
+        <div className="hero-metrics">
+          <span className="metric-chip">
+            targets: {validTargetCount}/{MAX_TARGETS}
+          </span>
+          <span className="metric-chip">parallel workers: {effectiveParallel}</span>
+          <span className="metric-chip">
+            exports: {exportStats ? "ready" : "pending"}
+          </span>
+        </div>
         {!tauriRuntimeAvailable && (
           <p className="status-error">
             Tauri runtime not detected. Use <code>npm run tauri dev</code> or
@@ -396,32 +522,66 @@ export default function App() {
             Enter one URL per line (or comma separated). CSV import appends to
             the same list.
           </p>
+          <div className="field-help">
+            <p>
+              URL separators: newline, comma (<code>,</code>) or semicolon (
+              <code>;</code>).
+            </p>
+            <p>
+              CSV format: values in any column are accepted. Header names like{" "}
+              <code>url</code>, <code>target</code>, <code>endpoint</code> are
+              ignored automatically.
+            </p>
+          </div>
+          {invalidTargets.length > 0 && (
+            <p className="status-error compact">
+              Invalid targets detected: {invalidTargets.length}. Example:{" "}
+              {invalidTargets[0]}
+            </p>
+          )}
 
           <div className="grid-options">
-            <label>
-              <input
-                type="checkbox"
-                checked={activeChecks}
-                onChange={(e) => setActiveChecks(e.target.checked)}
-              />
-              active checks
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={dryRun}
-                onChange={(e) => setDryRun(e.target.checked)}
-              />
-              dry run
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={noDiscovery}
-                onChange={(e) => setNoDiscovery(e.target.checked)}
-              />
-              no discovery
-            </label>
+            <div className="option-card">
+              <label title="Send active test probes (for example authz/mutation/rate-limit checks).">
+                <input
+                  type="checkbox"
+                  checked={activeChecks}
+                  onChange={(e) => setActiveChecks(e.target.checked)}
+                />
+                active checks
+              </label>
+              <p className="muted">
+                Enables probe-based testing beyond passive analysis. More
+                coverage, potentially more intrusive.
+              </p>
+            </div>
+            <div className="option-card">
+              <label title="Plan and simulate active checks without sending state-changing payloads where supported.">
+                <input
+                  type="checkbox"
+                  checked={dryRun}
+                  onChange={(e) => setDryRun(e.target.checked)}
+                />
+                dry run
+              </label>
+              <p className="muted">
+                Safer mode for active checks. Useful for first pass on production-like targets.
+              </p>
+            </div>
+            <div className="option-card">
+              <label title="Skip endpoint discovery and only scan the URLs you provided.">
+                <input
+                  type="checkbox"
+                  checked={noDiscovery}
+                  onChange={(e) => setNoDiscovery(e.target.checked)}
+                />
+                no discovery
+              </label>
+              <p className="muted">
+                Faster and more predictable scans for large target lists. Turn off to crawl for
+                additional endpoints.
+              </p>
+            </div>
           </div>
 
           <div className="grid-numbers">
@@ -495,6 +655,34 @@ export default function App() {
         <div className="progress-track" aria-hidden="true">
           <div className="progress-fill" style={{ width: `${progressPct}%` }} />
         </div>
+        {targetProgress.length > 0 && (
+          <div className="target-progress-wrap">
+            <div className="target-progress-header">
+              <p className="muted">
+                Completed: {completedUrls} | Remaining:{" "}
+                {Math.max(0, totalUrls - completedUrls)} | Concurrency:{" "}
+                {effectiveParallel}
+              </p>
+            </div>
+            <div className="target-progress-grid">
+              {targetProgress.map((item) => (
+                <article
+                  key={item.url}
+                  className={`target-progress-card ${item.status}`}
+                >
+                  <p className="target-url" title={item.url}>
+                    {item.url}
+                  </p>
+                  <p className="muted">
+                    {item.status === "completed"
+                      ? `${item.findings} findings (C:${item.critical} H:${item.high} M:${item.medium})`
+                      : "queued/running"}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="log-view">
           {logs.length === 0 ? (
             <p className="muted">No events yet.</p>
@@ -544,52 +732,106 @@ export default function App() {
           </div>
 
           {exports && (
-            <div className="export-row">
+            <div className="export-row exports-grid">
+              <button
+                type="button"
+                className="btn"
+                disabled={savingAll || savingKey !== null}
+                onClick={() => void saveAllExports()}
+              >
+                {savingAll ? "Saving all..." : "Save All Reports"}
+              </button>
               <button
                 type="button"
                 className="btn secondary"
+                disabled={savingAll || savingKey !== null}
                 onClick={() =>
-                  void saveExport(
-                    "apihunter-report.json",
+                  void saveSingleExport(
+                    "json",
+                    getExportFilename(exportPrefix, "json"),
                     "application/json",
                     exports.prettyJson,
                   )
                 }
               >
-                Download JSON
+                {savingKey === "json"
+                  ? "Saving JSON..."
+                  : `Save JSON (${formatBytes(exportStats?.json ?? 0)})`}
               </button>
               <button
                 type="button"
                 className="btn secondary"
+                disabled={savingAll || savingKey !== null}
                 onClick={() =>
-                  void saveExport(
-                    "apihunter-report.ndjson",
+                  void saveSingleExport(
+                    "ndjson",
+                    getExportFilename(exportPrefix, "ndjson"),
                     "application/x-ndjson",
                     exports.ndjson,
                   )
                 }
               >
-                Download NDJSON
+                {savingKey === "ndjson"
+                  ? "Saving NDJSON..."
+                  : `Save NDJSON (${formatBytes(exportStats?.ndjson ?? 0)})`}
               </button>
               <button
                 type="button"
                 className="btn secondary"
+                disabled={savingAll || savingKey !== null}
                 onClick={() =>
-                  void saveExport(
-                    "apihunter-report.sarif",
+                  void saveSingleExport(
+                    "sarif",
+                    getExportFilename(exportPrefix, "sarif"),
                     "application/json",
                     exports.sarif,
                   )
                 }
               >
-                Download SARIF
+                {savingKey === "sarif"
+                  ? "Saving SARIF..."
+                  : `Save SARIF (${formatBytes(exportStats?.sarif ?? 0)})`}
               </button>
+              <p className="muted">
+                For high target counts, export size can grow quickly. Use NDJSON
+                for stream-style ingestion and Save All for consistent per-run
+                filenames.
+              </p>
             </div>
           )}
-          {savedPath && <p className="status-ok">Saved file: {savedPath}</p>}
+          {savedPaths.length > 0 && (
+            <div className="status-ok">
+              <p>Saved files:</p>
+              <ul className="saved-paths">
+                {savedPaths.map((path) => (
+                  <li key={path}>{path}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
     </main>
+  );
+}
+
+function BrandSymbol() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="brand-symbol"
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="6" y="6" width="52" height="52" rx="12" fill="#0F4F95" />
+      <path
+        d="M32 14L46 20V31C46 41 39.2 49.8 32 52C24.8 49.8 18 41 18 31V20L32 14Z"
+        fill="#7CC8FF"
+      />
+      <circle cx="32" cy="31" r="8" fill="#0F4F95" />
+      <path d="M32 21V41M22 31H42" stroke="#FFFFFF" strokeWidth="3" />
+    </svg>
   );
 }
 
@@ -647,6 +889,57 @@ function dedupeTargets(values: string[]): string[] {
     targets.push(value);
   }
   return targets;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIdx = 0;
+  while (value >= 1024 && unitIdx < units.length - 1) {
+    value /= 1024;
+    unitIdx += 1;
+  }
+  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIdx]}`;
+}
+
+function getExportFilename(
+  prefix: string | null,
+  format: "json" | "ndjson" | "sarif",
+): string {
+  const safePrefix =
+    prefix ??
+    `apihunter-scan-${new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\..+$/, "")
+      .replace("T", "-")}`;
+  return `${safePrefix}.${format}`;
+}
+
+function buildExportPrefix(
+  scanId: number,
+  targetCount: number,
+  startedAtMs: number,
+): string {
+  const startedAt = new Date(startedAtMs);
+  const stamp = startedAt
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+$/, "")
+    .replace("T", "-");
+  return `apihunter-scan-${scanId}-${targetCount}targets-${stamp}`;
 }
 
 function hasTauriIpc(): boolean {

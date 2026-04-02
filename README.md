@@ -415,6 +415,8 @@ Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
 - CSV import via `Load CSV`
 - Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
+- Parallel-run progress cards with per-target completion/findings snapshots
+- Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
 
 If you want a release desktop binary:
 

@@ -155,3 +155,5 @@
 - Rule: when desktop UX is requested, provide a one-command launcher installer that creates `.desktop` entries with icon assets and verifies installed paths.
 - User correction pattern: icon-theme lookup by symbolic name in `.desktop` files can still render as generic gear on some Linux desktop setups.
 - Rule: default launcher installer to an absolute `Icon=/path/to/icon.png` value (not only icon theme name) for reliable shortcut rendering.
+- User correction pattern: rebuilt desktop code may appear unchanged when users launch a stale shortcut or already-running binary.
+- Rule: after UI changes, always rebuild and then verify launcher target (`.desktop` Exec path) points to the current repo `src-tauri/target/release/apihunter-desktop`; explicitly instruct restart from that binary.
