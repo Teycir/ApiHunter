@@ -40,6 +40,10 @@ ApiHunter uses a layered test strategy that prioritizes deterministic, local run
 - A manual ignored test exists for intentionally-vulnerable APIs: `tests/live_vulnerable_apis.rs` (run with `cargo test --test live_vulnerable_apis -- --ignored`).
 - The canonical validated 10-target list is `targets/vuln-api-regression-real-public.txt`.
 - To run against the expanded Exa candidate file, set `APIHUNTER_LIVE_VULN_TARGET_FILE=targets/vuln-api-regression-public-candidates-10.txt`.
+- A manual ignored real-world integration smoke test exists: `tests/live_real_world_targets.rs` (run with `cargo test --test live_real_world_targets -- --ignored`).
+- Default real-world target inventory: `targets/real-world-integration-public.txt` (override with `APIHUNTER_LIVE_REAL_TARGET_FILE` or `APIHUNTER_LIVE_REAL_TARGETS`).
+- Optional active mode for this test can be enabled with `APIHUNTER_LIVE_REAL_ENABLE_ACTIVE=1` (still runs with `dry_run=true`).
+- Optional WebSocket scanner coverage can be enabled with `APIHUNTER_LIVE_REAL_ENABLE_WEBSOCKET=1` (disabled by default for stability on heterogeneous public endpoints).
 
 ## Running Tests
 

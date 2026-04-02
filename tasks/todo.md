@@ -1,3 +1,75 @@
+# Task: Real-World Internet Integration Tests (Phase 30)
+
+## Plan
+- [x] Add a dedicated ignored integration test for real-world public targets under `tests/`.
+- [x] Add a curated default real-world target list under `targets/`.
+- [x] Document test execution and environment overrides in `docs/testing.md`.
+- [x] Execute the new ignored real-world integration test outside sandbox and capture outcomes.
+- [x] Record final review notes and any reliability caveats.
+
+## Review
+- Changes made:
+  - Added `tests/live_real_world_targets.rs`:
+    - ignored test `live_real_world_targets_smoke`
+    - target-loading env overrides:
+      - `APIHUNTER_LIVE_REAL_TARGETS` (CSV)
+      - `APIHUNTER_LIVE_REAL_TARGET_FILE` (file path)
+    - optional runtime toggles:
+      - `APIHUNTER_LIVE_REAL_ENABLE_ACTIVE=1` (keeps `dry_run=true`)
+      - `APIHUNTER_LIVE_REAL_ENABLE_WEBSOCKET=1` (disabled by default for stability)
+    - hard per-target timeout guard (`45s`) to prevent indefinite hangs on internet endpoints.
+  - Added `targets/real-world-integration-public.txt` with 10 public API targets.
+  - Updated `.gitignore` to track the new targets file.
+  - Updated `docs/testing.md` with real-world integration test commands and env controls.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo test --test live_real_world_targets -- --ignored --nocapture` (outside sandbox) ✅
+  - Real-world run summary:
+    - `targets=10`
+    - `completed=9`
+    - `timed_out=1` (`https://api.publicapis.org/`)
+    - `findings=97`
+    - `errors=1`
+    - `targets_without_errors=9`
+- Reliability caveat:
+  - Public internet targets are inherently variable. This suite is intentionally ignored and includes timeout protection plus env-based overrides to keep CI deterministic while still enabling reproducible live validation.
+
+---
+
+# Task: Full Feature Validation Matrix (Phase 29)
+
+## Plan
+- [x] Define a per-feature validation matrix that maps each scanner/module capability to concrete test commands.
+- [x] Execute deterministic per-feature tests outside sandbox.
+- [x] Execute full-suite regression (`cargo test --all-targets`) outside sandbox.
+- [x] Execute live 10-target ignored validation run against canonical list.
+- [x] Record pass/fail outcomes and any residual validation gaps.
+
+## Review
+- Deterministic feature-matrix validation (outside sandbox): ✅
+  - Executed per-module tests:
+    - `api_security_scanner`, `auth_flow`, `auth_refresh`, `burst_probe`, `cli`, `cors_scanner`,
+      `cve_templates_real_data`, `cve_templates_runtime_ext`, `cve_templates_scanner`,
+      `cve_templates_upstream_parity`, `graphql_scanner`, `http_client_retry_policy`,
+      `http_client_unauth`, `idor_scanner`, `integration_runner`, `jwt_scanner`,
+      `mass_assignment_scanner`, `oauth_oidc_scanner`, `openapi_scanner`, `rate_limit_scanner`,
+      `reports`, `scanner_names`, `session_file_formats`, `startup_inputs`,
+      `stateful_sequence_engine`, `template_tooling`, `waf_user_agents`, `websocket_scanner`.
+  - Outcome: `FEATURE_MATRIX_STATUS=PASS`.
+- Full-suite regression (outside sandbox): ✅
+  - Command: `cargo test --all-targets`
+  - Outcome: all test targets passed; ignored test remains only `live_vulnerable_targets_emit_findings`.
+- Live canonical 10-target validation (outside sandbox): ✅
+  - Command: `cargo test --test live_vulnerable_apis -- --ignored --nocapture`
+  - Canonical result in this session:
+    - `targets_with_findings=10`
+    - `aggregate_findings=109`
+    - `test live_vulnerable_targets_emit_findings ... ok`
+- Residual validation gap:
+  - Not every scanner is expected to trigger on the same public internet targets in one run; deterministic module tests are the primary proof for scanner-specific logic, while live runs validate real-network execution path.
+
+---
+
 # Task: Full 10-Target Live Validation Completion (Phase 28)
 
 ## Plan

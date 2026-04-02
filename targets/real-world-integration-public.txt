@@ -1,0 +1,14 @@
+# Real-world public API targets for internet integration smoke tests.
+# Captured on 2026-04-02. Availability can change.
+# Use only for authorized, low-impact validation.
+
+https://httpbin.org/
+https://postman-echo.com/
+https://jsonplaceholder.typicode.com/
+https://api.github.com/
+https://api.spacexdata.com/v4/
+https://petstore.swagger.io/v2/
+https://petstore3.swagger.io/api/v3/
+https://catfact.ninja/
+https://pokeapi.co/api/v2/
+https://api.publicapis.org/

@@ -15,3 +15,4 @@ targets/*
 gambling_scan_short_results.json
 targets/gambling*.txt
 !targets/vuln-api-regression-public-candidates-10.txt
+!targets/real-world-integration-public.txt
