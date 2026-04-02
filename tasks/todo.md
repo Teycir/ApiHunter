@@ -1,3 +1,73 @@
+# Task: Live Validation On Intentionally Vulnerable APIs (Phase 27)
+
+## Plan
+- [x] Use Exa to discover intentionally vulnerable API targets suitable for validation.
+- [x] Curate an in-repo public target list for manual live validation runs.
+- [x] Add an ignored live integration test that scans curated targets with low-impact settings.
+- [x] Document how to run the live validation test separately from default deterministic `cargo test`.
+- [x] Execute live validation test run outside sandbox and capture outcomes.
+- [x] Expand candidate target inventory to up to 10 Exa-sourced entries without destabilizing default live runs.
+
+## Review
+- Changes made:
+  - Added `targets/vuln-api-regression-real-public.txt` with Exa-sourced intentionally vulnerable targets:
+    - `http://vulnapi.testinvicti.com/`
+    - `http://rest.vulnweb.com/`
+    - `https://pentest-ground.com:9000/`
+  - Added `tests/live_vulnerable_apis.rs`:
+    - ignored test `live_vulnerable_targets_emit_findings`
+    - loads targets from file or env overrides (`APIHUNTER_LIVE_VULN_TARGETS`, `APIHUNTER_LIVE_VULN_TARGET_FILE`)
+    - enforces `MAX_LIVE_TARGETS=10` cap for bounded live validation runs.
+    - uses `runner::run` with low-impact live config:
+      - `--no-discovery` equivalent
+      - scanners limited to `openapi` + `api_security`
+      - `active_checks=true` + `dry_run=true`
+    - asserts at least one curated target emits findings.
+  - Added `targets/vuln-api-regression-public-candidates-10.txt` with an expanded Exa candidate set (10 targets).
+  - Updated `docs/testing.md` to document the ignored live validation test and run command.
+- Pending verification:
+  - Live run executed outside sandbox:
+    - `cargo test --test live_vulnerable_apis -- --ignored --nocapture` ✅
+    - Results:
+      - `http://vulnapi.testinvicti.com/` -> `22` findings, `1` error
+      - `http://rest.vulnweb.com/` -> `11` findings, `0` errors
+      - `https://pentest-ground.com:9000/` -> `16` findings, `0` errors
+      - Aggregate: `49` findings across `3/3` targets with findings
+
+---
+
+# Task: OpenAPI Active Bug-Hunting Expansion (Phase 26)
+
+## Plan
+- [x] Implement schema-aware active fuzzing from OpenAPI request-body schemas with suspicious-response detection.
+- [x] Add concurrent race probes for sensitive mutation endpoints using duplicate-request bursts and idempotency tokens.
+- [x] Add optional OAST callback injection probes with correlation tokens (`APIHUNTER_OAST_BASE`).
+- [x] Add regression tests under `tests/` for schema fuzzing, race probe detection, and OAST dispatch evidence.
+- [x] Re-run quality gates (`fmt`, `clippy`, `test`) and record outcomes.
+
+## Review
+- Changes made:
+  - `src/scanner/openapi.rs`:
+    - Added active schema-aware probe pipeline driven by OpenAPI request schemas.
+    - Added payload synthesis from schema constructs (`type`, `required`, `enum`, `example`, `oneOf`/`anyOf`/`allOf`, refs).
+    - Added fuzz variants (string injection + scalar type-confusion), suspicious-response detection, and confidence/metadata scoring.
+    - Added race probes for sensitive mutation paths (`transfer`, `payment`, `order`, `checkout`, etc.) using concurrent duplicate bursts.
+    - Added OAST callback injection for URL-like fields when `APIHUNTER_OAST_BASE` is set; emits correlation-token evidence.
+    - Preserved existing passive OpenAPI checks.
+  - `src/http_client.rs`:
+    - Added `request_burst(...)` helper to support concurrent non-GET burst probes without host-delay/retry orchestration.
+  - `tests/openapi_scanner.rs` (new):
+    - `schema_fuzzing_reports_suspicious_variant_behavior`
+    - `race_probe_flags_duplicate_successes_on_sensitive_operation`
+    - `oast_probe_is_dispatched_when_oast_env_is_set`
+- Verification:
+  - `cargo check --tests` ✅
+  - `cargo fmt --all` ✅
+  - `cargo clippy --all-targets --all-features -- -D warnings` ✅
+  - `cargo test --all-targets` (outside sandbox) ✅
+
+---
+
 # Task: Bug-Hunting Capacity Expansion (Phase 25)
 
 ## Plan

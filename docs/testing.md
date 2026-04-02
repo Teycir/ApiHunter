@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-03-19
+last_updated: 2026-04-02
 tags: [testing, strategy, unit-tests, integration-tests, wiremock, fixtures]
 category: Testing Guide
 ---
@@ -37,6 +37,8 @@ ApiHunter uses a layered test strategy that prioritizes deterministic, local run
 
 - Live internet target scanning is not part of the default automated suite.
 - Optional real-target validation can be run manually with `ScanScripts/*.sh` and explicit target lists under `targets/`.
+- A manual ignored test exists for intentionally-vulnerable APIs: `tests/live_vulnerable_apis.rs` (run with `cargo test --test live_vulnerable_apis -- --ignored`).
+- To use an expanded Exa candidate list (up to 10 targets), set `APIHUNTER_LIVE_VULN_TARGET_FILE=targets/vuln-api-regression-public-candidates-10.txt` for the ignored live test run.
 
 ## Running Tests
 
@@ -50,4 +52,3 @@ cargo test --test integration_runner
 # Full local suite
 cargo test
 ```
-

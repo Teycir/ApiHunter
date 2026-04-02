@@ -1,0 +1,7 @@
+# Real internet targets for intentionally-vulnerable API validation.
+# Source discovery: Exa search on 2026-04-02.
+# Use only for authorized, low-impact validation runs.
+
+http://vulnapi.testinvicti.com/
+http://rest.vulnweb.com/
+https://pentest-ground.com:9000/

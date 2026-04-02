@@ -11,5 +11,7 @@ gambling_scan_results.json
 targets/*
 !targets/cve-regression-real-public.txt
 !targets/cve-regression-vulhub-local.txt
+!targets/vuln-api-regression-real-public.txt
 gambling_scan_short_results.json
 targets/gambling*.txt
+!targets/vuln-api-regression-public-candidates-10.txt

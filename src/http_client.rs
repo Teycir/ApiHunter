@@ -631,6 +631,19 @@ impl HttpClient {
         self.send_once(Method::GET, url, None, None).await
     }
 
+    /// Generic burst request helper: bypasses host-delay and retry orchestration
+    /// so scanners can issue near-simultaneous probes for race-condition checks.
+    pub async fn request_burst(
+        &self,
+        method: Method,
+        url: &str,
+        extra: Option<HeaderMap>,
+        body: Option<serde_json::Value>,
+    ) -> Result<HttpResponse, CapturedError> {
+        self.request_count.fetch_add(1, Ordering::Relaxed);
+        self.send_once(method, url, extra, body).await
+    }
+
     /// GET with extra request headers specified as `[(name, value)]` pairs.
     pub async fn get_with_headers(
         &self,

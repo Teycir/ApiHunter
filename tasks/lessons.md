@@ -131,3 +131,9 @@
 - Rule: maintain a dedicated testing strategy doc (`docs/testing.md`) with an explicit test matrix (unit/scanner, integration, fixture, mock-server, live-target manual scope), and keep README + docs index linked to it.
 - User correction pattern: CI dependency-audit steps can fail from integration permission limits even when vulnerabilities are absent.
 - Rule: for GitHub RustSec audit workflows, declare explicit token permissions and provide a fork-safe `cargo audit` fallback to avoid `Resource not accessible by integration` blockers.
+
+## 2026-04-02
+- User correction pattern: validation requests can require real intentionally-vulnerable API targets, not only mocked fixtures.
+- Rule: when asked to validate against vulnerable APIs, use Exa to curate target lists under `targets/`, add an ignored live test in `tests/`, and execute it outside sandbox with explicit opt-in.
+- User correction pattern: validation target inventories may need breadth, not just a minimal verified set.
+- Rule: when asked for more vulnerable targets, keep a stable default live list and add a separate expanded candidate list (capped to 10) to balance coverage with reliability.

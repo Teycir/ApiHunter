@@ -1,0 +1,14 @@
+# Exa-expanded intentionally vulnerable API/application target candidates.
+# Captured on 2026-04-02; availability may change over time.
+# Use only for authorized, low-impact validation.
+
+http://vulnapi.testinvicti.com/
+http://rest.vulnweb.com/
+https://pentest-ground.com:9000/
+https://pentest-ground.com:5013/
+https://demo.owasp-juice.shop/
+https://juice-shop.herokuapp.com/
+http://testphp.vulnweb.com/
+http://testasp.vulnweb.com/
+http://zero.webappsecurity.com/
+https://demo.testfire.net/
