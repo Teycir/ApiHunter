@@ -1,13 +1,27 @@
 # Task: Publish Readiness Completion (Phase 23)
 
 ## Plan
-- [ ] Re-validate crate packaging with `cargo package --list --allow-dirty` and `cargo package --allow-dirty`.
-- [ ] Fix any remaining package-content or metadata issues discovered during validation.
-- [ ] Re-run quality gates (`fmt`, `clippy`, `test`) and capture evidence.
-- [ ] Document final publish-readiness status, including any external blockers for live `cargo publish`.
+- [x] Re-validate crate packaging with `cargo package --list --allow-dirty` and `cargo package --allow-dirty`.
+- [x] Fix any remaining package-content or metadata issues discovered during validation.
+- [x] Re-run quality gates (`fmt`, `clippy`, `test`) and capture evidence.
+- [x] Document final publish-readiness status, including any external blockers for live `cargo publish`.
 
 ## Review
-- Pending.
+- Root cause:
+  - Package-content hygiene checks were only documented/manual, so regressions could reintroduce local/dev-only paths into published crate payloads without CI enforcement.
+- Changes made:
+  - `.github/workflows/ci.yml`:
+    - added a `Package hygiene` step that runs `cargo package --list --allow-dirty` and fails if any of these path classes appear in the package payload:
+      - `.codex`, `.history`, `.tmp`, `.qodo`, `.trunk`, `tasks`, `targets`, `tests`, `.github`.
+- Verification:
+  - `cargo package --list --allow-dirty` ✅
+  - `CARGO_TARGET_DIR=/tmp/apihunter-package-target-<timestamp> cargo package --allow-dirty --no-verify` ✅
+  - `CARGO_TARGET_DIR=/tmp/apihunter-package-verify-<timestamp> cargo package --allow-dirty` ✅
+  - `cargo fmt --all -- --check` ✅
+  - `cargo clippy --all-targets --all-features -- -D warnings` ✅
+  - `cargo test --all-targets` (outside sandbox) ✅
+- Publish status:
+  - Live `cargo publish` not executed in this phase (requires explicit release intent and a configured crates.io token in environment).
 
 ---
 
@@ -88,7 +102,7 @@
 
 ## Plan
 - [x] Add crates.io package metadata and publish excludes in `Cargo.toml`.
-- [ ] Validate package contents with `cargo package --list` and `cargo package`.
+- [x] Validate package contents with `cargo package --list` and `cargo package`.
 - [ ] Publish using `cargo publish` via environment token (without logging secrets).
 - [ ] Record publish outcome and crate URL.
 
@@ -97,7 +111,8 @@
   - `description`, `license`, `readme`, `repository`, `homepage`, `documentation`,
   - `keywords`, `categories`, and `rust-version`.
 - Added `exclude` patterns to keep release artifacts and local task/history folders out of published crate.
-- Pending: final packaging validation and networked publish step.
+- Completed packaging validation with `cargo package --list --allow-dirty` and `cargo package --allow-dirty`.
+- Pending: networked `cargo publish` step with release token and explicit release approval.
 
 ---
 

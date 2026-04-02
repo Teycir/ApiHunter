@@ -39,6 +39,15 @@ jobs:
       - name: Build
         run: cargo build --all-targets --locked
 
+      - name: Package hygiene
+        run: |
+          set -euo pipefail
+          PACKAGE_LIST="$(cargo package --list --allow-dirty)"
+          if echo "$PACKAGE_LIST" | grep -En '(^|/)(\.codex|\.history|\.tmp|\.qodo|\.trunk|tasks|targets|tests|\.github)(/|$)'; then
+            echo "Found local/dev-only paths in package payload."
+            exit 1
+          fi
+
       - name: Security audit (trusted events)
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: rustsec/audit-check@v2.0.0
