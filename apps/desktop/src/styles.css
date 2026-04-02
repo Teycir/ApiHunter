@@ -171,13 +171,62 @@ body {
 
 .grid-numbers {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
 }
 
 .grid-numbers label {
   display: grid;
   gap: 6px;
+}
+
+.advanced-panel {
+  border: 1px solid #cfdae8;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px 12px;
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.advanced-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.advanced-grid.two-cols {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.advanced-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.advanced-grid textarea {
+  min-height: 90px;
+}
+
+.advanced-toggles {
+  margin-top: 10px;
+  border: 1px solid #d7e1ec;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.advanced-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .toggle-grid {

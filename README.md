@@ -415,6 +415,9 @@ Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
 - CSV import via `Load CSV`
 - Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
+- Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
+- Advanced controls: proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle
+- Performance controls: per-host clients, adaptive concurrency, WAF evasion with custom user-agent pool
 - Parallel-run progress cards with per-target completion/findings snapshots
 - Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
 

@@ -1,3 +1,41 @@
+# Task: Desktop Feature Parity Batch 1 (Transport/Auth + Scope + Performance) (Phase 36)
+
+## Plan
+- [x] Extend desktop request model/UI with advanced controls:
+  - transport/auth (`proxy`, `headers`, `cookies`, `auth bearer`, `auth basic`, `danger accept invalid certs`)
+  - scope (`max endpoints`, `accessibility filter on/off`, `filter timeout`)
+  - performance (`per-host clients`, `adaptive concurrency`, `waf evasion`, optional user-agent pool)
+- [x] Wire new request fields through Tauri backend (`FullScanRequest` -> `Config`) with robust validation/parsing.
+- [x] Implement desktop accessibility pre-filtering behavior parity (`no_filter` / `filter_timeout`) before scan execution.
+- [x] Update desktop docs to reflect the new advanced controls.
+- [x] Validate build (`npm run build` + `npm run tauri build`) and record review notes.
+
+## Review
+- Changes made:
+  - `apps/desktop/src/App.tsx`:
+    - expanded `FullScanRequest` payload with scope/transport/auth/performance fields.
+    - added new controls:
+      - scope: `no filter`, `filter timeout`, `max endpoints/site`
+      - transport/auth: proxy, headers, cookies, bearer token, basic auth, TLS invalid-cert toggle, unauth-strip headers
+      - performance: WAF evasion, per-host clients, adaptive concurrency, user-agent pool
+    - added client-side validation for `filter timeout` and `auth basic` format.
+  - `apps/desktop/src/styles.css`:
+    - added styles for advanced settings panel and grouped control layout.
+  - `apps/desktop/src-tauri/src/main.rs`:
+    - expanded backend request model with the new fields.
+    - added parsing/validation helpers for headers/cookies/auth and normalized optional values.
+    - mapped advanced fields into scanner `Config`.
+    - added optional pre-scan accessibility filtering (`no_filter` + `filter_timeout`) before starting the full run.
+  - `apps/desktop/src-tauri/Cargo.toml`:
+    - added `base64` dependency for desktop-side basic-auth header construction parity.
+  - Docs:
+    - updated `docs/desktop.md` and `README.md` desktop section with advanced-control coverage.
+- Validation:
+  - `npm run build` (in `apps/desktop`) ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+
+---
+
 # Task: Desktop UX Upgrade (Icon + Parallel Targets + Exports) (Phase 35)
 
 ## Plan

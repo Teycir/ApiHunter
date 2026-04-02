@@ -27,10 +27,24 @@ type FullScanRequest = {
   activeChecks: boolean;
   dryRun: boolean;
   noDiscovery: boolean;
+  noFilter: boolean;
+  filterTimeout: number;
+  maxEndpoints: number;
   concurrency: number;
   timeoutSecs: number;
   retries: number;
   delayMs: number;
+  wafEvasion: boolean;
+  userAgents: string[];
+  perHostClients: boolean;
+  adaptiveConcurrency: boolean;
+  headers: string[];
+  cookies: string[];
+  proxy: string | null;
+  dangerAcceptInvalidCerts: boolean;
+  authBearer: string | null;
+  authBasic: string | null;
+  unauthStripHeaders: string[];
   toggles: ScanToggleState;
 };
 
@@ -131,10 +145,24 @@ export default function App() {
   const [activeChecks, setActiveChecks] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [noDiscovery, setNoDiscovery] = useState(true);
+  const [noFilter, setNoFilter] = useState(false);
+  const [filterTimeout, setFilterTimeout] = useState(3);
+  const [maxEndpoints, setMaxEndpoints] = useState(50);
   const [concurrency, setConcurrency] = useState(4);
   const [timeoutSecs, setTimeoutSecs] = useState(15);
   const [retries, setRetries] = useState(1);
   const [delayMs, setDelayMs] = useState(0);
+  const [wafEvasion, setWafEvasion] = useState(false);
+  const [perHostClients, setPerHostClients] = useState(false);
+  const [adaptiveConcurrency, setAdaptiveConcurrency] = useState(false);
+  const [proxy, setProxy] = useState("");
+  const [dangerAcceptInvalidCerts, setDangerAcceptInvalidCerts] = useState(false);
+  const [headersInput, setHeadersInput] = useState("");
+  const [cookiesInput, setCookiesInput] = useState("");
+  const [authBearer, setAuthBearer] = useState("");
+  const [authBasic, setAuthBasic] = useState("");
+  const [unauthStripHeadersInput, setUnauthStripHeadersInput] = useState("");
+  const [userAgentsInput, setUserAgentsInput] = useState("");
   const [toggles, setToggles] = useState<ScanToggleState>(DEFAULT_TOGGLES);
 
   const [loading, setLoading] = useState(false);
@@ -268,6 +296,14 @@ export default function App() {
       );
       return;
     }
+    if (!noFilter && filterTimeout < 1) {
+      setError("Filter timeout must be at least 1 second when filtering is enabled.");
+      return;
+    }
+    if (authBasic.trim().length > 0 && !authBasic.includes(":")) {
+      setError("auth basic must use USER:PASS format.");
+      return;
+    }
 
     const startedAt = Date.now();
     setLoading(true);
@@ -295,10 +331,24 @@ export default function App() {
       activeChecks,
       dryRun,
       noDiscovery,
+      noFilter,
+      filterTimeout: Math.max(1, filterTimeout),
+      maxEndpoints: Math.max(0, maxEndpoints),
       concurrency: Math.max(1, concurrency),
       timeoutSecs: Math.max(1, timeoutSecs),
       retries: Math.max(0, retries),
       delayMs: Math.max(0, delayMs),
+      wafEvasion,
+      userAgents: parseLineList(userAgentsInput),
+      perHostClients,
+      adaptiveConcurrency,
+      headers: parseLineList(headersInput),
+      cookies: parseLineList(cookiesInput),
+      proxy: proxy.trim().length > 0 ? proxy.trim() : null,
+      dangerAcceptInvalidCerts,
+      authBearer: authBearer.trim().length > 0 ? authBearer.trim() : null,
+      authBasic: authBasic.trim().length > 0 ? authBasic.trim() : null,
+      unauthStripHeaders: parseTokenList(unauthStripHeadersInput),
       toggles,
     };
 
@@ -582,6 +632,33 @@ export default function App() {
                 additional endpoints.
               </p>
             </div>
+            <div className="option-card">
+              <label title="Skip the pre-scan accessibility check and scan all provided targets directly.">
+                <input
+                  type="checkbox"
+                  checked={noFilter}
+                  onChange={(e) => setNoFilter(e.target.checked)}
+                />
+                no filter
+              </label>
+              <p className="muted">
+                Disables reachability pre-check. Use this for strict target sets where blocked URLs
+                should still be attempted.
+              </p>
+            </div>
+            <div className="option-card">
+              <label title="Allow self-signed/invalid TLS certificates (dangerous).">
+                <input
+                  type="checkbox"
+                  checked={dangerAcceptInvalidCerts}
+                  onChange={(e) => setDangerAcceptInvalidCerts(e.target.checked)}
+                />
+                accept invalid TLS certs
+              </label>
+              <p className="muted">
+                Use only in controlled environments. This lowers transport security validation.
+              </p>
+            </div>
           </div>
 
           <div className="grid-numbers">
@@ -621,7 +698,125 @@ export default function App() {
                 onChange={(e) => setDelayMs(Number(e.target.value))}
               />
             </label>
+            <label>
+              max endpoints/site
+              <input
+                type="number"
+                min={0}
+                value={maxEndpoints}
+                onChange={(e) => setMaxEndpoints(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              filter timeout secs
+              <input
+                type="number"
+                min={1}
+                disabled={noFilter}
+                value={filterTimeout}
+                onChange={(e) => setFilterTimeout(Number(e.target.value))}
+              />
+            </label>
           </div>
+
+          <details className="advanced-panel">
+            <summary>Advanced Transport, Auth, and Performance</summary>
+            <div className="advanced-grid">
+              <label>
+                proxy URL
+                <input
+                  type="text"
+                  value={proxy}
+                  onChange={(e) => setProxy(e.target.value)}
+                  placeholder="http://127.0.0.1:8080"
+                />
+              </label>
+              <label>
+                auth bearer token
+                <input
+                  type="password"
+                  value={authBearer}
+                  onChange={(e) => setAuthBearer(e.target.value)}
+                  placeholder="eyJhbGciOi..."
+                />
+              </label>
+              <label>
+                auth basic (user:pass)
+                <input
+                  type="text"
+                  value={authBasic}
+                  onChange={(e) => setAuthBasic(e.target.value)}
+                  placeholder="username:password"
+                />
+              </label>
+            </div>
+
+            <div className="advanced-grid two-cols">
+              <label>
+                default headers (one per line, NAME:VALUE)
+                <textarea
+                  rows={4}
+                  value={headersInput}
+                  onChange={(e) => setHeadersInput(e.target.value)}
+                  placeholder={"X-Api-Key: abc123\nX-Tenant-Id: demo"}
+                />
+              </label>
+              <label>
+                cookies (one per line, NAME=VALUE)
+                <textarea
+                  rows={4}
+                  value={cookiesInput}
+                  onChange={(e) => setCookiesInput(e.target.value)}
+                  placeholder={"session=abc123\nfeature_flag=true"}
+                />
+              </label>
+              <label>
+                user-agent pool (one per line, enables WAF evasion)
+                <textarea
+                  rows={4}
+                  value={userAgentsInput}
+                  onChange={(e) => setUserAgentsInput(e.target.value)}
+                  placeholder={"Mozilla/5.0 ...\nApiHunterDesktop/0.1"}
+                />
+              </label>
+              <label>
+                unauth strip headers (comma/newline)
+                <textarea
+                  rows={4}
+                  value={unauthStripHeadersInput}
+                  onChange={(e) => setUnauthStripHeadersInput(e.target.value)}
+                  placeholder={"Authorization\nX-Api-Key"}
+                />
+              </label>
+            </div>
+
+            <div className="advanced-toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={wafEvasion}
+                  onChange={(e) => setWafEvasion(e.target.checked)}
+                />
+                waf evasion
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={perHostClients}
+                  onChange={(e) => setPerHostClients(e.target.checked)}
+                />
+                per-host clients
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={adaptiveConcurrency}
+                  onChange={(e) => setAdaptiveConcurrency(e.target.checked)}
+                />
+                adaptive concurrency
+              </label>
+            </div>
+          </details>
 
           <fieldset className="toggle-grid">
             <legend>Scanner toggles</legend>
@@ -833,6 +1028,20 @@ function BrandSymbol() {
       <path d="M32 21V41M22 31H42" stroke="#FFFFFF" strokeWidth="3" />
     </svg>
   );
+}
+
+function parseLineList(input: string): string[] {
+  return input
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function parseTokenList(input: string): string[] {
+  return input
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function parseTargetsText(input: string): string[] {

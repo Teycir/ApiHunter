@@ -157,3 +157,5 @@
 - Rule: default launcher installer to an absolute `Icon=/path/to/icon.png` value (not only icon theme name) for reliable shortcut rendering.
 - User correction pattern: rebuilt desktop code may appear unchanged when users launch a stale shortcut or already-running binary.
 - Rule: after UI changes, always rebuild and then verify launcher target (`.desktop` Exec path) points to the current repo `src-tauri/target/release/apihunter-desktop`; explicitly instruct restart from that binary.
+- User correction pattern: desktop users can expect near-CLI feature coverage and quickly notice missing operational controls.
+- Rule: after each desktop milestone, run a feature-parity audit (`src/cli.rs` flags vs desktop request/UI) and prioritize wiring missing scope/transport/auth/performance controls before polishing visuals.

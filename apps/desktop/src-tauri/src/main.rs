@@ -14,6 +14,7 @@ use api_scanner::{
     reports::{self, Finding, ReportConfig, ReportFormat, Reporter, Severity},
     runner::{self, ProgressEvent},
 };
+use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
@@ -70,10 +71,24 @@ struct FullScanRequest {
     active_checks: bool,
     dry_run: bool,
     no_discovery: bool,
+    no_filter: bool,
+    filter_timeout: u64,
+    max_endpoints: usize,
     concurrency: usize,
     timeout_secs: u64,
     retries: u32,
     delay_ms: u64,
+    waf_evasion: bool,
+    user_agents: Vec<String>,
+    headers: Vec<String>,
+    cookies: Vec<String>,
+    proxy: Option<String>,
+    danger_accept_invalid_certs: bool,
+    auth_bearer: Option<String>,
+    auth_basic: Option<String>,
+    unauth_strip_headers: Vec<String>,
+    per_host_clients: bool,
+    adaptive_concurrency: bool,
     toggles: ScanToggleRequest,
 }
 
@@ -85,10 +100,24 @@ impl FullScanRequest {
             active_checks: false,
             dry_run: true,
             no_discovery: true,
+            no_filter: false,
+            filter_timeout: 3,
+            max_endpoints: 50,
             concurrency: 4,
             timeout_secs: 15,
             retries: 1,
             delay_ms: 0,
+            waf_evasion: false,
+            user_agents: Vec::new(),
+            headers: Vec::new(),
+            cookies: Vec::new(),
+            proxy: None,
+            danger_accept_invalid_certs: false,
+            auth_bearer: None,
+            auth_basic: None,
+            unauth_strip_headers: Vec::new(),
+            per_host_clients: false,
+            adaptive_concurrency: false,
             toggles: ScanToggleRequest {
                 cors: true,
                 csp: true,
@@ -369,27 +398,46 @@ async fn run_full_scan_impl(
         }
     }
 
-    let scan_id = NEXT_SCAN_ID.fetch_add(1, Ordering::Relaxed);
-    emit_scan_event(
-        &app,
-        ScanEventPayload {
-            scan_id,
-            event: "log".to_string(),
-            message: format!("Starting scan for {} targets", targets.len()),
-            total_urls: None,
-            completed_urls: None,
-            url: None,
-            findings: None,
-            critical: None,
-            high: None,
-            medium: None,
-            errors: None,
-            elapsed_ms: None,
-        },
-    );
+    if !request.no_filter && request.filter_timeout == 0 {
+        return Err(
+            "filterTimeout must be greater than 0 when accessibility filtering is enabled."
+                .to_string(),
+        );
+    }
+    if request.concurrency == 0 {
+        return Err("concurrency must be greater than 0.".to_string());
+    }
+
+    let auth_bearer = normalize_optional_string(request.auth_bearer);
+    if let Some(token) = &auth_bearer {
+        if token.chars().any(char::is_whitespace) {
+            return Err("authBearer must not contain whitespace.".to_string());
+        }
+    }
+
+    let auth_basic = normalize_optional_string(request.auth_basic);
+    if let Some(creds) = &auth_basic {
+        let Some((user, pass)) = creds.split_once(':') else {
+            return Err("authBasic must use USER:PASS format.".to_string());
+        };
+        if user.is_empty() || pass.is_empty() {
+            return Err("authBasic must include non-empty USER and PASS.".to_string());
+        }
+    }
+
+    let proxy = normalize_optional_string(request.proxy);
+    let headers = parse_default_headers(&request.headers, &auth_bearer, &auth_basic)?;
+    let cookies = parse_cookies(&request.cookies)?;
+    let user_agents = sanitize_string_list(&request.user_agents);
+    let unauth_strip_headers = sanitize_string_list(&request.unauth_strip_headers);
+    let max_endpoints = if request.max_endpoints == 0 {
+        usize::MAX
+    } else {
+        request.max_endpoints
+    };
 
     let config = Arc::new(Config {
-        max_endpoints: usize::MAX,
+        max_endpoints,
         concurrency: request.concurrency.max(1),
         politeness: PolitenessConfig {
             delay_ms: request.delay_ms,
@@ -397,25 +445,25 @@ async fn run_full_scan_impl(
             timeout_secs: request.timeout_secs.max(1),
         },
         waf_evasion: WafEvasionConfig {
-            enabled: false,
-            user_agents: Vec::new(),
+            enabled: request.waf_evasion || !user_agents.is_empty(),
+            user_agents,
         },
-        default_headers: Vec::new(),
-        cookies: Vec::new(),
-        proxy: None,
-        danger_accept_invalid_certs: false,
+        default_headers: headers,
+        cookies,
+        proxy,
+        danger_accept_invalid_certs: request.danger_accept_invalid_certs,
         active_checks: request.active_checks,
         dry_run: request.dry_run,
         stream_findings: false,
         baseline_path: None,
         session_file: None,
-        auth_bearer: None,
-        auth_basic: None,
+        auth_bearer,
+        auth_basic,
         auth_flow: None,
         auth_flow_b: None,
-        unauth_strip_headers: Vec::new(),
-        per_host_clients: false,
-        adaptive_concurrency: false,
+        unauth_strip_headers,
+        per_host_clients: request.per_host_clients,
+        adaptive_concurrency: request.adaptive_concurrency,
         no_discovery: request.no_discovery,
         quiet: true,
         toggles: ScannerToggles {
@@ -432,6 +480,82 @@ async fn run_full_scan_impl(
             websocket: request.toggles.websocket,
         },
     });
+
+    let scan_id = NEXT_SCAN_ID.fetch_add(1, Ordering::Relaxed);
+    let mut scan_targets = targets;
+
+    if !request.no_filter {
+        emit_scan_event(
+            &app,
+            ScanEventPayload {
+                scan_id,
+                event: "log".to_string(),
+                message: format!(
+                    "Filtering {} targets for reachability (timeout: {}s)",
+                    scan_targets.len(),
+                    request.filter_timeout
+                ),
+                total_urls: None,
+                completed_urls: None,
+                url: None,
+                findings: None,
+                critical: None,
+                high: None,
+                medium: None,
+                errors: None,
+                elapsed_ms: None,
+            },
+        );
+
+        let (accessible, inaccessible) =
+            filter_accessible_urls(&scan_targets, config.as_ref(), request.filter_timeout).await;
+        if !inaccessible.is_empty() {
+            emit_scan_event(
+                &app,
+                ScanEventPayload {
+                    scan_id,
+                    event: "log".to_string(),
+                    message: format!(
+                        "Filtered out {} inaccessible target(s); continuing with {}.",
+                        inaccessible.len(),
+                        accessible.len()
+                    ),
+                    total_urls: None,
+                    completed_urls: None,
+                    url: None,
+                    findings: None,
+                    critical: None,
+                    high: None,
+                    medium: None,
+                    errors: None,
+                    elapsed_ms: None,
+                },
+            );
+        }
+        scan_targets = accessible;
+    }
+
+    if scan_targets.is_empty() {
+        return Err("No accessible targets remain after filtering.".to_string());
+    }
+
+    emit_scan_event(
+        &app,
+        ScanEventPayload {
+            scan_id,
+            event: "log".to_string(),
+            message: format!("Starting scan for {} targets", scan_targets.len()),
+            total_urls: None,
+            completed_urls: None,
+            url: None,
+            findings: None,
+            critical: None,
+            high: None,
+            medium: None,
+            errors: None,
+            elapsed_ms: None,
+        },
+    );
 
     let http_client = Arc::new(HttpClient::new(&config).map_err(|e| e.to_string())?);
     let reporter_cfg = ReportConfig {
@@ -534,7 +658,7 @@ async fn run_full_scan_impl(
 
     let progress_tx_for_runner = progress_tx.clone();
     let run_result = runner::run_with_progress(
-        targets.clone(),
+        scan_targets.clone(),
         Arc::clone(&config),
         http_client,
         None,
@@ -547,7 +671,7 @@ async fn run_full_scan_impl(
     drop(progress_tx);
     let _ = progress_task.await;
 
-    let summary = summarize_run(&targets, &run_result);
+    let summary = summarize_run(&scan_targets, &run_result);
     let exports = build_exports(&run_result)?;
 
     emit_scan_event(
@@ -576,6 +700,97 @@ async fn run_full_scan_impl(
         summary,
         exports,
     })
+}
+
+fn normalize_optional_string(input: Option<String>) -> Option<String> {
+    input
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn sanitize_string_list(raws: &[String]) -> Vec<String> {
+    raws.iter()
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+fn parse_default_headers(
+    raws: &[String],
+    auth_bearer: &Option<String>,
+    auth_basic: &Option<String>,
+) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+
+    for raw in raws {
+        let mut parts = raw.splitn(2, ':');
+        let name = parts.next().unwrap_or("").trim();
+        let value = parts.next().unwrap_or("").trim();
+        if name.is_empty() || value.is_empty() {
+            return Err(format!(
+                "Invalid header format: '{raw}' (expected NAME:VALUE)."
+            ));
+        }
+        out.push((name.to_string(), value.to_string()));
+    }
+
+    let has_auth = out
+        .iter()
+        .any(|(key, _)| key.eq_ignore_ascii_case("authorization"));
+
+    if !has_auth {
+        if let Some(token) = auth_bearer {
+            out.push(("Authorization".to_string(), format!("Bearer {token}")));
+        } else if let Some(creds) = auth_basic {
+            let encoded = BASE64_STANDARD.encode(creds.as_bytes());
+            out.push(("Authorization".to_string(), format!("Basic {encoded}")));
+        }
+    }
+
+    Ok(out)
+}
+
+fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    for raw in raws {
+        let mut parts = raw.splitn(2, '=');
+        let name = parts.next().unwrap_or("").trim();
+        let value = parts.next().unwrap_or("").trim();
+        if name.is_empty() {
+            return Err(format!(
+                "Invalid cookie format: '{raw}' (expected NAME=VALUE)."
+            ));
+        }
+        out.push((name.to_string(), value.to_string()));
+    }
+    Ok(out)
+}
+
+async fn filter_accessible_urls(
+    urls: &[String],
+    config: &Config,
+    timeout_secs: u64,
+) -> (Vec<String>, Vec<String>) {
+    let mut filter_config = config.clone();
+    filter_config.politeness.timeout_secs = timeout_secs.max(1);
+    filter_config.politeness.retries = 0;
+
+    let client = match HttpClient::new(&filter_config) {
+        Ok(c) => c,
+        Err(_) => return (urls.to_vec(), Vec::new()),
+    };
+
+    let mut accessible = Vec::new();
+    let mut inaccessible = Vec::new();
+    for url in urls {
+        if client.get(url).await.is_ok() {
+            accessible.push(url.clone());
+        } else {
+            inaccessible.push(url.clone());
+        }
+    }
+
+    (accessible, inaccessible)
 }
 
 fn summarize_run(targets: &[String], run_result: &runner::RunResult) -> ScanSummary {
