@@ -1,3 +1,37 @@
+# Task: Desktop Runtime WebKit Crash (Phase 31)
+
+## Plan
+- [x] Reproduce the current Tauri runtime crash and capture definitive logs.
+- [x] Harden desktop launch environment isolation against Snap-injected runtime libraries.
+- [x] Validate `npm run tauri dev` launches without the WebKit internal error.
+- [x] Fix desktop scan UX regressions (duplicate progress events, scan UI freeze, export button no-op) and re-validate build/runtime.
+- [x] Document review notes, residual risks, and run instructions.
+
+## Review
+- Root causes confirmed:
+  - WebKit crash was caused by Snap-injected runtime libraries (`/snap/core20/.../libpthread.so.0`) leaking into the Tauri process environment.
+  - Duplicate progress log lines were caused by React StrictMode double-mount plus async event-listener setup not being unsubscribed if cleanup happened before `listen(...)` resolved.
+  - Export buttons used DOM anchor/blob download, which is unreliable/no-op in Linux Tauri WebKit desktop context.
+  - Long-running scan invocation path could block responsiveness when command execution remained tied to non-isolated runtime behavior.
+- Changes made:
+  - `apps/desktop/scripts/run-tauri.sh`:
+    - moved to clean-environment launch strategy with allowlisted env vars and filtered `XDG_*` snap paths.
+    - preserves required display/session/toolchain vars while preventing Snap runtime-lib contamination.
+  - `apps/desktop/src/App.tsx`:
+    - fixed `scan-event` listener lifecycle to avoid duplicate subscriptions under StrictMode.
+    - added native export save flow via backend command and save-path status feedback.
+  - `apps/desktop/src-tauri/src/main.rs`:
+    - added `save_export` command that writes report files to Downloads (fallback home).
+    - moved scan command wrappers to `spawn_blocking + block_on(...)` so heavy scan execution is off the direct command future path while keeping compatibility with Tauri `Send` bounds.
+- Validation:
+  - `npm run build` ✅
+  - `npm run tauri build` ✅
+  - `npm run tauri dev` (outside sandbox) starts cleanly without WebKit internal error and without port conflicts after stale-process cleanup.
+- Residual risk:
+  - Very large scans can still produce high log volume; UI remains functional, but rendering many hundreds of log rows may eventually require virtualization if you want sustained ultra-high event throughput.
+
+---
+
 # Task: Real-World Internet Integration Tests (Phase 30)
 
 ## Plan
@@ -2719,3 +2753,83 @@
   - `make release` passed.
   - Output artifact: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`
   - Output checksum: `dist/apihunter-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256`
+
+---
+
+# Task: Desktop App Bootstrap (Tauri + Vite + React) (Phase 31)
+
+## Plan
+- [x] Create `apps/desktop` Vite + React + TypeScript frontend scaffold.
+- [x] Create `apps/desktop/src-tauri` Tauri backend scaffold.
+- [x] Add initial Tauri commands for health check and quick scanner run.
+- [x] Add documentation for desktop dev/build workflow.
+- [x] Validate scaffold with targeted checks and capture outcomes.
+
+## Review
+- Changes made:
+  - Added desktop app scaffold under `apps/desktop`:
+    - React + Vite + TypeScript frontend (`index.html`, `src/*`, `vite.config.ts`, `package.json`).
+    - Tauri 2 backend (`apps/desktop/src-tauri`) with:
+      - `health_check` command
+      - `run_quick_scan(targetUrl)` command that runs low-impact passive scan via existing scanner core.
+    - App-local ignore rules (`apps/desktop/.gitignore`) for `node_modules`, `dist`, and Tauri build outputs.
+    - Linux preflight dependency checker (`apps/desktop/scripts/check-tauri-linux-deps.sh`) wired into `npm run tauri ...` for fast actionable failure messages.
+  - Added desktop documentation:
+    - `docs/desktop.md` (prereqs, Linux dependencies, dev/build commands, scope + next steps).
+    - Linked desktop guide from `README.md` and `docs/INDEX.md`.
+- Validation:
+  - `cargo check --manifest-path Cargo.toml` ✅
+  - `npm run build` (in `apps/desktop`) ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ❌ (environment dependency):
+    - fails on missing system package metadata for `gobject-2.0` / WebKitGTK via `pkg-config`.
+    - documented required Linux package prerequisites in `docs/desktop.md`.
+  - Follow-up build-failure hardening:
+    - refactored `run_quick_scan` Tauri command to a sync command wrapper with `tauri::async_runtime::block_on(run_quick_scan_impl(...))` to avoid macro/type-overflow failures around `__cmd__run_quick_scan` seen during desktop build attempts.
+    - added required Tauri icon asset at `apps/desktop/src-tauri/icons/icon.png` (RGBA PNG) after compile-time proc-macro failure: `icon ... is not RGBA`.
+    - re-ran `npm run tauri build` successfully; output binary: `apps/desktop/src-tauri/target/release/apihunter-desktop`.
+
+---
+
+# Task: Desktop UX Expansion (Full Scan + Streaming + Export) (Phase 32)
+
+## Plan
+- [x] Extend runner orchestration with optional progress events for desktop streaming.
+- [x] Add Tauri full-scan command with configurable scanner toggles.
+- [x] Stream scan progress/log events from Rust backend to frontend.
+- [x] Add export actions (JSON/NDJSON/SARIF) in desktop UI.
+- [x] Validate desktop build flow and capture outcomes.
+
+## Review
+- Changes made:
+  - `src/runner.rs`:
+    - added optional run observer support via `run_with_progress(...)` while preserving existing `run(...)` behavior.
+    - added progress event model:
+      - `Started { total_urls }`
+      - `UrlCompleted { url, findings, critical, high, medium }`
+      - `Finished { scanned, skipped, findings, errors }`
+  - `apps/desktop/src-tauri/src/main.rs`:
+    - added `run_full_scan` command with desktop-configurable scan profile.
+    - bridged runner progress events to frontend via `scan-event` emission.
+    - kept `run_quick_scan` as a low-impact preset path.
+    - added export generation for:
+      - pretty JSON
+      - NDJSON
+      - SARIF
+  - `apps/desktop/src/App.tsx`:
+    - replaced basic quick-scan screen with full scan configuration UI.
+    - added scanner toggle controls, runtime knobs, live progress bar, and event log panel.
+    - added export download buttons (JSON/NDJSON/SARIF).
+  - `apps/desktop/src/styles.css`:
+    - added layout and component styling for expanded controls, log view, progress bar, and export row.
+  - `docs/desktop.md`:
+    - updated guide to reflect full-scan UI, streaming events, and export capabilities.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `cargo check --manifest-path Cargo.toml` ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run build` (in `apps/desktop`) ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Runtime-detection follow-up:
+    - replaced frontend runtime gate from `isTauri()` to direct IPC detection (`window.__TAURI_INTERNALS__.invoke`) in desktop UI.
+    - eliminates false “Tauri runtime not detected” behavior in Tauri window contexts where global `isTauri` is not set.

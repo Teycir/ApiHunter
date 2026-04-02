@@ -139,3 +139,15 @@
 - Rule: when asked for more vulnerable targets, keep a stable default live list and add a separate expanded candidate list (capped to 10) to balance coverage with reliability.
 - User correction pattern: “10 targets” can mean 10 fully completed live scans, not just 10 listed candidates.
 - Rule: when a full-count validation is requested, require evidence of 10/10 completed scan summaries (single combined run preferred) before promoting target lists.
+- User correction pattern: desktop build reports may surface environment dependency failures after scaffolding appears complete.
+- Rule: when user reports a desktop build failure, reproduce the exact command, identify missing host prerequisites, and add a fast preflight dependency check that prints concrete install commands.
+- User correction pattern: Tauri app generation can fail at compile time when default icon assets are missing or non-RGBA.
+- Rule: for new Tauri apps, always ensure `src-tauri/icons/icon.png` exists and is a valid RGBA PNG before validating `npm run tauri build`.
+- User correction pattern: desktop runtime detection can be incorrect when relying on coarse frontend flags.
+- Rule: for Tauri IPC checks, detect `window.__TAURI_INTERNALS__.invoke` availability instead of `isTauri()` alone, and gate command invocation on actual IPC presence.
+- User correction pattern: desktop app runtime may crash under Snap-based IDE terminals even when builds pass.
+- Rule: launch Tauri through a sanitized env wrapper that strips snap-injected runtime library paths and SNAP-scoped variables before starting WebKit.
+- User correction pattern: React StrictMode can duplicate desktop event streams when async listener setup resolves after cleanup.
+- Rule: in `listen(...).then(...)` effects, guard with a disposed flag and immediately call returned unlisten if the effect was already cleaned up.
+- User correction pattern: browser-style blob download anchors are unreliable in Linux Tauri WebKit windows.
+- Rule: for desktop export actions, use a backend save command (or Tauri filesystem APIs) and show the final saved path in UI feedback.
