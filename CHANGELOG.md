@@ -55,12 +55,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Desktop export flow now writes reports into timestamped export folders and generates per-target JSON reports with bundled discovery summary + discovery-count ranking files.
 - Desktop exports now include an Insomnia-importable collection file (Postman v2.1 JSON) grouped per target with discovery context.
 - Desktop UI panels are now collapsible for faster navigation: top-level sections plus large Full Scan subsections (`Safety`, `Runtime Limits`, and `Scanner toggles`).
+- Desktop full-scan subsections (`Safety and Scan Behavior`, `Runtime Limits`, `Scanner toggles`) now default to collapsed for faster first-load navigation.
+- Desktop full-scan section labels were simplified by removing numbered prefixes from subsection headers.
+- Desktop advanced settings panel now uses the same right-aligned collapse caret treatment and full-width layout behavior as adjacent scan sections.
 - Desktop exports now include an Insomnia Runner-data JSON file (array of key-value objects) for Runner preview/upload flows when collection import UI is unavailable.
 
 ### Fixed
 - Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.
 - Stabilized startup scanner-disabled integration assertions in `tests/startup_inputs.rs` by explicitly disabling newly added scanners (`--no-api-versioning`, `--no-grpc-protobuf`) in those command invocations.
 - Added IDOR regression coverage for header-based equivalence when response bodies differ (`tests/api_security_scanner.rs`).
+- Fixed desktop results card overflow by forcing long finding keys and target URLs to wrap within panel boundaries.
 
 ## [0.3.0] - 2026-04-03
 

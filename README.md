@@ -436,7 +436,9 @@ Desktop scan input supports:
 - Blind SSRF callback correlation input (`OAST callback base`) for active checks
 - Performance controls: per-host clients, adaptive concurrency, WAF evasion with custom user-agent pool
 - Full scanner toggle coverage including `API Versioning` and `gRPC/Protobuf`
+- Collapsible desktop scan sections with consistent right-aligned carets; `Safety and Scan Behavior`, `Runtime Limits`, and `Scanner toggles` are collapsed by default
 - Parallel-run progress cards with per-target completion/findings snapshots
+- Results cards now hard-wrap long check IDs/URLs to prevent boundary overflow
 - Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
 
 If you want a release desktop binary:
@@ -720,9 +722,11 @@ Desktop features (brief):
 - Guided setup presets for quick, balanced, and deep active scan profiles
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
+- Collapsible desktop scan sections with consistent right-aligned carets and default-collapsed heavy subsections
 - API versioning deep response-diff toggle in desktop full-scan profile
 - OAST callback base control for blind SSRF active-check correlation
 - Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
+- Results cards now wrap long strings to keep all content inside panel boundaries
 - One-click export for per-target JSON bundles, NDJSON, SARIF, Insomnia-importable collection JSON, and Insomnia Runner-data JSON
 
 ### Docker
