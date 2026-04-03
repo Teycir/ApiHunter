@@ -109,6 +109,12 @@ fn parses_dry_run_flag() {
 }
 
 #[test]
+fn parses_response_diff_deep_flag() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--response-diff-deep"]).unwrap();
+    assert!(cli.response_diff_deep);
+}
+
+#[test]
 fn dry_run_default_is_disabled() {
     let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
     assert!(!cli.dry_run);
@@ -126,6 +132,7 @@ fn scanner_toggle_flags() {
         "--no-jwt",
         "--no-openapi",
         "--no-api-versioning",
+        "--no-grpc-protobuf",
     ])
     .unwrap();
     assert!(cli.no_cors);
@@ -135,6 +142,7 @@ fn scanner_toggle_flags() {
     assert!(cli.no_jwt);
     assert!(cli.no_openapi);
     assert!(cli.no_api_versioning);
+    assert!(cli.no_grpc_protobuf);
 }
 
 #[test]
@@ -560,6 +568,7 @@ fn toggles_all_on_by_default() {
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
         api_versioning: !cli.no_api_versioning,
+        grpc_protobuf: !cli.no_grpc_protobuf,
         mass_assignment: !cli.no_mass_assignment,
         oauth_oidc: !cli.no_oauth_oidc,
         rate_limit: !cli.no_rate_limit,
@@ -573,6 +582,7 @@ fn toggles_all_on_by_default() {
     assert!(toggles.jwt);
     assert!(toggles.openapi);
     assert!(toggles.api_versioning);
+    assert!(toggles.grpc_protobuf);
     assert!(toggles.mass_assignment);
     assert!(toggles.oauth_oidc);
     assert!(toggles.rate_limit);
@@ -589,6 +599,7 @@ fn toggles_selectively_disabled() {
         "--no-graphql",
         "--no-mass-assignment",
         "--no-api-versioning",
+        "--no-grpc-protobuf",
         "--no-websocket",
     ])
     .unwrap();
@@ -600,6 +611,7 @@ fn toggles_selectively_disabled() {
         jwt: !cli.no_jwt,
         openapi: !cli.no_openapi,
         api_versioning: !cli.no_api_versioning,
+        grpc_protobuf: !cli.no_grpc_protobuf,
         mass_assignment: !cli.no_mass_assignment,
         oauth_oidc: !cli.no_oauth_oidc,
         rate_limit: !cli.no_rate_limit,
@@ -613,6 +625,7 @@ fn toggles_selectively_disabled() {
     assert!(toggles.jwt);
     assert!(toggles.openapi);
     assert!(!toggles.api_versioning);
+    assert!(!toggles.grpc_protobuf);
     assert!(!toggles.mass_assignment);
     assert!(toggles.oauth_oidc);
     assert!(toggles.rate_limit);

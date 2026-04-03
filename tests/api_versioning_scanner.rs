@@ -10,7 +10,7 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
-fn test_config() -> Config {
+fn test_config(response_diff_deep: bool) -> Config {
     Config {
         max_endpoints: 10,
         concurrency: 4,
@@ -29,6 +29,7 @@ fn test_config() -> Config {
         danger_accept_invalid_certs: false,
         active_checks: false,
         dry_run: false,
+        response_diff_deep,
         stream_findings: false,
         baseline_path: None,
         session_file: None,
@@ -48,6 +49,7 @@ fn test_config() -> Config {
             jwt: false,
             openapi: false,
             api_versioning: true,
+            grpc_protobuf: false,
             mass_assignment: false,
             oauth_oidc: false,
             rate_limit: false,
@@ -102,7 +104,7 @@ async fn detects_version_headers_legacy_versions_and_query_variant_server_error(
         .mount(&server)
         .await;
 
-    let cfg = Arc::new(test_config());
+    let cfg = Arc::new(test_config(false));
     let client = HttpClient::new(cfg.as_ref()).expect("http client");
     let scanner = ApiVersioningScanner::new(cfg.as_ref());
 
@@ -169,7 +171,7 @@ async fn detects_response_error_drift_across_version_variants() {
         .mount(&server)
         .await;
 
-    let cfg = Arc::new(test_config());
+    let cfg = Arc::new(test_config(false));
     let client = HttpClient::new(cfg.as_ref()).expect("http client");
     let scanner = ApiVersioningScanner::new(cfg.as_ref());
 
@@ -181,5 +183,80 @@ async fn detects_response_error_drift_across_version_variants() {
             .iter()
             .any(|finding| finding.check == "response_diff/version-variant-server-error"),
         "expected version-variant server error finding, got {findings:#?}"
+    );
+}
+
+#[tokio::test]
+async fn deep_response_diff_mode_detects_header_variant_server_error() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(query_param_is_missing("apihunter_diff_probe"))
+        .and(query_param_is_missing("format"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"profile":{"id":7,"name":"alice","role":"user"}}"#),
+        )
+        .with_priority(10)
+        .mount(&server)
+        .await;
+
+    // Simple query diff stays stable.
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(query_param("apihunter_diff_probe", "1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"profile":{"id":7,"name":"alice","role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    // Deep header variant intentionally fails.
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(wiremock::matchers::header("accept", "application/json"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("gateway parse failure"))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    // Deep query variants remain stable to isolate header-driven finding.
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(query_param("apihunter_diff_probe", "deep"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"profile":{"id":7,"name":"alice","role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .and(query_param("format", "json"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"profile":{"id":7,"name":"alice","role":"user"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let cfg = Arc::new(test_config(true));
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = ApiVersioningScanner::new(cfg.as_ref());
+
+    let target = format!("{}/api/profile", server.uri());
+    let (findings, _errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.check == "response_diff/deep-variant-server-error"),
+        "expected deep variant server error finding, got: {findings:#?}"
     );
 }

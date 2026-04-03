@@ -26,6 +26,7 @@ type FullScanRequest = {
   targetUrls: string[];
   activeChecks: boolean;
   dryRun: boolean;
+  responseDiffDeep: boolean;
   noDiscovery: boolean;
   noFilter: boolean;
   filterTimeout: number;
@@ -144,6 +145,7 @@ export default function App() {
   const [targetInput, setTargetInput] = useState("https://httpbin.org");
   const [activeChecks, setActiveChecks] = useState(false);
   const [dryRun, setDryRun] = useState(true);
+  const [responseDiffDeep, setResponseDiffDeep] = useState(false);
   const [noDiscovery, setNoDiscovery] = useState(true);
   const [noFilter, setNoFilter] = useState(false);
   const [filterTimeout, setFilterTimeout] = useState(3);
@@ -330,6 +332,7 @@ export default function App() {
       targetUrls,
       activeChecks,
       dryRun,
+      responseDiffDeep,
       noDiscovery,
       noFilter,
       filterTimeout: Math.max(1, filterTimeout),
@@ -616,6 +619,19 @@ export default function App() {
               </label>
               <p className="muted">
                 Safer mode for active checks. Useful for first pass on production-like targets.
+              </p>
+            </div>
+            <div className="option-card">
+              <label title="Enable deeper API response drift probes (extra query/header variants).">
+                <input
+                  type="checkbox"
+                  checked={responseDiffDeep}
+                  onChange={(e) => setResponseDiffDeep(e.target.checked)}
+                />
+                response diff deep
+              </label>
+              <p className="muted">
+                Adds deeper variant-based response comparison in API versioning checks.
               </p>
             </div>
             <div className="option-card">

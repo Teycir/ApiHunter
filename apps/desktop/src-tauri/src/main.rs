@@ -21,6 +21,10 @@ use tauri::{Emitter, Manager};
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_TARGETS: usize = 100;
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
@@ -38,6 +42,10 @@ struct ScanToggleRequest {
     api_security: bool,
     jwt: bool,
     openapi: bool,
+    #[serde(default = "default_true")]
+    api_versioning: bool,
+    #[serde(default = "default_true")]
+    grpc_protobuf: bool,
     mass_assignment: bool,
     oauth_oidc: bool,
     rate_limit: bool,
@@ -54,6 +62,8 @@ impl Default for ScanToggleRequest {
             api_security: true,
             jwt: true,
             openapi: true,
+            api_versioning: true,
+            grpc_protobuf: true,
             mass_assignment: true,
             oauth_oidc: true,
             rate_limit: true,
@@ -70,6 +80,8 @@ struct FullScanRequest {
     target_urls: Option<Vec<String>>,
     active_checks: bool,
     dry_run: bool,
+    #[serde(default)]
+    response_diff_deep: bool,
     no_discovery: bool,
     no_filter: bool,
     filter_timeout: u64,
@@ -99,6 +111,7 @@ impl FullScanRequest {
             target_urls: None,
             active_checks: false,
             dry_run: true,
+            response_diff_deep: false,
             no_discovery: true,
             no_filter: false,
             filter_timeout: 3,
@@ -125,6 +138,8 @@ impl FullScanRequest {
                 api_security: true,
                 jwt: true,
                 openapi: true,
+                api_versioning: true,
+                grpc_protobuf: true,
                 mass_assignment: false,
                 oauth_oidc: false,
                 rate_limit: false,
@@ -454,6 +469,7 @@ async fn run_full_scan_impl(
         danger_accept_invalid_certs: request.danger_accept_invalid_certs,
         active_checks: request.active_checks,
         dry_run: request.dry_run,
+        response_diff_deep: request.response_diff_deep,
         stream_findings: false,
         baseline_path: None,
         session_file: None,
@@ -473,6 +489,8 @@ async fn run_full_scan_impl(
             api_security: request.toggles.api_security,
             jwt: request.toggles.jwt,
             openapi: request.toggles.openapi,
+            api_versioning: request.toggles.api_versioning,
+            grpc_protobuf: request.toggles.grpc_protobuf,
             mass_assignment: request.toggles.mass_assignment,
             oauth_oidc: request.toggles.oauth_oidc,
             rate_limit: request.toggles.rate_limit,

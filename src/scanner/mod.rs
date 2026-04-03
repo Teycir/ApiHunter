@@ -9,6 +9,7 @@ pub mod cors;
 pub mod csp;
 pub mod cve_templates;
 pub mod graphql;
+pub mod grpc_protobuf;
 pub mod http_utils;
 pub mod jwt;
 pub mod mass_assignment;

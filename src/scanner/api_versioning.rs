@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::Method;
 use url::Url;
 
 use crate::{
@@ -29,11 +31,19 @@ const VERSION_HEADER_KEYS: &[&str] = &[
 ];
 const DEPRECATION_HEADER_KEYS: &[&str] = &["deprecation", "sunset"];
 const API_HINT_KEYWORDS: &[&str] = &["/api", "/v1", "/v2", "/v3", "graphql", "openapi", "swagger"];
+const MAX_DEEP_PROBES: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
 struct VersionSegment {
     index: usize,
     value: u32,
+}
+
+#[derive(Debug, Clone)]
+struct DeepProbe {
+    label: &'static str,
+    url: String,
+    headers: Option<HeaderMap>,
 }
 
 #[async_trait]
@@ -46,7 +56,7 @@ impl Scanner for ApiVersioningScanner {
         &self,
         url: &str,
         client: &HttpClient,
-        _config: &Config,
+        config: &Config,
     ) -> (Vec<Finding>, Vec<CapturedError>) {
         let mut findings = Vec::new();
         let mut errors = Vec::new();
@@ -95,6 +105,9 @@ impl Scanner for ApiVersioningScanner {
 
         run_query_variant_diff_probe(url, client, &baseline, &mut findings, &mut errors).await;
         run_version_variant_probes(url, client, &baseline, &mut findings, &mut errors).await;
+        if config.response_diff_deep {
+            run_deep_response_diff_probes(url, client, &baseline, &mut findings, &mut errors).await;
+        }
 
         (findings, errors)
     }
@@ -318,6 +331,132 @@ async fn run_version_variant_probes(
     }
 }
 
+async fn run_deep_response_diff_probes(
+    url: &str,
+    client: &HttpClient,
+    baseline: &HttpResponse,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    if !is_api_like_url(url) {
+        return;
+    }
+
+    let probes = build_deep_probes(url);
+    if probes.is_empty() {
+        return;
+    }
+
+    let mut drift_candidate: Option<(String, HttpResponse)> = None;
+    for probe in probes.into_iter().take(MAX_DEEP_PROBES) {
+        let response = match execute_deep_probe(client, &probe).await {
+            Ok(value) => value,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+
+        if baseline.status < 500 && response.status >= 500 {
+            findings.push(
+                Finding::new(
+                    &probe.url,
+                    "response_diff/deep-variant-server-error",
+                    "Deep response-diff variant triggered server error",
+                    Severity::Medium,
+                    "A deep response-diff variant (query/header) caused a 5xx response while baseline stayed stable.",
+                    "api_versioning",
+                )
+                .with_evidence(format!(
+                    "Variant: {} | Baseline status/content-type: {}/{} | Variant status/content-type: {}/{}",
+                    probe.label,
+                    baseline.status,
+                    content_type(baseline),
+                    response.status,
+                    content_type(&response)
+                ))
+                .with_confidence(Confidence::High)
+                .with_remediation(
+                    "Harden cache/gateway normalization and request parser behavior so benign query/header permutations fail safely.",
+                ),
+            );
+            return;
+        }
+
+        if drift_candidate.is_none() && is_significant_response_drift(baseline, &response) {
+            drift_candidate = Some((probe.label.to_string(), response));
+        }
+    }
+
+    if let Some((label, variant)) = drift_candidate {
+        findings.push(
+            Finding::new(
+                url,
+                "response_diff/deep-variant-drift",
+                "Deep response-diff drift detected",
+                Severity::Low,
+                "A deeper query/header variant produced materially different API behavior compared to baseline.",
+                "api_versioning",
+            )
+            .with_evidence(format!(
+                "Variant: {} | Baseline status/content-type: {}/{} | Variant: {}/{} | Body similarity: {:.2}",
+                label,
+                baseline.status,
+                content_type(baseline),
+                variant.status,
+                content_type(&variant),
+                token_similarity(&baseline.body, &variant.body)
+            ))
+            .with_confidence(Confidence::Medium)
+            .with_remediation(
+                "Review edge-case parameter/header handling in API routers and gateway layers to keep behavior consistent for benign variants.",
+            ),
+        );
+    }
+}
+
+async fn execute_deep_probe(
+    client: &HttpClient,
+    probe: &DeepProbe,
+) -> Result<HttpResponse, CapturedError> {
+    if let Some(headers) = &probe.headers {
+        client
+            .request(Method::GET, &probe.url, Some(headers.clone()), None)
+            .await
+    } else {
+        client.get(&probe.url).await
+    }
+}
+
+fn build_deep_probes(url: &str) -> Vec<DeepProbe> {
+    let mut probes = Vec::new();
+    if let Some(variant) = add_query_pair(url, "apihunter_diff_probe", "deep") {
+        probes.push(DeepProbe {
+            label: "query:diff=deep",
+            url: variant,
+            headers: None,
+        });
+    }
+    if let Some(variant) = add_query_pair(url, "format", "json") {
+        probes.push(DeepProbe {
+            label: "query:format=json",
+            url: variant,
+            headers: None,
+        });
+    }
+    probes.push(DeepProbe {
+        label: "header:accept-json",
+        url: url.to_string(),
+        headers: Some(singleton_header("accept", "application/json")),
+    });
+    probes.push(DeepProbe {
+        label: "header:cache-control-no-cache",
+        url: url.to_string(),
+        headers: Some(singleton_header("cache-control", "no-cache")),
+    });
+    probes
+}
+
 fn collect_header_evidence(response: &HttpResponse, keys: &[&str]) -> Option<String> {
     let mut lines = Vec::new();
     for key in keys {
@@ -384,11 +523,24 @@ fn build_version_variant_url(
 }
 
 fn add_diff_query(url: &str) -> Option<String> {
+    add_query_pair(url, "apihunter_diff_probe", "1")
+}
+
+fn add_query_pair(url: &str, key: &str, value: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
-    parsed
-        .query_pairs_mut()
-        .append_pair("apihunter_diff_probe", "1");
+    parsed.query_pairs_mut().append_pair(key, value);
     Some(parsed.to_string())
+}
+
+fn singleton_header(name: &str, value: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if let (Ok(key), Ok(val)) = (
+        HeaderName::from_bytes(name.as_bytes()),
+        HeaderValue::from_str(value),
+    ) {
+        headers.insert(key, val);
+    }
+    headers
 }
 
 fn is_api_like_url(url: &str) -> bool {

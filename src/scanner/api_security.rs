@@ -17,15 +17,22 @@ use dashmap::DashSet;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
 use regex::Regex;
-use reqwest::Method;
-use std::{collections::HashMap, sync::Arc};
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Method,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tracing::debug;
 use url::Url;
 
 use crate::{
     config::Config,
     error::CapturedError,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpResponse},
     reports::{Confidence, Finding, Severity},
 };
 
@@ -39,6 +46,8 @@ use super::{
 pub struct ApiSecurityScanner {
     client_b: Option<Arc<HttpClient>>,
     checked_hosts: Arc<DashSet<String>>,
+    ssrf_checked_paths: Arc<DashSet<String>>,
+    gateway_checked_paths: Arc<DashSet<String>>,
 }
 
 impl ApiSecurityScanner {
@@ -46,6 +55,8 @@ impl ApiSecurityScanner {
         Self {
             client_b,
             checked_hosts: Arc::new(DashSet::new()),
+            ssrf_checked_paths: Arc::new(DashSet::new()),
+            gateway_checked_paths: Arc::new(DashSet::new()),
         }
     }
 }
@@ -628,6 +639,33 @@ static DEBUG_ENDPOINTS: &[DebugEndpoint] = &[
 // ── SECURITY.TXT paths ────────────────────────────────────────────────────────
 
 static SECURITY_TXT_PATHS: &[&str] = &["/.well-known/security.txt", "/security.txt"];
+const BLIND_SSRF_OAST_ENV: &str = "APIHUNTER_OAST_BASE";
+const BLIND_SSRF_MAX_PARAMS: usize = 4;
+const BLIND_SSRF_PARAM_HINTS: &[&str] = &[
+    "url", "uri", "callback", "webhook", "redirect", "next", "dest", "target", "endpoint",
+    "avatar", "image", "feed", "proxy",
+];
+const GATEWAY_HEADER_KEYS: &[&str] = &[
+    "x-kong-proxy-latency",
+    "x-kong-upstream-latency",
+    "x-envoy-upstream-service-time",
+    "x-amz-apigw-id",
+    "x-amzn-requestid",
+    "x-amzn-trace-id",
+    "x-azure-ref",
+    "cf-ray",
+    "x-served-by",
+    "x-request-id",
+];
+const GATEWAY_SERVER_HINTS: &[&str] = &[
+    "kong",
+    "envoy",
+    "apisix",
+    "traefik",
+    "istio",
+    "cloudfront",
+    "apigateway",
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -666,6 +704,13 @@ impl Scanner for ApiSecurityScanner {
             check_security_txt(url, client, &mut findings).await;
         }
         check_response_headers(url, client, &mut findings, &mut errors).await;
+        let gateway_dedupe_key = blind_ssrf_dedupe_key(url).unwrap_or_else(|| format!("raw:{url}"));
+        if self.gateway_checked_paths.insert(gateway_dedupe_key) {
+            check_api_gateway_signals(url, client, &mut findings, &mut errors).await;
+            if config.active_checks {
+                check_gateway_bypass_probes(url, client, config, &mut findings, &mut errors).await;
+            }
+        }
 
         if config.active_checks {
             check_idor_bola(
@@ -684,6 +729,13 @@ impl Scanner for ApiSecurityScanner {
                 &mut errors,
             )
             .await;
+
+            let ssrf_dedupe_key =
+                blind_ssrf_dedupe_key(url).unwrap_or_else(|| format!("raw:{url}"));
+            if self.ssrf_checked_paths.insert(ssrf_dedupe_key) {
+                check_blind_ssrf_callback_probe(url, client, config, &mut findings, &mut errors)
+                    .await;
+            }
         }
 
         (findings, errors)
@@ -1516,6 +1568,464 @@ fn snippet(s: &str, max_len: usize) -> String {
 }
 
 // ── Active checks (opt-in) ────────────────────────────────────────────────────
+
+async fn check_api_gateway_signals(
+    url: &str,
+    client: &HttpClient,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let baseline = match client.get(url).await {
+        Ok(value) => value,
+        Err(error) => {
+            errors.push(error);
+            return;
+        }
+    };
+
+    let mut evidence = Vec::new();
+    for key in GATEWAY_HEADER_KEYS {
+        if let Some(value) = baseline.header(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                evidence.push(format!("{key}: {trimmed}"));
+            }
+        }
+    }
+
+    if let Some(server) = baseline.header("server") {
+        let lower = server.to_ascii_lowercase();
+        if GATEWAY_SERVER_HINTS.iter().any(|hint| lower.contains(hint)) {
+            evidence.push(format!("server: {server}"));
+        }
+    }
+
+    if evidence.is_empty() {
+        return;
+    }
+
+    findings.push(
+        Finding::new(
+            url,
+            "api_security/gateway-detected",
+            "API gateway/reverse-proxy signal detected",
+            Severity::Info,
+            "Response metadata suggests requests are passing through an API gateway or edge proxy layer.",
+            "api_security",
+        )
+        .with_evidence(evidence.join(" | "))
+        .with_confidence(Confidence::Low)
+        .with_remediation(
+            "Review gateway policy order (authn/authz/rate-limit/routing) and ensure security controls are enforced before upstream routing.",
+        ),
+    );
+}
+
+async fn check_gateway_bypass_probes(
+    url: &str,
+    client: &HttpClient,
+    config: &Config,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let parsed = match Url::parse(url) {
+        Ok(value) => value,
+        Err(error) => {
+            errors.push(CapturedError::parse(
+                "api_security/gateway-bypass-url-parse",
+                error.to_string(),
+            ));
+            return;
+        }
+    };
+
+    let baseline = match client.get(url).await {
+        Ok(value) => value,
+        Err(error) => {
+            errors.push(error);
+            return;
+        }
+    };
+
+    if !matches!(baseline.status, 401 | 403 | 404 | 405) {
+        return;
+    }
+
+    let path = parsed.path();
+    let host = parsed.host_str().unwrap_or_default().to_string();
+    let probes = gateway_bypass_probe_headers(path, &host);
+
+    if config.dry_run {
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/gateway-bypass-dry-run",
+                "Gateway bypass probes planned (dry run)",
+                Severity::Info,
+                "Gateway normalization/bypass probes were skipped because --dry-run is enabled.",
+                "api_security",
+            )
+            .with_evidence(format!(
+                "Baseline status: {}\nHeaders: {}",
+                baseline.status,
+                probes
+                    .iter()
+                    .map(|(name, value)| format!("{name}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+            .with_confidence(Confidence::Low)
+            .with_metadata(serde_json::json!({
+                "sequence_confirmed": false,
+                "confirmation_depth": 0,
+            }))
+            .with_remediation(
+                "Run without --dry-run in an authorized test window to execute gateway bypass probes.",
+            ),
+        );
+        return;
+    }
+
+    let mut bypass_hits = Vec::new();
+    for (header_name, value) in probes {
+        let headers = single_probe_header_map(header_name, &value);
+        let response = match client.request(Method::GET, url, Some(headers), None).await {
+            Ok(value) => value,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+
+        if response.status < 400 && baseline.status >= 400 {
+            bypass_hits.push((header_name.to_string(), value, response.status));
+        }
+    }
+
+    if bypass_hits.is_empty() {
+        return;
+    }
+
+    findings.push(
+        Finding::new(
+            url,
+            "api_security/gateway-bypass-suspected",
+            "Gateway bypass behavior suspected",
+            if bypass_hits.iter().any(|(_, _, status)| *status < 300) {
+                Severity::High
+            } else {
+                Severity::Medium
+            },
+            "Gateway-oriented normalization headers changed a blocked response into an allowed one. This can indicate route/auth policy bypass through edge header trust.",
+            "api_security",
+        )
+        .with_evidence(format!(
+            "Baseline status: {}\nProbe statuses:\n{}",
+            baseline.status,
+            bypass_hits
+                .iter()
+                .map(|(name, value, status)| format!("  {name}={value} -> HTTP {status}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ))
+        .with_confidence(if matches!(baseline.status, 401 | 403) {
+            Confidence::High
+        } else {
+            Confidence::Medium
+        })
+        .with_metadata(serde_json::json!({
+            "sequence_confirmed": true,
+            "confirmation_depth": 1,
+            "baseline_status": baseline.status,
+            "probe_count": bypass_hits.len(),
+        }))
+        .with_remediation(
+            "Disable trust for client-supplied routing override headers at the edge and enforce authorization before path rewrites or upstream forwarding.",
+        ),
+    );
+}
+
+fn gateway_bypass_probe_headers(path: &str, host: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("X-Original-URL", path.to_string()),
+        ("X-Rewrite-URL", path.to_string()),
+        ("X-Forwarded-Prefix", "/".to_string()),
+        ("X-Forwarded-Host", host.to_string()),
+        ("X-Forwarded-Uri", path.to_string()),
+    ]
+}
+
+fn single_probe_header_map(name: &str, value: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if let (Ok(key), Ok(val)) = (
+        HeaderName::from_bytes(name.as_bytes()),
+        HeaderValue::from_str(value),
+    ) {
+        headers.insert(key, val);
+    }
+    headers
+}
+
+async fn check_blind_ssrf_callback_probe(
+    url: &str,
+    client: &HttpClient,
+    config: &Config,
+    findings: &mut Vec<Finding>,
+    errors: &mut Vec<CapturedError>,
+) {
+    let Some(oast_base) = std::env::var(BLIND_SSRF_OAST_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+
+    let parsed = match Url::parse(url) {
+        Ok(value) => value,
+        Err(error) => {
+            errors.push(CapturedError::parse(
+                "api_security/blind-ssrf-url-parse",
+                error.to_string(),
+            ));
+            return;
+        }
+    };
+
+    let candidate_params = select_blind_ssrf_params(&parsed);
+    if candidate_params.is_empty() {
+        return;
+    }
+
+    let mut probes = Vec::new();
+    let mut reflected_params = Vec::new();
+
+    for (index, param_name) in candidate_params.iter().enumerate() {
+        let token = build_blind_ssrf_token(&parsed, param_name, index);
+        let callback = format!("{}/{}", oast_base.trim_end_matches('/'), token);
+        let probe_url = with_query_param(&parsed, param_name, &callback);
+
+        if config.dry_run {
+            probes.push(format!("{param_name} -> {callback} [planned]"));
+            continue;
+        }
+
+        let response = match client.get(probe_url.as_str()).await {
+            Ok(value) => value,
+            Err(mut error) => {
+                error.message = format!("blind_ssrf_probe[{param_name}]: {}", error.message);
+                errors.push(error);
+                continue;
+            }
+        };
+
+        let reflected = response_reflects_callback_signal(&response, &token, &oast_base);
+        probes.push(format!(
+            "{param_name} -> HTTP {} ({})",
+            response.status,
+            if reflected { "reflected" } else { "dispatched" }
+        ));
+        if reflected {
+            reflected_params.push(param_name.clone());
+        }
+    }
+
+    if probes.is_empty() {
+        return;
+    }
+
+    if config.dry_run {
+        findings.push(
+            Finding::new(
+                url,
+                "api_security/blind-ssrf-probe-dry-run",
+                "Blind SSRF callback probes planned (dry run)",
+                Severity::Info,
+                "Blind SSRF callback probes were skipped because --dry-run is enabled.",
+                "api_security",
+            )
+            .with_evidence(format!(
+                "Env: {BLIND_SSRF_OAST_ENV}\nProbe plan:\n{}",
+                probes.join("\n")
+            ))
+            .with_confidence(Confidence::Low)
+            .with_metadata(serde_json::json!({
+                "sequence_confirmed": false,
+                "confirmation_depth": 0,
+                "probe_count": probes.len(),
+                "env": BLIND_SSRF_OAST_ENV,
+            }))
+            .with_remediation(
+                "Run without --dry-run and monitor your OAST listener for callback hits.",
+            ),
+        );
+        return;
+    }
+
+    let reflected = !reflected_params.is_empty();
+    findings.push(
+        Finding::new(
+            url,
+            if reflected {
+                "api_security/blind-ssrf-token-reflected"
+            } else {
+                "api_security/blind-ssrf-probe-dispatched"
+            },
+            if reflected {
+                "Blind SSRF callback token reflected in response"
+            } else {
+                "Blind SSRF callback probes dispatched"
+            },
+            if reflected {
+                Severity::Medium
+            } else {
+                Severity::Info
+            },
+            if reflected {
+                "The callback token/domain appeared in immediate responses after callback-parameter probes. This can indicate unsafe callback URL handling."
+            } else {
+                "Callback-style query-parameter probes were dispatched for blind SSRF detection. Check your OAST listener for outbound hits."
+            },
+            "api_security",
+        )
+        .with_evidence(format!(
+            "Env: {BLIND_SSRF_OAST_ENV}\nProbe results:\n{}",
+            probes.join("\n")
+        ))
+        .with_confidence(if reflected {
+            Confidence::Medium
+        } else {
+            Confidence::Low
+        })
+        .with_metadata(serde_json::json!({
+            "sequence_confirmed": reflected,
+            "confirmation_depth": if reflected { 2 } else { 1 },
+            "probe_count": probes.len(),
+            "reflected_params": reflected_params,
+            "env": BLIND_SSRF_OAST_ENV,
+        }))
+        .with_remediation(
+            "Block unrestricted backend egress, enforce callback URL allowlists, and validate/normalize user-controlled URL parameters before fetch/forward operations.",
+        ),
+    );
+}
+
+fn blind_ssrf_dedupe_key(url: &str) -> Option<String> {
+    let parsed = Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    let port = parsed
+        .port_or_known_default()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "0".to_string());
+    Some(format!("{host}:{port}{}", parsed.path()))
+}
+
+fn select_blind_ssrf_params(parsed: &Url) -> Vec<String> {
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (name, _) in parsed.query_pairs() {
+        let lower = name.to_ascii_lowercase();
+        if !is_blind_ssrf_candidate_param(&lower) || !seen.insert(lower) {
+            continue;
+        }
+        selected.push(name.into_owned());
+        if selected.len() >= BLIND_SSRF_MAX_PARAMS {
+            return selected;
+        }
+    }
+
+    for param in BLIND_SSRF_PARAM_HINTS {
+        let lower = param.to_ascii_lowercase();
+        if !seen.insert(lower) {
+            continue;
+        }
+        selected.push((*param).to_string());
+        if selected.len() >= BLIND_SSRF_MAX_PARAMS {
+            break;
+        }
+    }
+
+    selected
+}
+
+fn is_blind_ssrf_candidate_param(param: &str) -> bool {
+    let lower = param.to_ascii_lowercase();
+    BLIND_SSRF_PARAM_HINTS
+        .iter()
+        .any(|candidate| lower == *candidate || lower.contains(candidate))
+}
+
+fn build_blind_ssrf_token(url: &Url, param_name: &str, index: usize) -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let host = url
+        .host_str()
+        .unwrap_or("host")
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(10)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let path = url
+        .path()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(10)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let param = param_name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(8)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    format!("apihunter-ssrf-{host}-{path}-{param}-{index}-{millis}")
+}
+
+fn with_query_param(url: &Url, param_name: &str, value: &str) -> Url {
+    let mut next = url.clone();
+    let mut pairs = Vec::new();
+    let mut replaced = false;
+    for (name, current_value) in url.query_pairs() {
+        if name.eq_ignore_ascii_case(param_name) {
+            if !replaced {
+                pairs.push((name.to_string(), value.to_string()));
+                replaced = true;
+            }
+        } else {
+            pairs.push((name.to_string(), current_value.to_string()));
+        }
+    }
+    if !replaced {
+        pairs.push((param_name.to_string(), value.to_string()));
+    }
+
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for (name, current_value) in &pairs {
+        serializer.append_pair(name, current_value);
+    }
+    let query = serializer.finish();
+    next.set_query(Some(&query));
+    next
+}
+
+fn response_reflects_callback_signal(
+    response: &HttpResponse,
+    token: &str,
+    oast_base: &str,
+) -> bool {
+    let oast_lower = oast_base.to_ascii_lowercase();
+    if response.body.contains(token) || response.body.to_ascii_lowercase().contains(&oast_lower) {
+        return true;
+    }
+    response
+        .headers
+        .values()
+        .any(|value| value.contains(token) || value.to_ascii_lowercase().contains(&oast_lower))
+}
 
 // ── IDOR / BOLA detection ─────────────────────────────────────────────────────
 //

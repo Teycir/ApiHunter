@@ -2,7 +2,7 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-04-02
+last_updated: 2026-04-03
 tags: [desktop, tauri, react, vite, ui]
 category: Desktop App Guide
 ---
@@ -14,9 +14,9 @@ ApiHunter now includes a desktop app under `apps/desktop`.
 ## What Exists Now
 
 - Tauri 2 backend (`apps/desktop/src-tauri`) wired to the existing Rust scanner core.
-- React + Vite frontend (`apps/desktop/src`) with:
+  - React + Vite frontend (`apps/desktop/src`) with:
   - branded header icon symbol for quick product recognition,
-  - full scan profile form (active checks, dry-run, discovery, filtering, concurrency/timeouts/retries, endpoint caps),
+  - full scan profile form (active checks, dry-run, response-diff deep mode, discovery, filtering, concurrency/timeouts/retries, endpoint caps),
   - manual multi-target entry (one-per-line or comma-separated),
   - CSV target import,
   - advanced transport/auth/performance controls:

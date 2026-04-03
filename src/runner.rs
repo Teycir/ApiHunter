@@ -36,7 +36,8 @@ use crate::{
     scanner::{
         api_security::ApiSecurityScanner, api_versioning::ApiVersioningScanner, cors::CorsScanner,
         csp::CspScanner, cve_templates::CveTemplateScanner, graphql::GraphqlScanner,
-        jwt::JwtScanner, mass_assignment::MassAssignmentScanner, oauth_oidc::OAuthOidcScanner,
+        grpc_protobuf::GrpcProtobufScanner, jwt::JwtScanner,
+        mass_assignment::MassAssignmentScanner, oauth_oidc::OAuthOidcScanner,
         openapi::OpenApiScanner, rate_limit::RateLimitScanner, websocket::WebSocketScanner,
         Scanner,
     },
@@ -531,6 +532,11 @@ fn build_scanners(
     }
     if config.toggles.api_versioning {
         scanners.push(RegisteredScanner::new(Arc::new(ApiVersioningScanner::new(
+            config,
+        ))));
+    }
+    if config.toggles.grpc_protobuf {
+        scanners.push(RegisteredScanner::new(Arc::new(GrpcProtobufScanner::new(
             config,
         ))));
     }

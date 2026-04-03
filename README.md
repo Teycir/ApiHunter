@@ -121,7 +121,7 @@ flowchart LR
 
 ## Scanner Modules
 
-ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
+ApiHunter includes 13 built-in scanner modules. See [docs/scanners.md](docs/scanners.md) for detailed detection logic.
 
 | Scanner | Type | What It Detects |
 |---------|------|----------------|
@@ -130,8 +130,9 @@ ApiHunter includes 12 built-in scanner modules. See [docs/scanners.md](docs/scan
 | **GraphQL** | Passive | Introspection enabled, sensitive schema fields (user/password/token types), field suggestions (schema leakage), query batching, alias amplification (DoS), GraphiQL/Playground exposure |
 | **JWT** | Passive | alg=none tokens, weak HS256 secrets (wordlist-based), missing/excessive expiry, sensitive claims in payload, algorithm confusion vulnerabilities |
 | **OpenAPI** | Passive | Missing security schemes, operations without auth requirements, file upload endpoints, deprecated operations still present, unsecured sensitive endpoints |
-| **API Versioning** | Passive | Version header disclosure, concurrent legacy/new API versions, deprecation headers, and response drift across benign query/version variants |
-| **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, and active IDOR/BOLA checks |
+| **API Versioning** | Passive | Version header disclosure, concurrent legacy/new API versions, deprecation headers, and response drift across benign query/version variants (plus deep mode via `--response-diff-deep`) |
+| **gRPC/Protobuf** | Passive + Active | gRPC transport/content-type signals, protobuf surface hints, and optional reflection/health probe signals |
+| **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, active IDOR/BOLA checks, blind SSRF callback probes, and gateway/bypass probe signals |
 | **Mass Assignment** | Active | Reflected sensitive fields (is_admin, role, permissions), persisted state changes, privilege escalation via field injection |
 | **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
 | **Rate Limit** | Active | Missing rate limiting (burst probes), missing Retry-After headers, IP header spoofing bypass (X-Forwarded-For) |
@@ -154,6 +155,7 @@ These notes summarize how findings are emitted and what typically causes noise:
 | JWT | `jwt/*` with token claim/header evidence | Test/demo tokens in synthetic responses | Token never appears in scanned responses |
 | OpenAPI | `openapi/*` with operation/security context | Spec intentionally includes deprecated but blocked endpoints | Spec unavailable or split across private docs |
 | API Versioning | `api_versioning/*` + `response_diff/*` | Multiple supported versions during controlled migrations | Versioned paths not discoverable from current seed set |
+| gRPC/Protobuf | `grpc_protobuf/*` with transport/reflection evidence | gRPC-like metadata on edge proxies without exposed RPC surface | gRPC endpoints behind separate host/path not reached from seed set |
 | API Security | `api_security/*` with header/path/method evidence | Debug/test endpoints intentionally exposed in non-prod | Controls enforced behind auth/session context |
 | Mass Assignment | `mass_assignment/*` with reflected/persisted deltas | Echo behavior that does not persist backend state | Mutations rejected by hidden validation rules |
 | OAuth/OIDC | `oauth/*` with redirect/metadata evidence | Non-production IdP config with relaxed policies | Dynamic policy enforcement not visible in metadata |
@@ -196,6 +198,10 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
   - Deprecated operation flagging
   - Missing security definitions
   - Spec caching for performance
+- **gRPC/Protobuf Coverage**:
+  - gRPC response metadata/content-type detection
+  - Protobuf surface hint detection from endpoint metadata/path shape
+  - Optional reflection/health active probe signals on known gRPC paths
 - **Secret Exposure Detection**:
   - AWS keys (AKIA*, secret keys)
   - Google API keys (AIza*)
@@ -217,6 +223,8 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
   - Unauthenticated access testing
   - ID enumeration (±2 range walk)
   - Cross-user authorization bypass (dual-identity)
+  - Blind SSRF callback probing via callback-style query params (`APIHUNTER_OAST_BASE`, supports `--dry-run`)
+  - Gateway fingerprint and bypass probing (`api_security/gateway-*`)
 - **Mass Assignment Vulnerabilities**:
   - Reflected sensitive field injection
   - Persisted state change detection
@@ -421,6 +429,7 @@ Desktop scan input supports:
 - CSV import via `Load CSV`
 - Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
 - Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
+- API versioning controls: optional deep response-diff probing toggle
 - Advanced controls: proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle
 - Performance controls: per-host clients, adaptive concurrency, WAF evasion with custom user-agent pool
 - Parallel-run progress cards with per-target completion/findings snapshots
@@ -473,7 +482,9 @@ main.rs  ──► cli.rs (args) ──► config.rs (Config)
                     ├─ swagger.rs            ├─ jwt.rs
                     ├─ js.rs                 ├─ graphql.rs
                     ├─ headers.rs            ├─ openapi.rs
-                    └─ common_paths.rs       ├─ api_versioning.rs
+                    └─ common_paths.rs       ├─ api_security.rs
+                                             ├─ api_versioning.rs
+                                             ├─ grpc_protobuf.rs
                                              ├─ mass_assignment.rs
                                              ├─ oauth_oidc.rs
                               http_client.rs ├─ rate_limit.rs
@@ -604,6 +615,24 @@ Run full validation:
 cargo test
 ```
 
+Run real-data integration gate (fixtures + live ignored suites):
+
+```bash
+# Fixture-backed real payload regression suites
+cargo test --test cve_templates_real_data --test cve_templates_upstream_parity --test cve_templates_runtime_ext
+
+# Manual live internet integration suites (ignored by default)
+cargo test --test live_vulnerable_apis --test live_real_world_targets -- --ignored
+```
+
+Live suites use default target inventories:
+- `targets/vuln-api-regression-real-public.txt`
+- `targets/real-world-integration-public.txt`
+
+You can override with:
+- `APIHUNTER_LIVE_VULN_TARGET_FILE` or `APIHUNTER_LIVE_VULN_TARGETS`
+- `APIHUNTER_LIVE_REAL_TARGET_FILE` or `APIHUNTER_LIVE_REAL_TARGETS`
+
 ## Documentation
 
 Complete documentation is available in `docs/`. Start with:
@@ -685,6 +714,7 @@ Desktop features (brief):
 - Multi-target scans (up to 100 targets) with manual input + CSV import
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
+- API versioning deep response-diff toggle in desktop full-scan profile
 - Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
 - One-click export for JSON, NDJSON, and SARIF reports
 
@@ -743,6 +773,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--danger-accept-invalid-certs` | off | Skip TLS certificate validation |
 | `--active-checks` | off | Enable active (potentially invasive) probes |
 | `--dry-run` | off | Dry-run active checks (report intended probes without sending mutation requests) |
+| `--response-diff-deep` | off | Enable deeper response-diff variant probes in API versioning checks |
 | `--per-host-clients` | off | Use per-host HTTP client pools |
 | `--adaptive-concurrency` | off | Adaptive concurrency (AIMD) |
 | `--no-cors` | off | Disable the CORS scanner |
@@ -752,6 +783,7 @@ docker run --rm -v "$PWD:/work" apihunter:local \
 | `--no-jwt` | off | Disable the JWT scanner |
 | `--no-openapi` | off | Disable the OpenAPI scanner |
 | `--no-api-versioning` | off | Disable the API versioning scanner |
+| `--no-grpc-protobuf` | off | Disable the gRPC/Protobuf scanner |
 | `--no-mass-assignment` | off | Disable the Mass Assignment scanner (active checks) |
 | `--no-oauth-oidc` | off | Disable the OAuth/OIDC scanner (active checks) |
 | `--no-rate-limit` | off | Disable the Rate Limit scanner (active checks) |

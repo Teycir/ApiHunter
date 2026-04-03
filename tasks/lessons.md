@@ -161,3 +161,7 @@
 - Rule: after each desktop milestone, run a feature-parity audit (`src/cli.rs` flags vs desktop request/UI) and prioritize wiring missing scope/transport/auth/performance controls before polishing visuals.
 - User correction pattern: README consumers need installation instructions split by interface (CLI vs desktop), not mixed into quick-start only.
 - Rule: keep a dedicated `Installation` section with explicit `CLI` and `Desktop` subsections plus a brief desktop feature snapshot for faster onboarding.
+
+## 2026-04-03
+- User correction pattern: when presented with numbered continuation options, user may intend all listed items, not a single choice.
+- Rule: if user confirms multiple roadmap items together (for example "1 2 and 3"), execute the full combined batch and update plan/docs as one phase unless they explicitly scope down.

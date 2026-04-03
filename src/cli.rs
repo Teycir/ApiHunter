@@ -151,6 +151,10 @@ pub struct Cli {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// Enable deeper response-diff analysis variants for API versioning checks.
+    #[arg(long)]
+    pub response_diff_deep: bool,
+
     /// Use per-host HTTP client pools.
     #[arg(long)]
     pub per_host_clients: bool,
@@ -212,6 +216,10 @@ pub struct Cli {
     /// Disable the API versioning scanner.
     #[arg(long)]
     pub no_api_versioning: bool,
+
+    /// Disable the gRPC/Protobuf scanner.
+    #[arg(long)]
+    pub no_grpc_protobuf: bool,
 
     /// Disable the Mass Assignment scanner (active checks).
     #[arg(long)]

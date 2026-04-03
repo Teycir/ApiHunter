@@ -12,6 +12,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - deprecation/sunset header signals (`api_versioning/deprecation-signaled`)
   - sibling version reachability checks (`api_versioning/multiple-active-versions`, `api_versioning/legacy-version-still-accessible`)
   - initial response-diff checks for benign query/version variants (`response_diff/*`)
+- API Security active blind SSRF callback probes (when `--active-checks` + `APIHUNTER_OAST_BASE`):
+  - `api_security/blind-ssrf-probe-dispatched`
+  - `api_security/blind-ssrf-token-reflected`
+  - `api_security/blind-ssrf-probe-dry-run`
+- API Security gateway checks:
+  - passive gateway fingerprint signal `api_security/gateway-detected`
+  - active gateway bypass probes `api_security/gateway-bypass-suspected` and dry-run mode `api_security/gateway-bypass-dry-run`
+- API versioning deep response-diff mode (`--response-diff-deep`):
+  - `response_diff/deep-variant-server-error`
+  - `response_diff/deep-variant-drift`
+- New scanner module: `grpc_protobuf`:
+  - `grpc_protobuf/grpc-transport-detected`
+  - `grpc_protobuf/protobuf-signal-detected`
+  - `grpc_protobuf/grpc-reflection-or-health-surface`
 - GraphQL active mutation fuzzing checks:
   - `graphql/mutation-fuzzing-accepted`
   - `graphql/mutation-fuzzing-server-errors`
@@ -19,16 +33,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - New input source: `--collection <file>` for Postman/Insomnia export JSON URL import.
 - Added targeted regression coverage:
   - `tests/api_versioning_scanner.rs`
+  - blind SSRF callback probe tests in `tests/api_security_scanner.rs`
+  - gateway detection/bypass tests in `tests/api_security_scanner.rs`
+  - deep response-diff mode tests in `tests/api_versioning_scanner.rs`
+  - `tests/grpc_protobuf_scanner.rs`
   - GraphQL mutation fuzzing tests in `tests/graphql_scanner.rs`
   - Collection import tests in `tests/cli.rs`
 
 ### Changed
 - CLI input group now supports exactly one of `--urls`, `--stdin`, `--har`, or `--collection`.
 - Added scanner toggle flag `--no-api-versioning`.
+- Added scanner toggle flag `--no-grpc-protobuf` and runtime flag `--response-diff-deep`.
+- Desktop full-scan profile now includes `response_diff_deep` toggle and forwards it to scanner config.
 - Documentation updates for scanner inventory, CLI flags, and API versioning coverage.
 
 ### Fixed
-- _Nothing yet._
+- Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.
+- Stabilized startup scanner-disabled integration assertions in `tests/startup_inputs.rs` by explicitly disabling newly added scanners (`--no-api-versioning`, `--no-grpc-protobuf`) in those command invocations.
 
 ## [0.3.0] - 2026-04-03
 

@@ -41,11 +41,13 @@ Durations are in milliseconds unless noted.
 | `danger_accept_invalid_certs` | `bool` | `false` | Skip TLS verification |
 | `active_checks` | `bool` | `false` | Enable active (potentially invasive) probes |
 | `dry_run` | `bool` | `false` | Dry-run active checks (report intended probes without sending mutation requests) |
+| `response_diff_deep` | `bool` | `false` | Enable deeper query/header response-diff probes in API versioning scanner |
 | `per_host_clients` | `bool` | `false` | Use per-host HTTP client pools |
 | `adaptive_concurrency` | `bool` | `false` | Adaptive concurrency (AIMD) |
 | `no_jwt` | `bool` | `false` | Disable JWT scanner |
 | `no_openapi` | `bool` | `false` | Disable OpenAPI scanner |
 | `no_api_versioning` | `bool` | `false` | Disable API versioning scanner |
+| `no_grpc_protobuf` | `bool` | `false` | Disable gRPC/Protobuf scanner |
 | `no_mass_assignment` | `bool` | `false` | Disable Mass Assignment scanner (active checks) |
 | `no_oauth_oidc` | `bool` | `false` | Disable OAuth/OIDC scanner (active checks) |
 | `no_rate_limit` | `bool` | `false` | Disable Rate Limit scanner (active checks) |

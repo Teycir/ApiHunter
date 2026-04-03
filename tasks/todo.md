@@ -1,3 +1,174 @@
+# Task: Docs Sync (README + CHANGELOG) (Phase 44)
+
+## Plan
+- [x] Identify missing documentation/changelog items from recent desktop + integration validation work.
+- [x] Update `README.md` with real-data integration gate commands and current scanner architecture list.
+- [x] Update `CHANGELOG.md` with concrete `Fixed` entries from recent compatibility/test fixes.
+- [x] Record review notes and completion status.
+
+## Review
+- `README.md` updates:
+  - Architecture tree scanner list now includes `api_security.rs` and `grpc_protobuf.rs`.
+  - Testing section now documents the pre-commit real-data integration gate commands:
+    - fixture-backed suites (`cve_templates_real_data`, `cve_templates_upstream_parity`, `cve_templates_runtime_ext`)
+    - live ignored suites (`live_vulnerable_apis`, `live_real_world_targets`)
+  - Added live target inventory defaults and override env vars for both live suites.
+- `CHANGELOG.md` updates:
+  - `Unreleased` -> `Fixed` now includes:
+    - missing `response_diff_deep` test-config field fix in `tests/mass_assignment_scanner.rs`
+    - scanner-disabled startup test stabilization in `tests/startup_inputs.rs` with `--no-api-versioning` + `--no-grpc-protobuf`.
+- Validation:
+  - documentation-only changes; no additional runtime behavior changed.
+
+---
+
+# Task: Pre-Commit Real-Data Integration Gate (Phase 43)
+
+## Plan
+- [x] Confirm “real data integration” test scope from project testing docs.
+- [x] Run fixture-based real-data integration tests.
+- [x] Run manual ignored live real-target integration tests.
+- [x] Record outcomes and keep commit blocked until gate status is reported.
+
+## Review
+- Scope used (per `docs/testing.md`):
+  - fixture-backed real payload integration: `cve_templates_real_data`, `cve_templates_upstream_parity`, `cve_templates_runtime_ext`
+  - manual ignored live integrations: `live_real_world_targets`, `live_vulnerable_apis`
+- Validation executed (outside sandbox):
+  - `cargo test --test cve_templates_real_data --test cve_templates_upstream_parity --test cve_templates_runtime_ext` ✅
+    - `cve_templates_real_data`: 8 passed
+    - `cve_templates_runtime_ext`: 7 passed
+    - `cve_templates_upstream_parity`: 2 passed
+  - `cargo test --test live_vulnerable_apis --test live_real_world_targets -- --ignored` ✅
+    - `live_real_world_targets_smoke`: passed (171.33s)
+    - `live_vulnerable_targets_emit_findings`: passed (174.69s)
+- Commit gate status:
+  - pre-commit real-data integration gate is green.
+  - no commit has been made.
+
+---
+
+# Task: Follow-up Batch (Desktop Deep-Diff Toggle + Full Test Run) (Phase 42)
+
+## Plan
+- [x] Add this task block and lock execution scope to requested items (1 and 2).
+- [x] Wire desktop UI + tauri payload mapping for `response_diff_deep`.
+- [x] Update docs/changelog notes for desktop deep-diff control parity.
+- [x] Run full `cargo test` outside sandbox and record outcome.
+- [x] Run desktop frontend build check after UI changes.
+- [x] Record review notes and mark completion.
+
+## Review
+- Changes made:
+  - `apps/desktop/src/App.tsx`:
+    - added `responseDiffDeep` to `FullScanRequest`.
+    - added new UI checkbox option card: `response diff deep`.
+    - wired checkbox state into desktop `run_full_scan` request payload.
+  - `apps/desktop/src-tauri/src/main.rs`:
+    - added `response_diff_deep` field to `FullScanRequest` with `#[serde(default)]` for backward-compatible deserialization.
+    - mapped `request.response_diff_deep` into scanner `Config.response_diff_deep`.
+    - updated `FullScanRequest::quick` default with `response_diff_deep: false`.
+  - docs/release notes:
+    - `README.md` desktop feature bullets updated to include deep response-diff toggle.
+    - `docs/desktop.md` full scan profile list updated; `last_updated` bumped to `2026-04-03`.
+    - `CHANGELOG.md` (`Unreleased/Changed`) now mentions desktop deep-diff toggle forwarding.
+- Regression fixes discovered during requested full-suite run:
+  - `tests/mass_assignment_scanner.rs`: added missing `response_diff_deep: false` in test `Config` initializer.
+  - `tests/startup_inputs.rs`: added `--no-api-versioning` and `--no-grpc-protobuf` in scanner-disabled startup tests to keep legacy assumptions stable.
+- Validation executed:
+  - `cargo fmt --all` ✅
+  - `npm run build` (in `apps/desktop`) ✅
+  - `cargo test` (outside sandbox) ✅
+
+---
+
+# Task: Tier-2 Expansion Batch (Gateway + Response Diff Deep + gRPC/Protobuf) (Phase 41)
+
+## Plan
+- [x] Add gateway-focused detection and low-noise bypass probes in `api_security`.
+- [x] Add configurable response-diff deep mode in `api_versioning` (CLI + config + scanner behavior).
+- [x] Add a dedicated passive `grpc_protobuf` scanner module and wire it into scanner registry/toggles.
+- [x] Add/adjust tests in `tests/` for scanner behavior, scanner naming, and CLI flag/toggle mapping.
+- [x] Update docs/changelog and record validation + review notes in this task.
+- [x] Run formatting and targeted tests outside sandbox.
+
+## Review
+- Changes made:
+  - `src/scanner/api_security.rs`:
+    - added gateway fingerprint detection (`api_security/gateway-detected`) from gateway-specific headers/server hints.
+    - added active gateway bypass probes with dry-run support:
+      - `api_security/gateway-bypass-suspected`
+      - `api_security/gateway-bypass-dry-run`
+    - bypass probes are low-noise gated (only when baseline is blocked: 401/403/404/405) and deduped per host+path.
+  - `src/scanner/api_versioning.rs`:
+    - added deep diff mode behind `Config.response_diff_deep` (CLI `--response-diff-deep`).
+    - new checks:
+      - `response_diff/deep-variant-server-error`
+      - `response_diff/deep-variant-drift`
+    - deep probes include benign query/header permutations with bounded probe count.
+  - `src/scanner/grpc_protobuf.rs` (new):
+    - added `grpc_protobuf` scanner module.
+    - passive checks:
+      - `grpc_protobuf/grpc-transport-detected`
+      - `grpc_protobuf/protobuf-signal-detected`
+    - active-check signal:
+      - `grpc_protobuf/grpc-reflection-or-health-surface`
+    - host-level dedupe for active probe paths.
+  - Wiring:
+    - `src/config.rs`: added `response_diff_deep` and `ScannerToggles.grpc_protobuf`.
+    - `src/cli.rs`: added `--response-diff-deep` and `--no-grpc-protobuf`.
+    - `src/main.rs`, `src/runner.rs`, `src/scanner/mod.rs`: config/toggle plumbing + scanner registration.
+    - desktop tauri backend mapping updated in `apps/desktop/src-tauri/src/main.rs` to include new config fields with safe defaults.
+  - Tests added/updated:
+    - new `tests/grpc_protobuf_scanner.rs`
+    - updated `tests/api_versioning_scanner.rs` (deep mode)
+    - updated `tests/api_security_scanner.rs` (gateway checks)
+    - updated `tests/scanner_names.rs`, `tests/cli.rs`
+  - Docs/release notes:
+    - `README.md`, `docs/scanners.md`, `docs/configuration.md`, `CHANGELOG.md`
+- Validation executed:
+  - `cargo fmt --all` ✅
+  - `cargo check` ✅
+  - `cargo test --test api_versioning_scanner --test api_security_scanner --test grpc_protobuf_scanner --test scanner_names --test cli` (outside sandbox) ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+
+---
+
+# Task: Tier-2 Blind SSRF Probe Expansion (Phase 40)
+
+## Plan
+- [x] Add a broader active blind-SSRF callback probe in `api_security` using query-parameter injection with OAST correlation tokens.
+- [x] Add dry-run behavior and low-noise guardrails (bounded params, host/path dedupe) for the new probe path.
+- [x] Add regression tests in `tests/` for dispatched and reflected callback-token behavior.
+- [x] Update docs/changelog with new checks and usage guidance (`APIHUNTER_OAST_BASE`).
+- [x] Run targeted tests outside sandbox and capture review notes.
+
+## Review
+- Changes made:
+  - `src/scanner/api_security.rs`:
+    - added active blind SSRF callback probe flow using query-parameter injection + OAST correlation tokens.
+    - new checks:
+      - `api_security/blind-ssrf-probe-dispatched`
+      - `api_security/blind-ssrf-token-reflected`
+      - `api_security/blind-ssrf-probe-dry-run`
+    - added low-noise controls:
+      - bounded parameter probe count (`BLIND_SSRF_MAX_PARAMS=4`)
+      - host+path dedupe (`ssrf_checked_paths`) to prevent repeated probes in multi-endpoint scans
+      - candidate parameter targeting (`url`, `uri`, `callback`, `webhook`, etc.)
+  - `tests/api_security_scanner.rs`:
+    - added regression tests for dispatched, reflected, and dry-run blind SSRF behavior.
+    - added async env lock guard around `APIHUNTER_OAST_BASE` manipulation to avoid test races.
+  - docs/release notes:
+    - `docs/scanners.md` updated with new API Security blind SSRF checks and active-checks guidance.
+    - `README.md` scanner/features text updated to include blind SSRF callback probe coverage.
+    - `CHANGELOG.md` updated in `Unreleased`.
+- Validation executed:
+  - `cargo fmt --all` ✅
+  - `cargo test --test api_security_scanner` (outside sandbox) ✅
+  - `cargo check` ✅
+
+---
+
 # Task: API Fuzzing Expansion Roadmap + Phase 1 Delivery (Phase 39)
 
 ## Plan

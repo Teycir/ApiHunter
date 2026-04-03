@@ -38,6 +38,9 @@ pub struct Config {
     /// Do not send active-check mutation requests; emit informational "would test" findings.
     pub dry_run: bool,
 
+    /// Enable deeper response-diff probe variants in versioning checks.
+    pub response_diff_deep: bool,
+
     /// Enable streaming NDJSON findings (reports while scan is running).
     pub stream_findings: bool,
 
@@ -83,6 +86,7 @@ pub struct ScannerToggles {
     pub jwt: bool,
     pub openapi: bool,
     pub api_versioning: bool,
+    pub grpc_protobuf: bool,
     pub mass_assignment: bool,
     pub oauth_oidc: bool,
     pub rate_limit: bool,
