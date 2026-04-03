@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -76,6 +76,36 @@ type ScanExports = {
   prettyJson: string;
   ndjson: string;
   sarif: string;
+  insomniaCollectionJson: string;
+  insomniaRunnerDataJson: string;
+  perTargetJson: TargetJsonExport[];
+  targetSummaries: TargetDiscoverySummary[];
+  discoveryRanking: TargetDiscoveryRank[];
+  targetSummaryJson: string;
+  discoveryRankingJson: string;
+};
+
+type TargetJsonExport = {
+  target: string;
+  fileName: string;
+  prettyJson: string;
+};
+
+type TargetDiscoverySummary = {
+  target: string;
+  discoveries: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+  errors: number;
+};
+
+type TargetDiscoveryRank = {
+  rank: number;
+  target: string;
+  discoveries: number;
 };
 
 type FullScanResponse = {
@@ -177,6 +207,10 @@ const MAX_CSV_FILE_BITS = 5 * 1024;
 const MAX_CSV_FILE_BYTES = Math.floor(MAX_CSV_FILE_BITS / 8);
 const MAX_TARGET_INPUT_CHARS = 32_000;
 const TEXT_ENCODER = new TextEncoder();
+const TARGET_SUMMARY_FILENAME = "target-discovery-summary.json";
+const TARGET_RANKING_FILENAME = "target-discovery-ranking.json";
+const INSOMNIA_COLLECTION_SUFFIX = "postman_collection.json";
+const INSOMNIA_RUNNER_DATA_SUFFIX = "insomnia_runner_data.json";
 const RUNTIME_LIMIT_RULES = {
   concurrency: { min: 1, max: 512 },
   timeoutSecs: { min: 1, max: 600 },
@@ -346,10 +380,18 @@ export default function App() {
     if (!exports) {
       return null;
     }
+    const perTargetJsonBytes = exports.perTargetJson.reduce(
+      (acc, item) => acc + TEXT_ENCODER.encode(item.prettyJson).length,
+      0,
+    );
     return {
-      json: TEXT_ENCODER.encode(exports.prettyJson).length,
+      json: perTargetJsonBytes,
       ndjson: TEXT_ENCODER.encode(exports.ndjson).length,
       sarif: TEXT_ENCODER.encode(exports.sarif).length,
+      insomnia: TEXT_ENCODER.encode(exports.insomniaCollectionJson).length,
+      insomniaRunnerData: TEXT_ENCODER.encode(exports.insomniaRunnerDataJson).length,
+      summary: TEXT_ENCODER.encode(exports.targetSummaryJson).length,
+      ranking: TEXT_ENCODER.encode(exports.discoveryRankingJson).length,
     };
   }, [exports]);
 
@@ -598,10 +640,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  async function saveExport(
+  async function saveExportFile(
     filename: string,
     mimeType: string,
     content: string,
+    folderName: string,
   ): Promise<string> {
     if (!tauriRuntimeAvailable) {
       downloadText(filename, mimeType, content);
@@ -612,23 +655,90 @@ export default function App() {
       request: {
         fileName: filename,
         content,
+        folderName,
       },
     });
     return result.path;
   }
 
+  async function saveExportArtifacts(
+    files: Array<{ fileName: string; mimeType: string; content: string }>,
+    folderName: string,
+  ): Promise<string[]> {
+    const outputs = await Promise.all(
+      files.map((file) =>
+        saveExportFile(file.fileName, file.mimeType, file.content, folderName),
+      ),
+    );
+    return outputs;
+  }
+
+  function buildPerTargetJsonArtifacts(scanExports: ScanExports): Array<{
+    fileName: string;
+    mimeType: string;
+    content: string;
+  }> {
+    return [
+      ...scanExports.perTargetJson.map((entry) => ({
+        fileName: entry.fileName,
+        mimeType: "application/json",
+        content: entry.prettyJson,
+      })),
+      {
+        fileName: TARGET_SUMMARY_FILENAME,
+        mimeType: "application/json",
+        content: scanExports.targetSummaryJson,
+      },
+      {
+        fileName: TARGET_RANKING_FILENAME,
+        mimeType: "application/json",
+        content: scanExports.discoveryRankingJson,
+      },
+    ];
+  }
+
   async function saveSingleExport(
-    key: "json" | "ndjson" | "sarif",
-    filename: string,
-    mimeType: string,
-    content: string,
+    key: "json" | "ndjson" | "sarif" | "insomnia" | "insomniaRunnerData",
   ): Promise<void> {
     setError(null);
     setSavedPaths([]);
     setSavingKey(key);
 
+    if (!exports) {
+      setSavingKey(null);
+      return;
+    }
+
+    const folderName = buildExportFolderName(exportPrefix);
+
     try {
-      const path = await saveExport(filename, mimeType, content);
+      if (key === "json") {
+        const jsonArtifacts = buildPerTargetJsonArtifacts(exports);
+        const paths = await saveExportArtifacts(jsonArtifacts, folderName);
+        setSavedPaths(paths);
+        return;
+      }
+
+      const format =
+        key === "ndjson"
+          ? "ndjson"
+          : key === "sarif"
+            ? "sarif"
+            : key === "insomnia"
+              ? "insomnia"
+              : "insomniaRunnerData";
+      const fileName = getExportFilename(exportPrefix, format);
+      const content =
+        key === "ndjson"
+          ? exports.ndjson
+          : key === "sarif"
+            ? exports.sarif
+            : key === "insomnia"
+              ? exports.insomniaCollectionJson
+              : exports.insomniaRunnerDataJson;
+      const mimeType =
+        key === "ndjson" ? "application/x-ndjson" : "application/json";
+      const path = await saveExportFile(fileName, mimeType, content, folderName);
       setSavedPaths([path]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -647,16 +757,41 @@ export default function App() {
     setError(null);
     setSavedPaths([]);
 
-    const jsonName = getExportFilename(exportPrefix, "json");
+    const folderName = buildExportFolderName(exportPrefix);
     const ndjsonName = getExportFilename(exportPrefix, "ndjson");
     const sarifName = getExportFilename(exportPrefix, "sarif");
+    const insomniaName = getExportFilename(exportPrefix, "insomnia");
+    const insomniaRunnerDataName = getExportFilename(
+      exportPrefix,
+      "insomniaRunnerData",
+    );
+    const jsonArtifacts = buildPerTargetJsonArtifacts(exports);
+    const files = [
+      ...jsonArtifacts,
+      {
+        fileName: ndjsonName,
+        mimeType: "application/x-ndjson",
+        content: exports.ndjson,
+      },
+      {
+        fileName: sarifName,
+        mimeType: "application/json",
+        content: exports.sarif,
+      },
+      {
+        fileName: insomniaName,
+        mimeType: "application/json",
+        content: exports.insomniaCollectionJson,
+      },
+      {
+        fileName: insomniaRunnerDataName,
+        mimeType: "application/json",
+        content: exports.insomniaRunnerDataJson,
+      },
+    ];
 
     try {
-      const outputs = await Promise.all([
-        saveExport(jsonName, "application/json", exports.prettyJson),
-        saveExport(ndjsonName, "application/x-ndjson", exports.ndjson),
-        saveExport(sarifName, "application/json", exports.sarif),
-      ]);
+      const outputs = await saveExportArtifacts(files, folderName);
       setSavedPaths(outputs);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -667,7 +802,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <section className="panel panel-hero">
+      <CollapsiblePanel title="Overview" className="panel-hero" defaultOpen>
         <h1 className="hero-title">
           <BrandSymbol />
           <span>ApiHunter Desktop</span>
@@ -691,10 +826,9 @@ export default function App() {
             launch the built desktop binary.
           </p>
         )}
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
-        <h2>Connection</h2>
+      <CollapsiblePanel title="Connection" defaultOpen>
         <button type="button" className="btn secondary" onClick={fetchHealth}>
           Check Backend Health
         </button>
@@ -705,10 +839,9 @@ export default function App() {
             <p>scanner version: {health.scannerVersion}</p>
           </div>
         )}
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
-        <h2>Full Scan</h2>
+      <CollapsiblePanel title="Full Scan" defaultOpen>
         <form onSubmit={runFullScan} className="scan-form">
           <label htmlFor="targetInput">Targets (max 100)</label>
           <textarea
@@ -796,96 +929,108 @@ export default function App() {
             </p>
           )}
 
-          <h3 className="form-section-title">1) Safety and Scan Behavior</h3>
-          <div className="grid-options">
-            <div className="option-card">
-              <label title="Send active test probes (for example authz/mutation/rate-limit checks).">
-                <input
-                  type="checkbox"
-                  checked={activeChecks}
-                  onChange={(e) => setActiveChecks(e.target.checked)}
-                />
-                active checks
-              </label>
-              <p className="muted">
-                Enables probe-based testing beyond passive analysis. More
-                coverage, potentially more intrusive.
-              </p>
+          <details className="section-panel">
+            <summary className="section-panel-summary">
+              Safety and Scan Behavior
+            </summary>
+            <div className="section-panel-body">
+              <div className="grid-options">
+                <div className="option-card">
+                  <label title="Send active test probes (for example authz/mutation/rate-limit checks).">
+                    <input
+                      type="checkbox"
+                      checked={activeChecks}
+                      onChange={(e) => setActiveChecks(e.target.checked)}
+                    />
+                    active checks
+                  </label>
+                  <p className="muted">
+                    Enables probe-based testing beyond passive analysis. More
+                    coverage, potentially more intrusive.
+                  </p>
+                </div>
+                <div className="option-card">
+                  <label title="Plan and simulate active checks without sending state-changing payloads where supported.">
+                    <input
+                      type="checkbox"
+                      checked={dryRun}
+                      onChange={(e) => setDryRun(e.target.checked)}
+                    />
+                    dry run
+                  </label>
+                  <p className="muted">
+                    Safer mode for active checks. Useful for first pass on
+                    production-like targets.
+                  </p>
+                </div>
+                <div className="option-card">
+                  <label title="Enable deeper API response drift probes (extra query/header variants).">
+                    <input
+                      type="checkbox"
+                      checked={responseDiffDeep}
+                      onChange={(e) => setResponseDiffDeep(e.target.checked)}
+                    />
+                    response diff deep
+                  </label>
+                  <p className="muted">
+                    Adds deeper variant-based response comparison in API
+                    versioning checks.
+                  </p>
+                </div>
+                <div className="option-card">
+                  <label title="Skip endpoint discovery and only scan the URLs you provided.">
+                    <input
+                      type="checkbox"
+                      checked={noDiscovery}
+                      onChange={(e) => setNoDiscovery(e.target.checked)}
+                    />
+                    no discovery
+                  </label>
+                  <p className="muted">
+                    Faster and more predictable scans for large target lists.
+                    Turn off to crawl for additional endpoints.
+                  </p>
+                </div>
+                <div className="option-card">
+                  <label title="Skip the pre-scan accessibility check and scan all provided targets directly.">
+                    <input
+                      type="checkbox"
+                      checked={noFilter}
+                      onChange={(e) => setNoFilter(e.target.checked)}
+                    />
+                    no filter
+                  </label>
+                  <p className="muted">
+                    Disables reachability pre-check. Use this for strict target
+                    sets where blocked URLs should still be attempted.
+                  </p>
+                </div>
+                <div className="option-card">
+                  <label title="Allow self-signed/invalid TLS certificates (dangerous).">
+                    <input
+                      type="checkbox"
+                      checked={dangerAcceptInvalidCerts}
+                      onChange={(e) => setDangerAcceptInvalidCerts(e.target.checked)}
+                    />
+                    accept invalid TLS certs
+                  </label>
+                  <p className="muted">
+                    Use only in controlled environments. This lowers transport
+                    security validation.
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="option-card">
-              <label title="Plan and simulate active checks without sending state-changing payloads where supported.">
-                <input
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                />
-                dry run
-              </label>
-              <p className="muted">
-                Safer mode for active checks. Useful for first pass on production-like targets.
-              </p>
-            </div>
-            <div className="option-card">
-              <label title="Enable deeper API response drift probes (extra query/header variants).">
-                <input
-                  type="checkbox"
-                  checked={responseDiffDeep}
-                  onChange={(e) => setResponseDiffDeep(e.target.checked)}
-                />
-                response diff deep
-              </label>
-              <p className="muted">
-                Adds deeper variant-based response comparison in API versioning checks.
-              </p>
-            </div>
-            <div className="option-card">
-              <label title="Skip endpoint discovery and only scan the URLs you provided.">
-                <input
-                  type="checkbox"
-                  checked={noDiscovery}
-                  onChange={(e) => setNoDiscovery(e.target.checked)}
-                />
-                no discovery
-              </label>
-              <p className="muted">
-                Faster and more predictable scans for large target lists. Turn off to crawl for
-                additional endpoints.
-              </p>
-            </div>
-            <div className="option-card">
-              <label title="Skip the pre-scan accessibility check and scan all provided targets directly.">
-                <input
-                  type="checkbox"
-                  checked={noFilter}
-                  onChange={(e) => setNoFilter(e.target.checked)}
-                />
-                no filter
-              </label>
-              <p className="muted">
-                Disables reachability pre-check. Use this for strict target sets where blocked URLs
-                should still be attempted.
-              </p>
-            </div>
-            <div className="option-card">
-              <label title="Allow self-signed/invalid TLS certificates (dangerous).">
-                <input
-                  type="checkbox"
-                  checked={dangerAcceptInvalidCerts}
-                  onChange={(e) => setDangerAcceptInvalidCerts(e.target.checked)}
-                />
-                accept invalid TLS certs
-              </label>
-              <p className="muted">
-                Use only in controlled environments. This lowers transport security validation.
-              </p>
-            </div>
-          </div>
+          </details>
 
-          <h3 className="form-section-title">2) Runtime Limits</h3>
-          <p className="runtime-limits-help">
-            Tune speed and stability. These values apply scan-wide and stay aligned across screen sizes.
-          </p>
-          <div className="grid-numbers">
+          <details className="section-panel">
+            <summary className="section-panel-summary">Runtime Limits</summary>
+            <div className="section-panel-body">
+              <p className="runtime-limits-help">
+                Tune speed and stability. These values apply scan-wide and stay
+                aligned across screen sizes.
+              </p>
+              <div className="grid-numbers">
             <label className="runtime-field">
               <span className="runtime-label">concurrency</span>
               <input
@@ -986,6 +1131,8 @@ export default function App() {
               />
             </label>
           </div>
+            </div>
+          </details>
 
           <details className="advanced-panel">
             <summary>Advanced Transport, Auth, and Performance</summary>
@@ -1102,25 +1249,29 @@ export default function App() {
             </div>
           </details>
 
-          <fieldset className="toggle-grid">
-            <legend>Scanner toggles</legend>
-            <p className="muted scanner-help">
-              Disable modules you do not need to reduce scan time and noise.
-            </p>
-            {TOGGLE_FIELDS.map((item) => (
-              <label key={item.key} className="toggle-item">
-                <div className="toggle-title-row">
-                  <input
-                    type="checkbox"
-                    checked={toggles[item.key]}
-                    onChange={(e) => setToggleField(item.key, e.target.checked)}
-                  />
-                  <span>{item.label}</span>
-                </div>
-                <small className="toggle-hint">{item.hint}</small>
-              </label>
-            ))}
-          </fieldset>
+          <details className="section-panel">
+            <summary className="section-panel-summary">Scanner toggles</summary>
+            <div className="section-panel-body">
+              <p className="muted scanner-help">
+                Disable modules you do not need to reduce scan time and noise.
+              </p>
+              <div className="toggle-grid">
+                {TOGGLE_FIELDS.map((item) => (
+                  <label key={item.key} className="toggle-item">
+                    <div className="toggle-title-row">
+                      <input
+                        type="checkbox"
+                        checked={toggles[item.key]}
+                        onChange={(e) => setToggleField(item.key, e.target.checked)}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                    <small className="toggle-hint">{item.hint}</small>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </details>
 
           <button type="submit" className="btn" disabled={loading}>
             {loading ? "Scanning..." : "Run Full Scan"}
@@ -1128,10 +1279,9 @@ export default function App() {
         </form>
 
         {error && <p className="status-error">{error}</p>}
-      </section>
+      </CollapsiblePanel>
 
-      <section className="panel">
-        <h2>Live Progress</h2>
+      <CollapsiblePanel title="Live Progress" defaultOpen>
         <p>
           {totalUrls > 0
             ? `${completedUrls}/${totalUrls} URLs completed (${progressPct}%)`
@@ -1175,11 +1325,10 @@ export default function App() {
             logs.map((line, idx) => <p key={`${idx}-${line}`}>{line}</p>)
           )}
         </div>
-      </section>
+      </CollapsiblePanel>
 
       {summary && (
-        <section className="panel">
-          <h2>Results</h2>
+        <CollapsiblePanel title="Results" defaultOpen>
           <div className="result-grid">
             <article className="result-card">
               <h3>Summary</h3>
@@ -1214,6 +1363,42 @@ export default function App() {
                 </ul>
               )}
             </article>
+
+            {exports && (
+              <article className="result-card">
+                <h3>Target ranking</h3>
+                {exports.discoveryRanking.length === 0 ? (
+                  <p>No target discoveries reported.</p>
+                ) : (
+                  <ul>
+                    {exports.discoveryRanking.map((entry) => (
+                      <li key={`${entry.rank}-${entry.target}`}>
+                        #{entry.rank} {entry.target}: {entry.discoveries}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            )}
+
+            {exports && (
+              <article className="result-card">
+                <h3>Per-target summary</h3>
+                {exports.targetSummaries.length === 0 ? (
+                  <p>No target summaries available.</p>
+                ) : (
+                  <ul>
+                    {exports.targetSummaries.map((entry) => (
+                      <li key={entry.target}>
+                        {entry.target}: {entry.discoveries} discoveries (C:
+                        {entry.critical} H:{entry.high} M:{entry.medium} L:
+                        {entry.low} I:{entry.info} E:{entry.errors})
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            )}
           </div>
 
           {exports && (
@@ -1230,31 +1415,17 @@ export default function App() {
                 type="button"
                 className="btn secondary"
                 disabled={savingAll || savingKey !== null}
-                onClick={() =>
-                  void saveSingleExport(
-                    "json",
-                    getExportFilename(exportPrefix, "json"),
-                    "application/json",
-                    exports.prettyJson,
-                  )
-                }
+                onClick={() => void saveSingleExport("json")}
               >
                 {savingKey === "json"
-                  ? "Saving JSON..."
-                  : `Save JSON (${formatBytes(exportStats?.json ?? 0)})`}
+                  ? "Saving Target JSON..."
+                  : `Save Target JSON Bundle (${formatBytes(exportStats?.json ?? 0)})`}
               </button>
               <button
                 type="button"
                 className="btn secondary"
                 disabled={savingAll || savingKey !== null}
-                onClick={() =>
-                  void saveSingleExport(
-                    "ndjson",
-                    getExportFilename(exportPrefix, "ndjson"),
-                    "application/x-ndjson",
-                    exports.ndjson,
-                  )
-                }
+                onClick={() => void saveSingleExport("ndjson")}
               >
                 {savingKey === "ndjson"
                   ? "Saving NDJSON..."
@@ -1264,23 +1435,36 @@ export default function App() {
                 type="button"
                 className="btn secondary"
                 disabled={savingAll || savingKey !== null}
-                onClick={() =>
-                  void saveSingleExport(
-                    "sarif",
-                    getExportFilename(exportPrefix, "sarif"),
-                    "application/json",
-                    exports.sarif,
-                  )
-                }
+                onClick={() => void saveSingleExport("sarif")}
               >
                 {savingKey === "sarif"
                   ? "Saving SARIF..."
                   : `Save SARIF (${formatBytes(exportStats?.sarif ?? 0)})`}
               </button>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={savingAll || savingKey !== null}
+                onClick={() => void saveSingleExport("insomnia")}
+              >
+                {savingKey === "insomnia"
+                  ? "Saving Insomnia Collection..."
+                  : `Save Insomnia Collection (${formatBytes(exportStats?.insomnia ?? 0)})`}
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={savingAll || savingKey !== null}
+                onClick={() => void saveSingleExport("insomniaRunnerData")}
+              >
+                {savingKey === "insomniaRunnerData"
+                  ? "Saving Runner Data..."
+                  : `Save Insomnia Runner Data (${formatBytes(exportStats?.insomniaRunnerData ?? 0)})`}
+              </button>
               <p className="muted">
-                For high target counts, export size can grow quickly. Use NDJSON
-                for stream-style ingestion and Save All for consistent per-run
-                filenames.
+                Export writes into a timestamped folder. JSON exports are split
+                per target and include discovery summary/ranking files plus an
+                Insomnia-importable collection and runner data file.
               </p>
             </div>
           )}
@@ -1294,9 +1478,29 @@ export default function App() {
               </ul>
             </div>
           )}
-        </section>
+        </CollapsiblePanel>
       )}
     </main>
+  );
+}
+
+function CollapsiblePanel({
+  title,
+  children,
+  className,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+  defaultOpen?: boolean;
+}) {
+  const panelClassName = className ? `panel ${className}` : "panel";
+  return (
+    <details className={`${panelClassName} collapsible-panel`} open={defaultOpen}>
+      <summary className="panel-summary">{title}</summary>
+      <div className="panel-body">{children}</div>
+    </details>
   );
 }
 
@@ -1447,7 +1651,7 @@ function formatBytes(bytes: number): string {
 
 function getExportFilename(
   prefix: string | null,
-  format: "json" | "ndjson" | "sarif",
+  format: "json" | "ndjson" | "sarif" | "insomnia" | "insomniaRunnerData",
 ): string {
   const safePrefix =
     prefix ??
@@ -1456,7 +1660,23 @@ function getExportFilename(
       .replace(/[-:]/g, "")
       .replace(/\..+$/, "")
       .replace("T", "-")}`;
+  if (format === "insomnia") {
+    return `${safePrefix}.${INSOMNIA_COLLECTION_SUFFIX}`;
+  }
+  if (format === "insomniaRunnerData") {
+    return `${safePrefix}.${INSOMNIA_RUNNER_DATA_SUFFIX}`;
+  }
   return `${safePrefix}.${format}`;
+}
+
+function buildExportFolderName(prefix: string | null): string {
+  const base = prefix ?? "apihunter-scan";
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+$/, "")
+    .replace("T", "-");
+  return `${base}-exports-${stamp}`;
 }
 
 function buildExportPrefix(

@@ -1,3 +1,155 @@
+# Task: Insomnia Runner Data Export (Phase 56)
+
+## Plan
+- [x] Add dedicated Insomnia Runner data export artifact (JSON array of key-value objects).
+- [x] Generate runner-data rows from discovered findings/targets in desktop backend export pipeline.
+- [x] Add desktop save action and include runner-data artifact in Save All bundle.
+- [x] Validate desktop build with `npm run tauri build`.
+- [x] Update changelog and record review notes.
+
+## Review
+- Backend (`apps/desktop/src-tauri/src/main.rs`):
+  - Extended `ScanExports` with `insomnia_runner_data_json`.
+  - Added `build_insomnia_runner_data_export(...)` that outputs an array of key-value objects suitable for Insomnia Runner data upload.
+  - Runner rows include:
+    - `iteration`
+    - `target_index`
+    - `target`
+    - `url`
+    - `method`
+    - `findings_count`
+    - `max_severity`
+    - `top_check`
+- Frontend (`apps/desktop/src/App.tsx`):
+  - Added `insomniaRunnerDataJson` to export type.
+  - Added new export action button: `Save Insomnia Runner Data`.
+  - Included runner-data artifact in `Save All Reports`.
+  - Added filename suffix support: `*.insomnia_runner_data.json`.
+- Docs/changelog:
+  - Updated `README.md` and `docs/desktop.md` export feature bullets.
+  - Added changelog note under Unreleased.
+- Validation:
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Desktop Collapsible Panels (Phase 55)
+
+## Plan
+- [x] Make top-level desktop panels collapsible (`Overview`, `Connection`, `Full Scan`, `Live Progress`, `Results`).
+- [x] Make heavy full-scan subsections collapsible (`Safety and Scan Behavior`, `Runtime Limits`, `Scanner toggles`).
+- [x] Add/adjust CSS for clear collapse affordances and compact spacing.
+- [x] Validate desktop build with `npm run tauri build`.
+- [x] Record review notes and changelog update.
+
+## Review
+- UI updates (`apps/desktop/src/App.tsx`):
+  - Added reusable `CollapsiblePanel` component using native `<details>/<summary>`.
+  - Converted all top-level panels to collapsible:
+    - `Overview`
+    - `Connection`
+    - `Full Scan`
+    - `Live Progress`
+    - `Results`
+  - Converted large Full Scan subsections to collapsible blocks:
+    - `1) Safety and Scan Behavior`
+    - `2) Runtime Limits`
+    - `Scanner toggles`
+  - Preserved existing controls and behaviors inside each section.
+- Styling updates (`apps/desktop/src/styles.css`):
+  - Added collapse-header styles and indicator arrows for top-level panels.
+  - Added compact collapsible subsection styling for scan form blocks.
+  - Kept responsive behavior intact for current breakpoints.
+- Changelog:
+  - Added Unreleased entry for collapsible desktop panels.
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Desktop Insomnia-Compatible Export (Phase 54)
+
+## Plan
+- [x] Add an Insomnia-importable export artifact to desktop scan exports.
+- [x] Generate collection JSON in backend using a format Insomnia imports reliably (Postman v2.1 collection).
+- [x] Add desktop export action/button and include artifact in Save All bundle.
+- [x] Validate desktop build with `npm run tauri build`.
+- [x] Record review notes and changelog update.
+
+## Review
+- Backend (`apps/desktop/src-tauri/src/main.rs`):
+  - Extended `ScanExports` with `insomniaCollectionJson` (serde camelCase from `insomnia_collection_json`).
+  - Added Postman v2.1 collection JSON generation (`build_insomnia_collection_export`), grouped by target:
+    - creates a folder per target.
+    - emits request entries per discovered URL (plus target seed URL).
+    - adds discovery metadata in each request description (`findings`, `max severity`, top checks).
+  - Chosen format is Postman v2.1 schema so Insomnia can import it reliably.
+- Frontend (`apps/desktop/src/App.tsx`):
+  - Added `insomniaCollectionJson` to `ScanExports` type.
+  - Added `Save Insomnia Collection` action in export controls.
+  - Added Insomnia collection artifact to `Save All Reports`.
+  - Updated helper copy to state Insomnia-importable collection output.
+- Docs:
+  - Updated desktop/README feature bullets to include Insomnia-importable export support.
+  - Updated `CHANGELOG.md` Unreleased section.
+- Validation:
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Desktop Export Per-Target Bundles + Ranking (Phase 53)
+
+## Plan
+- [x] Refactor desktop export payloads to include per-target JSON documents, per-target discovery summaries, and discovery-count ranking.
+- [x] Add timestamped export-bundle folder support in Tauri backend save command and keep filename sanitization safe.
+- [x] Update desktop frontend export actions to save reports into one timestamped folder (per-target JSON + shared NDJSON/SARIF + summary/ranking).
+- [x] Validate desktop app compiles with `npm run tauri build`.
+- [x] Record review notes and outcomes.
+
+## Review
+- Backend (`apps/desktop/src-tauri/src/main.rs`):
+  - Extended `ScanExports` with:
+    - `perTargetJson`
+    - `targetSummaries`
+    - `discoveryRanking`
+    - `targetSummaryJson`
+    - `discoveryRankingJson`
+  - Updated export builder to:
+    - map findings/errors to requested targets via host+port and longest matching path-prefix.
+    - generate one JSON report per target (`target-XX-<slug>.json`).
+    - compute per-target discovery summaries with severity/error breakdowns.
+    - compute ranking ordered by discovery count desc (+ target name tie-break).
+  - Updated `save_export` to support foldered writes via `folderName` and create directory trees.
+  - Added automatic timestamped folder fallback when `folderName` is not provided.
+- Frontend (`apps/desktop/src/App.tsx`):
+  - Added new export response types for per-target JSON and ranking/summary metadata.
+  - Changed JSON export behavior:
+    - `Save Target JSON Bundle` now saves one JSON file per target plus:
+      - `target-discovery-summary.json`
+      - `target-discovery-ranking.json`
+  - Changed `Save All Reports` to write:
+    - per-target JSON bundle files
+    - summary/ranking JSON
+    - NDJSON
+    - SARIF
+  - All desktop export writes now use a shared timestamped folder name per action.
+  - Added result cards for:
+    - per-target summary
+    - target ranking by discovery count
+- Dependency update:
+  - Added `chrono = "0.4"` to desktop tauri crate dependencies for timestamp formatting.
+- Validation:
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
 # Task: Target Input + CSV Sanitization (Phase 52)
 
 ## Plan

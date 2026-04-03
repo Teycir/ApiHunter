@@ -27,7 +27,7 @@ ApiHunter now includes a desktop app under `apps/desktop`.
   - per-scanner toggles,
   - live event/log stream with progress bar and per-target completion cards for parallel runs,
   - findings summary cards and top-check list,
-  - export controls for JSON, NDJSON, SARIF with size labels and one-click `Save All Reports`.
+  - export controls for per-target JSON bundles, NDJSON, SARIF, Insomnia-importable collection JSON, and Insomnia Runner-data JSON arrays with size labels and one-click `Save All Reports`.
 - First backend commands:
   - `health_check`
   - `run_quick_scan`

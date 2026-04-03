@@ -52,6 +52,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Desktop scan UX now provides guided presets (`Quick Passive`, `Balanced`, `Deep Active`) and clearer sectioned setup flow with richer explanatory labels.
 - Desktop scanner toggles now expose full parity for `API Versioning` and `gRPC/Protobuf` modules.
 - Desktop advanced controls now include `OAST callback base` for blind SSRF correlation, wired to runtime `APIHUNTER_OAST_BASE` as a scoped per-scan override.
+- Desktop export flow now writes reports into timestamped export folders and generates per-target JSON reports with bundled discovery summary + discovery-count ranking files.
+- Desktop exports now include an Insomnia-importable collection file (Postman v2.1 JSON) grouped per target with discovery context.
+- Desktop UI panels are now collapsible for faster navigation: top-level sections plus large Full Scan subsections (`Safety`, `Runtime Limits`, and `Scanner toggles`).
+- Desktop exports now include an Insomnia Runner-data JSON file (array of key-value objects) for Runner preview/upload flows when collection import UI is unavailable.
 
 ### Fixed
 - Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.

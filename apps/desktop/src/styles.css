@@ -30,6 +30,45 @@ body {
   box-shadow: 0 8px 24px #0b1a2f12;
 }
 
+.collapsible-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.panel-summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1.02rem;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid transparent;
+}
+
+.panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-summary::after {
+  content: "▾";
+  color: #56708f;
+  transition: transform 180ms ease;
+}
+
+.collapsible-panel:not([open]) .panel-summary::after {
+  transform: rotate(-90deg);
+}
+
+.collapsible-panel[open] .panel-summary {
+  border-bottom-color: #dbe5f0;
+}
+
+.panel-body {
+  padding: 14px 18px 18px;
+}
+
 .panel-hero h1 {
   margin: 0 0 8px;
   font-size: 1.8rem;
@@ -210,6 +249,43 @@ body {
   color: #1f2b3b;
 }
 
+.section-panel {
+  border: 1px solid #cfdae8;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 0;
+  margin: 0;
+}
+
+.section-panel-summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-panel-summary::after {
+  content: "▾";
+  color: #56708f;
+  transition: transform 180ms ease;
+}
+
+.section-panel:not([open]) .section-panel-summary::after {
+  transform: rotate(-90deg);
+}
+
+.section-panel-body {
+  padding: 0 10px 10px;
+}
+
 .runtime-limits-help {
   margin: 2px 0 0;
   font-size: 0.82rem;
@@ -274,14 +350,32 @@ body {
   border-radius: 10px;
   background: #f8fbff;
   padding: 8px 10px;
-  width: min(100%, 760px);
-  justify-self: start;
+  width: 100%;
+  justify-self: stretch;
 }
 
 .advanced-panel summary {
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.advanced-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-panel summary::after {
+  content: "▾";
+  color: #56708f;
+  transition: transform 180ms ease;
+}
+
+.advanced-panel:not([open]) summary::after {
+  transform: rotate(-90deg);
 }
 
 .advanced-panel .muted {

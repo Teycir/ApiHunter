@@ -723,7 +723,7 @@ Desktop features (brief):
 - API versioning deep response-diff toggle in desktop full-scan profile
 - OAST callback base control for blind SSRF active-check correlation
 - Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
-- One-click export for JSON, NDJSON, and SARIF reports
+- One-click export for per-target JSON bundles, NDJSON, SARIF, Insomnia-importable collection JSON, and Insomnia Runner-data JSON
 
 ### Docker
 

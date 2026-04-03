@@ -136,6 +136,7 @@ version = "0.3.0"
 dependencies = [
  "apihunter",
  "base64 0.22.1",
+ "chrono",
  "once_cell",
  "serde",
  "serde_json",
