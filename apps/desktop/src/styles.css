@@ -594,11 +594,16 @@ body {
   gap: 12px;
 }
 
+.result-grid > * {
+  min-width: 0;
+}
+
 .result-card {
   border: 1px solid #d7e1ec;
   border-radius: 12px;
   padding: 12px;
   background: #f8fbff;
+  min-width: 0;
 }
 
 .result-card h3 {
@@ -608,6 +613,12 @@ body {
 .result-card ul {
   margin: 0;
   padding-left: 16px;
+}
+
+.result-card p,
+.result-card li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .export-row {
