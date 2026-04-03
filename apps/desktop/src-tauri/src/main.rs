@@ -15,11 +15,14 @@ use api_scanner::{
     runner::{self, ProgressEvent},
 };
 use base64::prelude::{Engine as _, BASE64_STANDARD};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
+static OAST_ENV_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 const MAX_TARGETS: usize = 100;
+const OAST_BASE_ENV: &str = "APIHUNTER_OAST_BASE";
 
 fn default_true() -> bool {
     true
@@ -95,6 +98,7 @@ struct FullScanRequest {
     headers: Vec<String>,
     cookies: Vec<String>,
     proxy: Option<String>,
+    oast_base: Option<String>,
     danger_accept_invalid_certs: bool,
     auth_bearer: Option<String>,
     auth_basic: Option<String>,
@@ -125,6 +129,7 @@ impl FullScanRequest {
             headers: Vec::new(),
             cookies: Vec::new(),
             proxy: None,
+            oast_base: None,
             danger_accept_invalid_certs: false,
             auth_bearer: None,
             auth_basic: None,
@@ -441,6 +446,14 @@ async fn run_full_scan_impl(
     }
 
     let proxy = normalize_optional_string(request.proxy);
+    let oast_base = normalize_optional_string(request.oast_base);
+    if let Some(base) = &oast_base {
+        let parsed = url::Url::parse(base)
+            .map_err(|_| "oastBase must be a valid absolute URL.".to_string())?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err("oastBase must use http or https.".to_string());
+        }
+    }
     let headers = parse_default_headers(&request.headers, &auth_bearer, &auth_basic)?;
     let cookies = parse_cookies(&request.cookies)?;
     let user_agents = sanitize_string_list(&request.user_agents);
@@ -501,6 +514,34 @@ async fn run_full_scan_impl(
 
     let scan_id = NEXT_SCAN_ID.fetch_add(1, Ordering::Relaxed);
     let mut scan_targets = targets;
+    let _oast_lock = OAST_ENV_LOCK.lock().await;
+    let _oast_guard = ScopedEnvVar::set(OAST_BASE_ENV, oast_base.as_deref());
+
+    if request.active_checks {
+        let message = if let Some(base) = &oast_base {
+            format!("Blind SSRF callback correlation enabled: {base}")
+        } else {
+            "Blind SSRF callback correlation disabled (set OAST callback base to enable)."
+                .to_string()
+        };
+        emit_scan_event(
+            &app,
+            ScanEventPayload {
+                scan_id,
+                event: "log".to_string(),
+                message,
+                total_urls: None,
+                completed_urls: None,
+                url: None,
+                findings: None,
+                critical: None,
+                high: None,
+                medium: None,
+                errors: None,
+                elapsed_ms: None,
+            },
+        );
+    }
 
     if !request.no_filter {
         emit_scan_event(
@@ -724,6 +765,32 @@ fn normalize_optional_string(input: Option<String>) -> Option<String> {
     input
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+struct ScopedEnvVar {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl ScopedEnvVar {
+    fn set(key: &'static str, next: Option<&str>) -> Self {
+        let previous = std::env::var(key).ok();
+        match next {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
 }
 
 fn sanitize_string_list(raws: &[String]) -> Vec<String> {

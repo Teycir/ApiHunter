@@ -1,3 +1,180 @@
+# Task: Target Input + CSV Sanitization (Phase 52)
+
+## Plan
+- [x] Add CSV import file-size guardrails with explicit user-facing error.
+- [x] Sanitize target textarea input (control character stripping + length cap).
+- [x] Normalize target tokens for both textarea and CSV ingestion (trim/quote cleanup + URL normalization where valid).
+- [x] Run full desktop rebuild (`npm run tauri build`) and verify output artifact.
+- [x] Record review notes and lessons learned.
+
+## Review
+- Updated target ingestion sanitization in `apps/desktop/src/App.tsx`:
+  - Added `MAX_CSV_FILE_BYTES` (`2 MB`) and hard fail when import exceeds limit.
+  - Added `MAX_TARGET_INPUT_CHARS` (`32,000`) to cap textarea payload size.
+  - Added `sanitizeTargetTextareaInput(...)` to strip control characters, normalize line breaks, and report truncation status.
+  - Added `normalizeTargetToken(...)` to trim/strip surrounding quotes and canonicalize valid HTTP/HTTPS URLs.
+  - Applied token normalization to both:
+    - `parseTargetsText(...)` (manual textbox path)
+    - `parseTargetsCsv(...)` (CSV import path)
+  - Added textarea `onBlur` normalization pass to keep stored targets clean and deduplicated.
+  - Added inline validation messages in form flow:
+    - target textbox truncation notice when input exceeds character cap.
+    - CSV import error message under target controls for size/parse/limit failures.
+- Updated helper guidance text in UI with CSV size limit (`2 MB`).
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Release artifact updated:
+    - `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Runtime Input Sanitization (Phase 51)
+
+## Plan
+- [x] Add shared runtime numeric sanitizer helpers in desktop UI.
+- [x] Wire runtime inputs to sanitized change/blur handlers with explicit min/max bounds.
+- [x] Apply sanitized/clamped runtime values when building scan request payload.
+- [x] Run full desktop rebuild (`npm run tauri build`) and verify output artifact.
+- [x] Record review notes and lessons learned.
+
+## Review
+- Implemented in `apps/desktop/src/App.tsx`:
+  - Added `RUNTIME_LIMIT_RULES` with explicit min/max bounds for all runtime numeric controls.
+  - Added `sanitizeRuntimeInput(...)` (digits-only + no leading zeros) and `clampRuntimeValue(...)` (integer + bounds).
+  - Wired runtime inputs to sanitized `onChange` and clamped `onBlur`.
+  - Added explicit numeric attributes (`min`, `max`, `step`, `inputMode`) on each runtime field.
+  - Applied clamped runtime values while building the final scan request payload.
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+
+---
+
+# Task: Runtime Limits Premium Alignment (Phase 50)
+
+## Plan
+- [x] Refactor runtime limits markup into structured field cards for cleaner alignment.
+- [x] Restyle runtime limits controls with premium compact visuals and non-overlapping responsive behavior.
+- [x] Run full desktop rebuild (`npm run tauri build`) and verify successful artifact output.
+- [x] Record review notes and lessons learned.
+
+## Review
+- Updated runtime controls markup in `apps/desktop/src/App.tsx`:
+  - Added `runtime-limits-help` explanatory line under section title.
+  - Converted each runtime limit control to explicit field-card structure with:
+    - `runtime-field` container.
+    - `runtime-label` text span.
+- Updated runtime controls styling in `apps/desktop/src/styles.css`:
+  - Switched to a balanced responsive grid: `repeat(auto-fit, minmax(148px, 1fr))`.
+  - Added premium compact card styling (`border`, `radius`, soft inset highlight).
+  - Added uppercase micro-label style for consistent alignment and scanability.
+  - Normalized numeric input visuals (`34px` height, stable padding/border, focus ring).
+  - Added responsive behavior:
+    - `<=860px`: 2-column runtime grid.
+    - `<=620px`: 1-column runtime grid.
+  - Kept spinner suppression to avoid overlap artifacts in WebKit/Tauri.
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Release artifact updated:
+    - `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Desktop Toggle Hint Layout Fix (Phase 49)
+
+## Plan
+- [x] Adjust scanner toggle markup so explanation text renders below the main label.
+- [x] Reduce explanation text size for clearer visual hierarchy.
+- [x] Validate desktop frontend build.
+- [x] Record review notes.
+
+## Review
+- Updated toggle card markup in `apps/desktop/src/App.tsx`:
+  - added `toggle-title-row` wrapper for checkbox + main label.
+  - moved hint text into dedicated `toggle-hint` element below title row.
+- Updated toggle styles in `apps/desktop/src/styles.css`:
+  - enforced grid layout for `.toggle-grid .toggle-item` (overrides prior flex row behavior).
+  - hint text now renders below title with left offset and smaller size (`0.72rem`).
+- Validation:
+  - `npm run build` (in `apps/desktop`) ✅
+
+### Follow-up polish (overlap/size)
+- Further compacted controls in `apps/desktop/src/styles.css`:
+  - reduced option-card footprint and helper text size.
+  - reduced runtime-grid minimum width for cleaner wrapping.
+  - reduced advanced dropdown visual size (padding + summary font).
+  - reduced scanner toggle card size and hint text size again (`0.66rem`) with forced wrapping to avoid overlap.
+  - set scanner toggles to a fixed 2-column desktop layout and 1-column mobile layout (`@media (max-width: 860px)`).
+- Validation:
+  - `npm run build` (in `apps/desktop`) ✅
+
+---
+
+# Task: Desktop Package Validation for Test/Build (Phase 48)
+
+## Plan
+- [x] Verify desktop package/lockfile update state.
+- [x] Run desktop tauri crate tests.
+- [x] Run desktop frontend build.
+- [x] Run desktop tauri production build.
+- [x] Record outcomes.
+
+## Review
+- Package update state:
+  - Desktop JS package metadata unchanged (`apps/desktop/package.json`).
+  - Desktop tauri package updated with `once_cell` dependency:
+    - `apps/desktop/src-tauri/Cargo.toml`
+    - `apps/desktop/src-tauri/Cargo.lock`
+- Validation executed:
+  - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run build` (in `apps/desktop`) ✅
+  - `npm run tauri build` (in `apps/desktop`) ✅
+- Build artifact:
+  - `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
+# Task: Desktop UX + Feature-Parity Upgrade (Phase 47)
+
+## Plan
+- [x] Add missing new-feature controls to desktop form (API versioning/gRPC toggles + blind SSRF OAST input).
+- [x] Improve scan setup UX with guided presets and clearer section flow labels.
+- [x] Add richer explanatory labels for scanner toggles and advanced controls.
+- [x] Wire backend support for desktop-provided OAST callback base with safe scoped env handling.
+- [x] Validate desktop frontend + tauri backend builds.
+- [x] Update docs/changelog notes for new desktop UX controls.
+
+## Review
+- Frontend (`apps/desktop/src/App.tsx`):
+  - Added scanner toggles for:
+    - `apiVersioning`
+    - `grpcProtobuf`
+  - Added `oastBase` form field (OAST callback base) and request mapping.
+  - Added guided preset workflow buttons:
+    - `Quick Passive`
+    - `Balanced (Recommended)`
+    - `Deep Active`
+  - Improved scan form information hierarchy with section labels:
+    - `1) Safety and Scan Behavior`
+    - `2) Runtime Limits`
+  - Added descriptive scanner toggle hints and advanced-control explanatory text.
+- Styling (`apps/desktop/src/styles.css`):
+  - Added new UX styles for presets, section titles, richer toggle cards, and helper text.
+- Backend (`apps/desktop/src-tauri/src/main.rs`):
+  - Added `oast_base` to `FullScanRequest`.
+  - Validates `oastBase` as absolute `http/https` URL.
+  - Added scoped env override guard for `APIHUNTER_OAST_BASE` with restoration after scan.
+  - Added lock to avoid concurrent env var races during scans.
+  - Emits clear log message when blind SSRF callback correlation is enabled/disabled in active mode.
+- Desktop tauri dependency update:
+  - Added `once_cell` to `apps/desktop/src-tauri/Cargo.toml`.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `npm run build` (desktop frontend) ✅
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `cargo check` ✅
+
+---
+
 # Task: README Integration Test Command Sync (Phase 46)
 
 ## Plan

@@ -49,6 +49,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Desktop full-scan profile now includes `response_diff_deep` toggle and forwards it to scanner config.
 - Documentation updates for scanner inventory, CLI flags, and API versioning coverage.
 - Authorization-matrix similarity checks now use the same body+header comparison basis as IDOR checks.
+- Desktop scan UX now provides guided presets (`Quick Passive`, `Balanced`, `Deep Active`) and clearer sectioned setup flow with richer explanatory labels.
+- Desktop scanner toggles now expose full parity for `API Versioning` and `gRPC/Protobuf` modules.
+- Desktop advanced controls now include `OAST callback base` for blind SSRF correlation, wired to runtime `APIHUNTER_OAST_BASE` as a scoped per-scan override.
 
 ### Fixed
 - Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.

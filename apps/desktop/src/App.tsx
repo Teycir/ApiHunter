@@ -15,6 +15,8 @@ type ScanToggleState = {
   apiSecurity: boolean;
   jwt: boolean;
   openapi: boolean;
+  apiVersioning: boolean;
+  grpcProtobuf: boolean;
   massAssignment: boolean;
   oauthOidc: boolean;
   rateLimit: boolean;
@@ -42,6 +44,7 @@ type FullScanRequest = {
   headers: string[];
   cookies: string[];
   proxy: string | null;
+  oastBase: string | null;
   dangerAcceptInvalidCerts: boolean;
   authBearer: string | null;
   authBasic: string | null;
@@ -116,6 +119,8 @@ const DEFAULT_TOGGLES: ScanToggleState = {
   apiSecurity: true,
   jwt: true,
   openapi: true,
+  apiVersioning: true,
+  grpcProtobuf: true,
   massAssignment: true,
   oauthOidc: true,
   rateLimit: true,
@@ -123,26 +128,90 @@ const DEFAULT_TOGGLES: ScanToggleState = {
   websocket: true,
 };
 
-const TOGGLE_FIELDS: Array<{ key: keyof ScanToggleState; label: string }> = [
-  { key: "cors", label: "CORS" },
-  { key: "csp", label: "CSP" },
-  { key: "graphql", label: "GraphQL" },
-  { key: "apiSecurity", label: "API Security" },
-  { key: "jwt", label: "JWT" },
-  { key: "openapi", label: "OpenAPI" },
-  { key: "massAssignment", label: "Mass Assignment" },
-  { key: "oauthOidc", label: "OAuth/OIDC" },
-  { key: "rateLimit", label: "Rate Limit" },
-  { key: "cveTemplates", label: "CVE Templates" },
-  { key: "websocket", label: "WebSocket" },
+const TOGGLE_FIELDS: Array<{
+  key: keyof ScanToggleState;
+  label: string;
+  hint: string;
+}> = [
+  { key: "cors", label: "CORS", hint: "Origin and credential policy checks." },
+  { key: "csp", label: "CSP", hint: "Header hardening and policy weakness signals." },
+  { key: "graphql", label: "GraphQL", hint: "Introspection and schema leakage checks." },
+  {
+    key: "apiSecurity",
+    label: "API Security",
+    hint: "IDOR/BOLA, headers, debug/admin, SSRF and gateway checks.",
+  },
+  { key: "jwt", label: "JWT", hint: "Token weakness and alg confusion checks." },
+  { key: "openapi", label: "OpenAPI", hint: "Spec exposure and risky operation checks." },
+  {
+    key: "apiVersioning",
+    label: "API Versioning",
+    hint: "Version drift and deprecation signals.",
+  },
+  {
+    key: "grpcProtobuf",
+    label: "gRPC/Protobuf",
+    hint: "gRPC transport and reflection/health surface checks.",
+  },
+  {
+    key: "massAssignment",
+    label: "Mass Assignment",
+    hint: "Mutation field injection checks (active checks).",
+  },
+  {
+    key: "oauthOidc",
+    label: "OAuth/OIDC",
+    hint: "Redirect, state and metadata security checks.",
+  },
+  { key: "rateLimit", label: "Rate Limit", hint: "Burst and bypass limiter probes." },
+  {
+    key: "cveTemplates",
+    label: "CVE Templates",
+    hint: "Template-driven active vulnerability probes.",
+  },
+  { key: "websocket", label: "WebSocket", hint: "Upgrade/origin and auth boundary checks." },
 ];
 
 const MAX_TARGETS = 100;
+const MAX_CSV_FILE_BITS = 5 * 1024;
+const MAX_CSV_FILE_BYTES = Math.floor(MAX_CSV_FILE_BITS / 8);
+const MAX_TARGET_INPUT_CHARS = 32_000;
 const TEXT_ENCODER = new TextEncoder();
+const RUNTIME_LIMIT_RULES = {
+  concurrency: { min: 1, max: 512 },
+  timeoutSecs: { min: 1, max: 600 },
+  retries: { min: 0, max: 20 },
+  delayMs: { min: 0, max: 60_000 },
+  maxEndpoints: { min: 0, max: 100_000 },
+  filterTimeout: { min: 1, max: 120 },
+} as const;
+
+type RuntimeLimitField = keyof typeof RUNTIME_LIMIT_RULES;
+
+function clampRuntimeValue(value: number, field: RuntimeLimitField): number {
+  const { min, max } = RUNTIME_LIMIT_RULES[field];
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  const normalized = Math.trunc(value);
+  return Math.min(max, Math.max(min, normalized));
+}
+
+function sanitizeRuntimeInput(raw: string, field: RuntimeLimitField): number {
+  const digitsOnly = raw.replace(/[^\d]/g, "");
+  if (digitsOnly.length === 0) {
+    return RUNTIME_LIMIT_RULES[field].min;
+  }
+  const withoutLeadingZeros = digitsOnly.replace(/^0+(?=\d)/, "");
+  const parsed = Number.parseInt(withoutLeadingZeros, 10);
+  return clampRuntimeValue(parsed, field);
+}
 
 export default function App() {
   const tauriRuntimeAvailable = hasTauriIpc();
   const [targetInput, setTargetInput] = useState("https://httpbin.org");
+  const [targetInputNotice, setTargetInputNotice] = useState<string | null>(null);
+  const [csvImportError, setCsvImportError] = useState<string | null>(null);
   const [activeChecks, setActiveChecks] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [responseDiffDeep, setResponseDiffDeep] = useState(false);
@@ -158,6 +227,7 @@ export default function App() {
   const [perHostClients, setPerHostClients] = useState(false);
   const [adaptiveConcurrency, setAdaptiveConcurrency] = useState(false);
   const [proxy, setProxy] = useState("");
+  const [oastBase, setOastBase] = useState("");
   const [dangerAcceptInvalidCerts, setDangerAcceptInvalidCerts] = useState(false);
   const [headersInput, setHeadersInput] = useState("");
   const [cookiesInput, setCookiesInput] = useState("");
@@ -180,6 +250,18 @@ export default function App() {
   const [exportPrefix, setExportPrefix] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
+
+  function handleTargetInputChange(raw: string) {
+    const sanitized = sanitizeTargetTextareaInput(raw);
+    setTargetInput(sanitized.value);
+    if (sanitized.truncated) {
+      setTargetInputNotice(
+        `Target input was truncated at ${MAX_TARGET_INPUT_CHARS.toLocaleString()} characters.`,
+      );
+    } else {
+      setTargetInputNotice(null);
+    }
+  }
 
   useEffect(() => {
     if (!tauriRuntimeAvailable) {
@@ -306,6 +388,18 @@ export default function App() {
       setError("auth basic must use USER:PASS format.");
       return;
     }
+    if (oastBase.trim().length > 0) {
+      try {
+        const parsed = new URL(oastBase.trim());
+        if (!(parsed.protocol === "http:" || parsed.protocol === "https:")) {
+          setError("OAST callback base must use http or https.");
+          return;
+        }
+      } catch {
+        setError("OAST callback base must be a valid absolute URL.");
+        return;
+      }
+    }
 
     const startedAt = Date.now();
     setLoading(true);
@@ -335,12 +429,12 @@ export default function App() {
       responseDiffDeep,
       noDiscovery,
       noFilter,
-      filterTimeout: Math.max(1, filterTimeout),
-      maxEndpoints: Math.max(0, maxEndpoints),
-      concurrency: Math.max(1, concurrency),
-      timeoutSecs: Math.max(1, timeoutSecs),
-      retries: Math.max(0, retries),
-      delayMs: Math.max(0, delayMs),
+      filterTimeout: clampRuntimeValue(filterTimeout, "filterTimeout"),
+      maxEndpoints: clampRuntimeValue(maxEndpoints, "maxEndpoints"),
+      concurrency: clampRuntimeValue(concurrency, "concurrency"),
+      timeoutSecs: clampRuntimeValue(timeoutSecs, "timeoutSecs"),
+      retries: clampRuntimeValue(retries, "retries"),
+      delayMs: clampRuntimeValue(delayMs, "delayMs"),
       wafEvasion,
       userAgents: parseLineList(userAgentsInput),
       perHostClients,
@@ -348,6 +442,7 @@ export default function App() {
       headers: parseLineList(headersInput),
       cookies: parseLineList(cookiesInput),
       proxy: proxy.trim().length > 0 ? proxy.trim() : null,
+      oastBase: oastBase.trim().length > 0 ? oastBase.trim() : null,
       dangerAcceptInvalidCerts,
       authBearer: authBearer.trim().length > 0 ? authBearer.trim() : null,
       authBasic: authBasic.trim().length > 0 ? authBasic.trim() : null,
@@ -376,12 +471,20 @@ export default function App() {
     if (!file) {
       return;
     }
+    setCsvImportError(null);
+    if (file.size > MAX_CSV_FILE_BYTES) {
+      setCsvImportError(
+        `CSV file is too large. Maximum supported size is ${MAX_CSV_FILE_BITS.toLocaleString()} bits (${MAX_CSV_FILE_BYTES.toLocaleString()} bytes).`,
+      );
+      e.target.value = "";
+      return;
+    }
 
     try {
       const text = await file.text();
       const csvTargets = parseTargetsCsv(text);
       if (csvTargets.length === 0) {
-        setError("No targets were detected in the CSV file.");
+        setCsvImportError("No targets were detected in the CSV file.");
         return;
       }
 
@@ -390,7 +493,7 @@ export default function App() {
         ...csvTargets,
       ]);
       if (merged.length > MAX_TARGETS) {
-        setError(
+        setCsvImportError(
           `CSV import would exceed ${MAX_TARGETS} targets. Remove some entries first.`,
         );
         return;
@@ -419,6 +522,70 @@ export default function App() {
 
   function setToggleField(field: keyof ScanToggleState, value: boolean) {
     setToggles((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function applyPreset(mode: "quick" | "balanced" | "deep") {
+    const allScanners = { ...DEFAULT_TOGGLES };
+    if (mode === "quick") {
+      setActiveChecks(false);
+      setDryRun(true);
+      setResponseDiffDeep(false);
+      setNoDiscovery(true);
+      setNoFilter(false);
+      setFilterTimeout(3);
+      setMaxEndpoints(40);
+      setConcurrency(4);
+      setTimeoutSecs(12);
+      setRetries(1);
+      setDelayMs(0);
+      setWafEvasion(false);
+      setPerHostClients(false);
+      setAdaptiveConcurrency(false);
+      setToggles({
+        ...allScanners,
+        massAssignment: false,
+        oauthOidc: false,
+        rateLimit: false,
+        cveTemplates: false,
+        websocket: false,
+      });
+      return;
+    }
+
+    if (mode === "balanced") {
+      setActiveChecks(true);
+      setDryRun(true);
+      setResponseDiffDeep(true);
+      setNoDiscovery(false);
+      setNoFilter(false);
+      setFilterTimeout(3);
+      setMaxEndpoints(80);
+      setConcurrency(5);
+      setTimeoutSecs(15);
+      setRetries(1);
+      setDelayMs(50);
+      setWafEvasion(false);
+      setPerHostClients(true);
+      setAdaptiveConcurrency(false);
+      setToggles(allScanners);
+      return;
+    }
+
+    setActiveChecks(true);
+    setDryRun(false);
+    setResponseDiffDeep(true);
+    setNoDiscovery(false);
+    setNoFilter(false);
+    setFilterTimeout(4);
+    setMaxEndpoints(0);
+    setConcurrency(6);
+    setTimeoutSecs(20);
+    setRetries(2);
+    setDelayMs(100);
+    setWafEvasion(true);
+    setPerHostClients(true);
+    setAdaptiveConcurrency(true);
+    setToggles(allScanners);
   }
 
   function downloadText(filename: string, mimeType: string, content: string) {
@@ -549,14 +716,21 @@ export default function App() {
             rows={6}
             required
             value={targetInput}
-            onChange={(e) => setTargetInput(e.target.value)}
+            onChange={(e) => handleTargetInputChange(e.target.value)}
+            onBlur={() => setTargetInput(parseTargetsText(targetInput).join("\n"))}
             placeholder={
               "https://api.example.com\nhttps://httpbin.org\nhttps://example.org/v1"
             }
           />
+          {targetInputNotice && (
+            <p className="status-error compact">{targetInputNotice}</p>
+          )}
           <div className="target-toolbar">
             <label className="csv-import">
               Load CSV
+              <span className="csv-limit-label">
+                Max upload: {MAX_CSV_FILE_BITS.toLocaleString()} bits
+              </span>
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -571,6 +745,9 @@ export default function App() {
               {targetCount}/{MAX_TARGETS} targets
             </span>
           </div>
+          {csvImportError && (
+            <p className="status-error compact">{csvImportError}</p>
+          )}
           <p className="muted">
             Enter one URL per line (or comma separated). CSV import appends to
             the same list.
@@ -583,8 +760,34 @@ export default function App() {
             <p>
               CSV format: values in any column are accepted. Header names like{" "}
               <code>url</code>, <code>target</code>, <code>endpoint</code> are
-              ignored automatically.
+              ignored automatically. Max CSV size: <code>5,120 bits (640 bytes)</code>.
             </p>
+          </div>
+          <div className="preset-row">
+            <p className="muted">Start with a preset profile:</p>
+            <div className="preset-buttons">
+              <button
+                type="button"
+                className="btn secondary preset-btn"
+                onClick={() => applyPreset("quick")}
+              >
+                Quick Passive
+              </button>
+              <button
+                type="button"
+                className="btn secondary preset-btn"
+                onClick={() => applyPreset("balanced")}
+              >
+                Balanced (Recommended)
+              </button>
+              <button
+                type="button"
+                className="btn secondary preset-btn"
+                onClick={() => applyPreset("deep")}
+              >
+                Deep Active
+              </button>
+            </div>
           </div>
           {invalidTargets.length > 0 && (
             <p className="status-error compact">
@@ -593,6 +796,7 @@ export default function App() {
             </p>
           )}
 
+          <h3 className="form-section-title">1) Safety and Scan Behavior</h3>
           <div className="grid-options">
             <div className="option-card">
               <label title="Send active test probes (for example authz/mutation/rate-limit checks).">
@@ -677,66 +881,117 @@ export default function App() {
             </div>
           </div>
 
+          <h3 className="form-section-title">2) Runtime Limits</h3>
+          <p className="runtime-limits-help">
+            Tune speed and stability. These values apply scan-wide and stay aligned across screen sizes.
+          </p>
           <div className="grid-numbers">
-            <label>
-              concurrency
+            <label className="runtime-field">
+              <span className="runtime-label">concurrency</span>
               <input
                 type="number"
-                min={1}
+                min={RUNTIME_LIMIT_RULES.concurrency.min}
+                max={RUNTIME_LIMIT_RULES.concurrency.max}
+                step={1}
+                inputMode="numeric"
                 value={concurrency}
-                onChange={(e) => setConcurrency(Number(e.target.value))}
+                onChange={(e) =>
+                  setConcurrency(sanitizeRuntimeInput(e.target.value, "concurrency"))
+                }
+                onBlur={() =>
+                  setConcurrency(clampRuntimeValue(concurrency, "concurrency"))
+                }
               />
             </label>
-            <label>
-              timeout secs
+            <label className="runtime-field">
+              <span className="runtime-label">timeout (s)</span>
               <input
                 type="number"
-                min={1}
+                min={RUNTIME_LIMIT_RULES.timeoutSecs.min}
+                max={RUNTIME_LIMIT_RULES.timeoutSecs.max}
+                step={1}
+                inputMode="numeric"
                 value={timeoutSecs}
-                onChange={(e) => setTimeoutSecs(Number(e.target.value))}
+                onChange={(e) =>
+                  setTimeoutSecs(sanitizeRuntimeInput(e.target.value, "timeoutSecs"))
+                }
+                onBlur={() =>
+                  setTimeoutSecs(clampRuntimeValue(timeoutSecs, "timeoutSecs"))
+                }
               />
             </label>
-            <label>
-              retries
+            <label className="runtime-field">
+              <span className="runtime-label">retries</span>
               <input
                 type="number"
-                min={0}
+                min={RUNTIME_LIMIT_RULES.retries.min}
+                max={RUNTIME_LIMIT_RULES.retries.max}
+                step={1}
+                inputMode="numeric"
                 value={retries}
-                onChange={(e) => setRetries(Number(e.target.value))}
+                onChange={(e) =>
+                  setRetries(sanitizeRuntimeInput(e.target.value, "retries"))
+                }
+                onBlur={() => setRetries(clampRuntimeValue(retries, "retries"))}
               />
             </label>
-            <label>
-              delay ms
+            <label className="runtime-field">
+              <span className="runtime-label">delay (ms)</span>
               <input
                 type="number"
-                min={0}
+                min={RUNTIME_LIMIT_RULES.delayMs.min}
+                max={RUNTIME_LIMIT_RULES.delayMs.max}
+                step={1}
+                inputMode="numeric"
                 value={delayMs}
-                onChange={(e) => setDelayMs(Number(e.target.value))}
+                onChange={(e) =>
+                  setDelayMs(sanitizeRuntimeInput(e.target.value, "delayMs"))
+                }
+                onBlur={() => setDelayMs(clampRuntimeValue(delayMs, "delayMs"))}
               />
             </label>
-            <label>
-              max endpoints/site
+            <label className="runtime-field">
+              <span className="runtime-label">max endpoints/site</span>
               <input
                 type="number"
-                min={0}
+                min={RUNTIME_LIMIT_RULES.maxEndpoints.min}
+                max={RUNTIME_LIMIT_RULES.maxEndpoints.max}
+                step={1}
+                inputMode="numeric"
                 value={maxEndpoints}
-                onChange={(e) => setMaxEndpoints(Number(e.target.value))}
+                onChange={(e) =>
+                  setMaxEndpoints(sanitizeRuntimeInput(e.target.value, "maxEndpoints"))
+                }
+                onBlur={() =>
+                  setMaxEndpoints(clampRuntimeValue(maxEndpoints, "maxEndpoints"))
+                }
               />
             </label>
-            <label>
-              filter timeout secs
+            <label className="runtime-field">
+              <span className="runtime-label">filter timeout (s)</span>
               <input
                 type="number"
-                min={1}
+                min={RUNTIME_LIMIT_RULES.filterTimeout.min}
+                max={RUNTIME_LIMIT_RULES.filterTimeout.max}
+                step={1}
+                inputMode="numeric"
                 disabled={noFilter}
                 value={filterTimeout}
-                onChange={(e) => setFilterTimeout(Number(e.target.value))}
+                onChange={(e) =>
+                  setFilterTimeout(sanitizeRuntimeInput(e.target.value, "filterTimeout"))
+                }
+                onBlur={() =>
+                  setFilterTimeout(clampRuntimeValue(filterTimeout, "filterTimeout"))
+                }
               />
             </label>
           </div>
 
           <details className="advanced-panel">
             <summary>Advanced Transport, Auth, and Performance</summary>
+            <p className="muted">
+              Optional controls for proxy/auth, stealth behavior, and SSRF callback correlation.
+            </p>
             <div className="advanced-grid">
               <label>
                 proxy URL
@@ -765,7 +1020,20 @@ export default function App() {
                   placeholder="username:password"
                 />
               </label>
+              <label>
+                OAST callback base (blind SSRF)
+                <input
+                  type="text"
+                  value={oastBase}
+                  onChange={(e) => setOastBase(e.target.value)}
+                  placeholder="https://oast.your-domain.tld"
+                />
+              </label>
             </div>
+            <p className="muted">
+              Blind SSRF callback correlation uses this base when active checks are enabled.
+              Leave empty to skip callback correlation probes.
+            </p>
 
             <div className="advanced-grid two-cols">
               <label>
@@ -836,14 +1104,20 @@ export default function App() {
 
           <fieldset className="toggle-grid">
             <legend>Scanner toggles</legend>
+            <p className="muted scanner-help">
+              Disable modules you do not need to reduce scan time and noise.
+            </p>
             {TOGGLE_FIELDS.map((item) => (
-              <label key={item.key}>
-                <input
-                  type="checkbox"
-                  checked={toggles[item.key]}
-                  onChange={(e) => setToggleField(item.key, e.target.checked)}
-                />
-                {item.label}
+              <label key={item.key} className="toggle-item">
+                <div className="toggle-title-row">
+                  <input
+                    type="checkbox"
+                    checked={toggles[item.key]}
+                    onChange={(e) => setToggleField(item.key, e.target.checked)}
+                  />
+                  <span>{item.label}</span>
+                </div>
+                <small className="toggle-hint">{item.hint}</small>
               </label>
             ))}
           </fieldset>
@@ -1063,7 +1337,7 @@ function parseTokenList(input: string): string[] {
 function parseTargetsText(input: string): string[] {
   const tokens = input
     .split(/[\n,;]+/)
-    .map((item) => item.trim())
+    .map((item) => normalizeTargetToken(item))
     .filter((item) => item.length > 0);
   return dedupeTargets(tokens);
 }
@@ -1095,7 +1369,7 @@ function parseTargetsCsv(csvText: string): string[] {
       ) {
         continue;
       }
-      targets.push(value);
+      targets.push(normalizeTargetToken(value));
     }
   });
 
@@ -1114,6 +1388,38 @@ function dedupeTargets(values: string[]): string[] {
     targets.push(value);
   }
   return targets;
+}
+
+function sanitizeTargetTextareaInput(input: string): {
+  value: string;
+  truncated: boolean;
+} {
+  const normalizedLineBreaks = input.replace(/\r\n?/g, "\n");
+  const strippedControls = normalizedLineBreaks.replace(
+    /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+    "",
+  );
+  const value = strippedControls.slice(0, MAX_TARGET_INPUT_CHARS);
+  return {
+    value,
+    truncated: strippedControls.length > MAX_TARGET_INPUT_CHARS,
+  };
+}
+
+function normalizeTargetToken(raw: string): string {
+  const strippedQuotes = raw.trim().replace(/^['"]+|['"]+$/g, "");
+  if (strippedQuotes.length === 0) {
+    return "";
+  }
+  try {
+    const parsed = new URL(strippedQuotes);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    // Keep non-URL tokens for explicit user feedback via invalid target list.
+  }
+  return strippedQuotes;
 }
 
 function isValidHttpUrl(value: string): boolean {

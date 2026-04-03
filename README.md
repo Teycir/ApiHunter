@@ -428,11 +428,14 @@ npm run tauri dev
 Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
 - CSV import via `Load CSV`
+- Guided scan presets: `Quick Passive`, `Balanced (Recommended)`, and `Deep Active`
 - Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
 - Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
 - API versioning controls: optional deep response-diff probing toggle
 - Advanced controls: proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle
+- Blind SSRF callback correlation input (`OAST callback base`) for active checks
 - Performance controls: per-host clients, adaptive concurrency, WAF evasion with custom user-agent pool
+- Full scanner toggle coverage including `API Versioning` and `gRPC/Protobuf`
 - Parallel-run progress cards with per-target completion/findings snapshots
 - Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
 
@@ -714,9 +717,11 @@ npm run desktop:install-icon
 
 Desktop features (brief):
 - Multi-target scans (up to 100 targets) with manual input + CSV import
+- Guided setup presets for quick, balanced, and deep active scan profiles
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
 - API versioning deep response-diff toggle in desktop full-scan profile
+- OAST callback base control for blind SSRF active-check correlation
 - Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
 - One-click export for JSON, NDJSON, and SARIF reports
 

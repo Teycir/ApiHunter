@@ -165,3 +165,17 @@
 ## 2026-04-03
 - User correction pattern: when presented with numbered continuation options, user may intend all listed items, not a single choice.
 - Rule: if user confirms multiple roadmap items together (for example "1 2 and 3"), execute the full combined batch and update plan/docs as one phase unless they explicitly scope down.
+- User correction pattern: runtime numeric controls can still appear oversized/overlapping after general layout tweaks.
+- Rule: keep desktop numeric inputs in scan forms compact with explicit width caps and verify spinner rendering doesn’t overlap values in the actual desktop runtime.
+- User correction pattern: UI sizing requests can require explicit percentage-based reduction from the currently visible state.
+- Rule: when user asks for an exact reduction (for example "50%"), implement the numeric delta literally in CSS widths and grid bounds, then rebuild for immediate visual verification.
+- User correction pattern: rebuilding only frontend assets can make desktop users think UI fixes were not applied.
+- Rule: after any desktop UI or desktop backend change, run `npm run tauri build` (not just `npm run build`) before reporting completion.
+- User correction pattern: aggressively shrinking runtime input widths can technically remove overlap but still produce an unprofessional layout.
+- Rule: for desktop form-density tuning, optimize for aligned field-card readability first, then compactness; validate with responsive breakpoints to keep labels legible and inputs non-overlapping.
+- User correction pattern: scan-target entry points need sanitization beyond runtime number fields.
+- Rule: enforce shared sanitization across target textarea and CSV import paths (control-char stripping, size caps, token normalization) so malformed input is handled consistently before scan execution.
+- User correction pattern: sanitization without inline user feedback feels incomplete in desktop UX.
+- Rule: when adding input sanitization in desktop forms, surface local inline validation messages near the relevant control (not only global error banners).
+- User correction pattern: CSV size caps should be tightly aligned to target-count constraints and operator expectations.
+- Rule: keep CSV upload limits conservative for this app profile (currently 5,120 bits / 640 bytes) and ensure label, helper text, and runtime enforcement all share the same source constant.
