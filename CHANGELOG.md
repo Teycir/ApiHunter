@@ -19,6 +19,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - API Security gateway checks:
   - passive gateway fingerprint signal `api_security/gateway-detected`
   - active gateway bypass probes `api_security/gateway-bypass-suspected` and dry-run mode `api_security/gateway-bypass-dry-run`
+- API Security IDOR/BOLA comparison hardening:
+  - tiered IDOR/authz comparison now uses body fingerprints plus selected stable response headers (`etag`, `content-type`, `last-modified`, and related identity/resource headers) to reduce drift-induced misses.
 - API versioning deep response-diff mode (`--response-diff-deep`):
   - `response_diff/deep-variant-server-error`
   - `response_diff/deep-variant-drift`
@@ -46,10 +48,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Added scanner toggle flag `--no-grpc-protobuf` and runtime flag `--response-diff-deep`.
 - Desktop full-scan profile now includes `response_diff_deep` toggle and forwards it to scanner config.
 - Documentation updates for scanner inventory, CLI flags, and API versioning coverage.
+- Authorization-matrix similarity checks now use the same body+header comparison basis as IDOR checks.
 
 ### Fixed
 - Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.
 - Stabilized startup scanner-disabled integration assertions in `tests/startup_inputs.rs` by explicitly disabling newly added scanners (`--no-api-versioning`, `--no-grpc-protobuf`) in those command invocations.
+- Added IDOR regression coverage for header-based equivalence when response bodies differ (`tests/api_security_scanner.rs`).
 
 ## [0.3.0] - 2026-04-03
 

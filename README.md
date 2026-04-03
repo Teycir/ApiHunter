@@ -132,7 +132,7 @@ ApiHunter includes 13 built-in scanner modules. See [docs/scanners.md](docs/scan
 | **OpenAPI** | Passive | Missing security schemes, operations without auth requirements, file upload endpoints, deprecated operations still present, unsecured sensitive endpoints |
 | **API Versioning** | Passive | Version header disclosure, concurrent legacy/new API versions, deprecation headers, and response drift across benign query/version variants (plus deep mode via `--response-diff-deep`) |
 | **gRPC/Protobuf** | Passive + Active | gRPC transport/content-type signals, protobuf surface hints, and optional reflection/health probe signals |
-| **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, active IDOR/BOLA checks, blind SSRF callback probes, and gateway/bypass probe signals |
+| **API Security** | Passive + Active | Missing security headers (X-Content-Type-Options, X-Frame-Options), server version disclosure, unauthenticated access to sensitive paths, HTTP method enumeration, debug endpoints, secret exposure patterns, active IDOR/BOLA checks (body + selected header comparison), blind SSRF callback probes, and gateway/bypass probe signals |
 | **Mass Assignment** | Active | Reflected sensitive fields (is_admin, role, permissions), persisted state changes, privilege escalation via field injection |
 | **OAuth/OIDC** | Active | Redirect URI validation bypass, missing state parameter, PKCE support issues (missing S256, plain allowed), implicit flow enabled, password grant enabled |
 | **Rate Limit** | Active | Missing rate limiting (burst probes), missing Retry-After headers, IP header spoofing bypass (X-Forwarded-For) |
@@ -221,6 +221,7 @@ The scanner docs now include a source-aligned [Module Check Catalog](docs/scanne
 ### Active Security Testing (--active-checks)
 - **API Security IDOR/BOLA Checks** (3-tier approach):
   - Unauthenticated access testing
+  - Response comparison via body fingerprints plus stable header snapshots
   - ID enumeration (±2 range walk)
   - Cross-user authorization bypass (dual-identity)
   - Blind SSRF callback probing via callback-style query params (`APIHUNTER_OAST_BASE`, supports `--dry-run`)
@@ -607,6 +608,7 @@ Run focused suites:
 cargo test --test cors_scanner
 cargo test --test graphql_scanner
 cargo test --test cve_templates_runtime_ext
+cargo test --test integration_runner
 ```
 
 Run full validation:

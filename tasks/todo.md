@@ -1,3 +1,45 @@
+# Task: README Integration Test Command Sync (Phase 46)
+
+## Plan
+- [x] Locate testing section in `README.md`.
+- [x] Add explicit integration test command entry for `integration_runner`.
+- [x] Record completion notes.
+
+## Review
+- Updated `README.md` testing command list to explicitly include:
+  - `cargo test --test integration_runner`
+- Purpose: make the integration-suite command discoverable without requiring readers to infer it from prose.
+
+---
+
+# Task: IDOR Header-Aware Comparison (Phase 45)
+
+## Plan
+- [x] Inspect existing IDOR/BOLA comparison flow and identify where body-only matching is used.
+- [x] Add response comparison signature support (body + selected stable headers) in `api_security` scanner.
+- [x] Use header-aware comparison in IDOR tier-1/tier-3 and authorization-matrix similarity checks.
+- [x] Add regression tests for header-based equivalence when bodies differ.
+- [x] Run targeted tests outside sandbox and record review notes.
+
+## Review
+- Scanner logic updates:
+  - `src/scanner/api_security.rs` now builds an `IdorResponseSignature` (body fingerprint + stable header snapshot).
+  - Added header-selection logic for IDOR comparison (`content-type`, `content-length`, `etag`, `last-modified`, `cache-control`, `location`, and `x-resource/x-user/x-tenant` style identity headers).
+  - Tier-1 unauth comparison now classifies equivalence by `body`, `headers`, or `body+headers`.
+  - Tier-3 cross-user IDOR confirmation now accepts header-based equivalence when bodies drift.
+  - Authorization matrix comparison now reuses the same comparison basis to stay consistent with IDOR.
+- Tests added:
+  - `idor_cross_user_uses_header_comparison_when_body_differs` in `tests/api_security_scanner.rs`
+  - `idor_tier1_uses_header_comparison_when_body_differs` in `tests/api_security_scanner.rs`
+- Validation executed:
+  - `cargo check` ✅
+  - `cargo test --test api_security_scanner --test idor_scanner --test integration_runner` (outside sandbox) ✅
+- Docs updated:
+  - `README.md` (API Security/IDOR notes)
+  - `CHANGELOG.md` (`Unreleased` additions/changes/fixes)
+
+---
+
 # Task: Docs Sync (README + CHANGELOG) (Phase 44)
 
 ## Plan

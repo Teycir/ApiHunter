@@ -212,6 +212,114 @@ async fn authz_matrix_cross_identity_is_reported_for_sensitive_non_numeric_path(
 }
 
 #[tokio::test]
+async fn idor_cross_user_uses_header_comparison_when_body_differs() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/users/42"))
+        .and(header("authorization", "Bearer user-a"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "user-42-v1")
+                .set_body_string(r#"{"id":42,"owner":"alice","served_at":"2026-04-03T01:00:00Z"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/users/42"))
+        .and(header("authorization", "Bearer user-b"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "user-42-v1")
+                .set_body_string(r#"{"id":42,"owner":"alice","served_at":"2026-04-03T01:00:01Z"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    // Unauthenticated probe should not confirm public exposure here.
+    Mock::given(method("GET"))
+        .and(path("/api/users/42"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+        .mount(&server)
+        .await;
+
+    let mut cfg_a = test_config(true);
+    cfg_a.default_headers = vec![("Authorization".to_string(), "Bearer user-a".to_string())];
+    let client_a = HttpClient::new(&cfg_a).expect("http client A");
+
+    let mut cfg_b = cfg_a.clone();
+    cfg_b.default_headers = vec![("Authorization".to_string(), "Bearer user-b".to_string())];
+    let client_b = Arc::new(HttpClient::new(&cfg_b).expect("http client B"));
+
+    let scanner = ApiSecurityScanner::new(&cfg_a, Some(client_b));
+    let target = format!("{}/api/users/42", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client_a, &cfg_a).await;
+
+    assert!(
+        errors.is_empty(),
+        "unexpected errors from IDOR cross-user probe: {errors:#?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "api_security/idor-cross-user"),
+        "expected idor-cross-user finding when headers match despite body drift, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
+async fn idor_tier1_uses_header_comparison_when_body_differs() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/orders/42"))
+        .and(header("authorization", "Bearer user-a"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "order-42-v1")
+                .set_body_string(r#"{"id":42,"state":"open","served_at":"2026-04-03T01:10:00Z"}"#),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    // Unauthenticated response differs in body but keeps the same stable ETag.
+    Mock::given(method("GET"))
+        .and(path("/api/orders/42"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "order-42-v1")
+                .set_body_string(r#"{"id":42,"state":"open","served_at":"2026-04-03T01:10:01Z"}"#),
+        )
+        .with_priority(10)
+        .mount(&server)
+        .await;
+
+    let mut cfg = test_config(true);
+    cfg.default_headers = vec![("Authorization".to_string(), "Bearer user-a".to_string())];
+    let cfg = Arc::new(cfg);
+    let client = HttpClient::new(cfg.as_ref()).expect("http client");
+    let scanner = ApiSecurityScanner::new(cfg.as_ref(), None);
+    let target = format!("{}/api/orders/42", server.uri());
+    let (findings, errors) = scanner.scan(&target, &client, cfg.as_ref()).await;
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "api_security/unauthenticated-access"),
+        "expected unauthenticated-access finding based on header comparison, got: {findings:#?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|f| f.check != "api_security/partial-unauth-access"),
+        "did not expect partial-unauth-access when comparison headers match, got: {findings:#?}"
+    );
+}
+
+#[tokio::test]
 async fn blind_ssrf_probe_dispatches_once_for_same_host_path() {
     let _guard = ENV_LOCK.lock().await;
     let previous = std::env::var("APIHUNTER_OAST_BASE").ok();

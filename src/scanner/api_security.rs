@@ -769,6 +769,85 @@ fn body_fingerprint(body: &str) -> (usize, u64) {
     (body.len(), h.finish())
 }
 
+#[derive(Debug, Clone)]
+struct IdorResponseSignature {
+    body: (usize, u64),
+    headers: Vec<(String, String)>,
+}
+
+const IDOR_COMPARISON_HEADER_KEYS: &[&str] = &[
+    "content-type",
+    "content-length",
+    "etag",
+    "last-modified",
+    "cache-control",
+    "content-language",
+    "vary",
+    "location",
+    "x-resource-id",
+    "x-user-id",
+    "x-account-id",
+    "x-tenant-id",
+    "x-owner-id",
+];
+
+const IDOR_COMPARISON_HEADER_PREFIXES: &[&str] = &[
+    "x-resource-",
+    "x-user-",
+    "x-account-",
+    "x-tenant-",
+    "x-owner-",
+];
+
+fn idor_response_signature(response: &HttpResponse) -> IdorResponseSignature {
+    let mut headers = response
+        .headers
+        .iter()
+        .filter(|(name, _)| is_idor_comparison_header(name))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    headers.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+    IdorResponseSignature {
+        body: body_fingerprint(&response.body),
+        headers,
+    }
+}
+
+fn is_idor_comparison_header(header_name: &str) -> bool {
+    IDOR_COMPARISON_HEADER_KEYS.contains(&header_name)
+        || IDOR_COMPARISON_HEADER_PREFIXES
+            .iter()
+            .any(|prefix| header_name.starts_with(prefix))
+}
+
+fn idor_match_basis(
+    left: &IdorResponseSignature,
+    right: &IdorResponseSignature,
+) -> Option<&'static str> {
+    let body_equal = left.body == right.body;
+    let header_equal =
+        !left.headers.is_empty() && !right.headers.is_empty() && left.headers == right.headers;
+
+    match (body_equal, header_equal) {
+        (true, true) => Some("body+headers"),
+        (true, false) => Some("body"),
+        (false, true) => Some("headers"),
+        (false, false) => None,
+    }
+}
+
+fn idor_headers_evidence(headers: &[(String, String)]) -> String {
+    if headers.is_empty() {
+        return "none".to_string();
+    }
+    headers
+        .iter()
+        .map(|(name, value)| format!("{name}={}", snippet(value, 96)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Detect SPA catch-all: send a request to a random path that should not exist.
 /// If the server returns 200 with HTML (by Content-Type or body inspection),
 /// it's very likely a SPA with catch-all routing.
@@ -2096,12 +2175,12 @@ async fn check_idor_bola(
         None => return,
     };
 
-    let authed_fp = body_fingerprint(&authed_resp.body);
+    let authed_sig = idor_response_signature(&authed_resp);
 
     match unauth_resp.status {
         200..=299 => {
-            let unauth_fp = body_fingerprint(&unauth_resp.body);
-            if authed_fp == unauth_fp {
+            let unauth_sig = idor_response_signature(&unauth_resp);
+            if let Some(match_basis) = idor_match_basis(&authed_sig, &unauth_sig) {
                 // Same content unauthenticated — endpoint is public (may be intentional)
                 findings.push(
                     Finding::new(
@@ -2114,8 +2193,17 @@ async fn check_idor_bola(
                         "api_security",
                     )
                     .with_evidence(format!(
-                        "Authed: HTTP {}, Unauthed: HTTP {}",
-                        authed_resp.status, unauth_resp.status
+                        "Authed: HTTP {}, Unauthed: HTTP {}\n\
+                         Comparison basis: {match_basis}\n\
+                         Authed body hash: {:x}, Unauthed body hash: {:x}\n\
+                         Authed compare headers: {}\n\
+                         Unauthed compare headers: {}",
+                        authed_resp.status,
+                        unauth_resp.status,
+                        authed_sig.body.1,
+                        unauth_sig.body.1,
+                        idor_headers_evidence(&authed_sig.headers),
+                        idor_headers_evidence(&unauth_sig.headers),
                     ))
                     .with_confidence(Confidence::Medium)
                     .with_remediation(
@@ -2138,8 +2226,15 @@ async fn check_idor_bola(
                     )
                     .with_evidence(format!(
                         "Authed status: {}, Unauthed status: {}\n\
-                         Authed body hash: {:x}, Unauthed body hash: {:x}",
-                        authed_resp.status, unauth_resp.status, authed_fp.1, unauth_fp.1
+                         Authed body hash: {:x}, Unauthed body hash: {:x}\n\
+                         Authed compare headers: {}\n\
+                         Unauthed compare headers: {}",
+                        authed_resp.status,
+                        unauth_resp.status,
+                        authed_sig.body.1,
+                        unauth_sig.body.1,
+                        idor_headers_evidence(&authed_sig.headers),
+                        idor_headers_evidence(&unauth_sig.headers),
                     ))
                     .with_confidence(Confidence::High)
                     .with_remediation(
@@ -2263,9 +2358,9 @@ async fn check_idor_bola(
         return;
     }
 
-    let fp_b = body_fingerprint(&resp_b.body);
+    let resp_b_sig = idor_response_signature(&resp_b);
 
-    if authed_fp == fp_b {
+    if let Some(match_basis) = idor_match_basis(&authed_sig, &resp_b_sig) {
         // Both users get identical responses — user B can see user A's data
         findings.push(
             Finding::new(
@@ -2280,8 +2375,16 @@ async fn check_idor_bola(
             )
             .with_evidence(format!(
                 "Identity A: HTTP {}, body hash {:x}\n\
-                 Identity B: HTTP {}, body hash {:x} (identical)",
-                authed_resp.status, authed_fp.1, resp_b.status, fp_b.1,
+                 Identity B: HTTP {}, body hash {:x}\n\
+                 Comparison basis: {match_basis}\n\
+                 Identity A compare headers: {}\n\
+                 Identity B compare headers: {}",
+                authed_resp.status,
+                authed_sig.body.1,
+                resp_b.status,
+                resp_b_sig.body.1,
+                idor_headers_evidence(&authed_sig.headers),
+                idor_headers_evidence(&resp_b_sig.headers),
             ))
             .with_confidence(Confidence::High)
             .with_remediation(
@@ -2344,14 +2447,22 @@ async fn check_authorization_matrix(
     let Some(unauth_primary) = sequence_response(&results, "matrix-unauthenticated-primary") else {
         return;
     };
-    let authed_fp = body_fingerprint(&authed_primary.body);
-    let unauth_same = (200..400).contains(&unauth_primary.status)
-        && body_fingerprint(&unauth_primary.body) == authed_fp;
+    let authed_sig = idor_response_signature(&authed_primary);
+    let unauth_same_basis = if (200..400).contains(&unauth_primary.status) {
+        let unauth_sig = idor_response_signature(&unauth_primary);
+        idor_match_basis(&authed_sig, &unauth_sig)
+    } else {
+        None
+    };
+    let unauth_same = unauth_same_basis.is_some();
 
-    let secondary_same = sequence_response(&results, "matrix-authed-secondary")
+    let secondary_same_basis = sequence_response(&results, "matrix-authed-secondary")
         .filter(|resp| (200..400).contains(&resp.status))
-        .map(|resp| body_fingerprint(&resp.body) == authed_fp)
-        .unwrap_or(false);
+        .and_then(|resp| {
+            let secondary_sig = idor_response_signature(&resp);
+            idor_match_basis(&authed_sig, &secondary_sig)
+        });
+    let secondary_same = secondary_same_basis.is_some();
 
     let confirmation_depth = usize::from(unauth_same) + usize::from(secondary_same);
     if confirmation_depth == 0 {
@@ -2383,12 +2494,15 @@ async fn check_authorization_matrix(
     findings.push(
         Finding::new(url, check, title, severity, detail, "api_security")
             .with_evidence(format!(
-                "primary_authed={} unauthenticated={} secondary={}",
+                "primary_authed={} unauthenticated={} secondary={}\n\
+                 comparison_basis_unauth={} comparison_basis_secondary={}",
                 authed_primary.status,
                 unauth_primary.status,
                 sequence_response(&results, "matrix-authed-secondary")
                     .map(|resp| resp.status.to_string())
                     .unwrap_or_else(|| "N/A".to_string()),
+                unauth_same_basis.unwrap_or("none"),
+                secondary_same_basis.unwrap_or("none"),
             ))
             .with_confidence(if secondary_same {
                 Confidence::High
