@@ -31,7 +31,7 @@ use api_scanner::{
     proxy::{parse_proxy_file, ProxyStrategy},
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner,
-    transport_tls::apply_tls_profile,
+    transport_adapter::{RedirectMode, TransportClientOptions},
 };
 
 // ── Entry-point ───────────────────────────────────────────────────────────────
@@ -104,6 +104,7 @@ async fn run(cli: Cli) -> Result<i32> {
         proxy: cli.proxy.clone(),
         proxy_pool,
         tls_profile: cli.tls_profile.into(),
+        transport_backend: cli.transport_backend.into(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
         active_checks: cli.active_checks,
         dry_run: cli.dry_run,
@@ -610,9 +611,8 @@ async fn filter_accessible_urls(
 fn build_filter_client(
     config: &Config,
     timeout_secs: u64,
-) -> Result<reqwest::Client, reqwest::Error> {
+) -> api_scanner::error::ScannerResult<reqwest::Client> {
     use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-    use tokio::time::Duration;
 
     let mut default_headers = HeaderMap::new();
     for (k, v) in &config.default_headers {
@@ -647,23 +647,19 @@ fn build_filter_client(
         }
     }
 
-    let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .connect_timeout(Duration::from_secs(2))
-        .danger_accept_invalid_certs(config.danger_accept_invalid_certs)
-        .redirect(reqwest::redirect::Policy::limited(3));
-    builder = apply_tls_profile(builder, config.tls_profile);
-
-    if !default_headers.is_empty() {
-        builder = builder.default_headers(default_headers);
-    }
-
     let proxy_strategy = ProxyStrategy::new(config.proxy.clone(), config.proxy_pool.clone());
-    if let Some(proxy_url) = proxy_strategy.resolve_for_host("filter") {
-        builder = builder.proxy(reqwest::Proxy::all(&proxy_url)?);
-    }
+    let options = TransportClientOptions {
+        timeout_secs,
+        connect_timeout_secs: Some(2),
+        tcp_keepalive_secs: None,
+        danger_accept_invalid_certs: config.danger_accept_invalid_certs,
+        default_headers,
+        proxy_url: proxy_strategy.resolve_for_host("filter"),
+        tls_profile: config.tls_profile,
+        redirect_mode: RedirectMode::Limited(3),
+    };
 
-    builder.build()
+    api_scanner::transport_adapter::build_client(config.transport_backend, &options)
 }
 
 async fn enforce_filter_host_delay(

@@ -9,7 +9,7 @@ use crate::{
     error::{CapturedError, ScannerError, ScannerResult},
     proxy::ProxyStrategy,
     retry_policy::{retry_backoff, should_retry_status},
-    transport_tls::apply_tls_profile,
+    transport_adapter::{self, RedirectMode, TransportClientOptions},
     waf::WafEvasion,
 };
 use dashmap::DashMap;
@@ -234,6 +234,7 @@ struct ClientConfig {
     danger_accept_invalid_certs: bool,
     default_headers: HeaderMap,
     tls_profile: crate::transport_tls::TlsProfile,
+    transport_backend: crate::transport_adapter::TransportBackend,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -283,6 +284,7 @@ impl HttpClient {
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
             default_headers,
             tls_profile: config.tls_profile,
+            transport_backend: config.transport_backend,
         };
         let proxy_strategy = ProxyStrategy::new(config.proxy.clone(), config.proxy_pool.clone());
         let default_proxy = proxy_strategy.resolve_for_host("default");
@@ -1147,40 +1149,30 @@ fn build_unauth_strip_headers(raws: &[String]) -> ScannerResult<Vec<HeaderName>>
 }
 
 fn build_client(cfg: &ClientConfig, proxy_url: Option<&str>) -> ScannerResult<Client> {
-    build_client_with_redirect(cfg, reqwest::redirect::Policy::limited(5), proxy_url)
+    build_client_with_redirect(cfg, RedirectMode::Limited(5), proxy_url)
 }
 
 fn build_client_no_redirect(cfg: &ClientConfig, proxy_url: Option<&str>) -> ScannerResult<Client> {
-    build_client_with_redirect(cfg, reqwest::redirect::Policy::none(), proxy_url)
+    build_client_with_redirect(cfg, RedirectMode::None, proxy_url)
 }
 
 fn build_client_with_redirect(
     cfg: &ClientConfig,
-    redirect: reqwest::redirect::Policy,
+    redirect_mode: RedirectMode,
     proxy_url: Option<&str>,
 ) -> ScannerResult<Client> {
-    let mut builder = Client::builder()
-        .timeout(Duration::from_secs(cfg.timeout_secs))
-        .danger_accept_invalid_certs(cfg.danger_accept_invalid_certs)
-        .gzip(true)
-        .deflate(true)
-        .redirect(redirect)
-        .tcp_keepalive(Duration::from_secs(30));
-    builder = apply_tls_profile(builder, cfg.tls_profile);
+    let options = TransportClientOptions {
+        timeout_secs: cfg.timeout_secs,
+        connect_timeout_secs: None,
+        tcp_keepalive_secs: Some(30),
+        danger_accept_invalid_certs: cfg.danger_accept_invalid_certs,
+        default_headers: cfg.default_headers.clone(),
+        proxy_url: proxy_url.map(ToOwned::to_owned),
+        tls_profile: cfg.tls_profile,
+        redirect_mode,
+    };
 
-    if !cfg.default_headers.is_empty() {
-        builder = builder.default_headers(cfg.default_headers.clone());
-    }
-
-    if let Some(proxy_url) = proxy_url {
-        let proxy = reqwest::Proxy::all(proxy_url)
-            .map_err(|e| ScannerError::Config(format!("Invalid proxy: {e}")))?;
-        builder = builder.proxy(proxy);
-    }
-
-    builder
-        .build()
-        .map_err(|e| ScannerError::Config(format!("Client build failed: {e}")))
+    transport_adapter::build_client(cfg.transport_backend, &options)
 }
 
 fn load_session_file(path: &PathBuf) -> Result<SessionStore, ScannerError> {

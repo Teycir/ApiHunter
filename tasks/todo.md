@@ -3706,3 +3706,40 @@
   - `cargo fmt --all` ✅
   - `cargo check --all-targets` ✅
   - `cargo test --test cli --test waf_persona --test waf_user_agents --test http_client_unauth --test http_client_retry_policy` ✅ (outside sandbox)
+
+---
+
+# Task: Additive Transport Adapter Abstraction (Phase 36)
+
+## Plan
+- [x] Add a reusable transport adapter module with a trait and default reqwest adapter.
+- [x] Add optional config/CLI backend selection with `reqwest` as default (no regression).
+- [x] Route `HttpClient` client construction through the adapter module.
+- [x] Route startup URL-filter client construction through the adapter module.
+- [x] Add tests for CLI/backend wiring and run targeted verification outside sandbox.
+
+## Review
+- Changes made:
+  - Added new reusable transport module `src/transport_adapter.rs`:
+    - `TransportAdapter` trait and default `ReqwestTransportAdapter`.
+    - additive `TransportBackend` enum (current default: `Reqwest`).
+    - shared `TransportClientOptions` + redirect abstraction.
+  - Extended transport options for loose coupling and parity:
+    - optional `connect_timeout_secs` and `tcp_keepalive_secs`.
+    - proxy, TLS profile, default headers, and redirect mode all provided from callers.
+  - Added additive config/CLI backend plumbing:
+    - `Config` now includes `transport_backend`.
+    - CLI flag `--transport-backend` (default `reqwest`) via `CliTransportBackend`.
+    - runtime mapping in `src/main.rs` and desktop runtime config in `apps/desktop/src-tauri/src/main.rs`.
+  - Routed scanner transport construction through adapter:
+    - `src/http_client.rs` now builds normal/no-redirect/per-host clients via `transport_adapter::build_client(...)`.
+    - retained previous defaults (`reqwest`, keepalive/retry behavior) to avoid regressions.
+  - Routed startup URL-filter client through adapter:
+    - `src/main.rs` `build_filter_client(...)` now uses `TransportClientOptions` and shares proxy/TLS/header/cookie behavior with scanner transport.
+  - Updated tests:
+    - Added CLI transport backend parse tests in `tests/cli.rs`.
+    - Updated `Config` fixtures across integration tests with `transport_backend: Default::default()`.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo check --all-targets` ✅
+  - `cargo test --test cli --test http_client_unauth --test http_client_retry_policy --test graphql_scanner` ✅ (outside sandbox)

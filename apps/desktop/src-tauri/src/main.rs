@@ -16,6 +16,7 @@ use api_scanner::{
         Severity,
     },
     runner::{self, ProgressEvent},
+    transport_adapter::TransportBackend,
     transport_tls::TlsProfile,
 };
 use base64::prelude::{Engine as _, BASE64_STANDARD};
@@ -584,6 +585,7 @@ async fn run_full_scan_impl(
         proxy,
         proxy_pool: Vec::new(),
         tls_profile: TlsProfile::System,
+        transport_backend: TransportBackend::Reqwest,
         danger_accept_invalid_certs: request.danger_accept_invalid_certs,
         active_checks: request.active_checks,
         dry_run: request.dry_run,

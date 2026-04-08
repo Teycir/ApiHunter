@@ -54,6 +54,7 @@ fn live_config(enable_active: bool, enable_websocket: bool) -> Config {
         proxy: None,
         proxy_pool: Vec::new(),
         tls_profile: Default::default(),
+        transport_backend: Default::default(),
         danger_accept_invalid_certs: false,
         active_checks: enable_active,
         dry_run: true,

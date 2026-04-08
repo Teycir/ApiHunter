@@ -18,5 +18,6 @@ pub mod reports;
 pub mod retry_policy;
 pub mod runner;
 pub mod scanner;
+pub mod transport_adapter;
 pub mod transport_tls;
 pub mod waf;

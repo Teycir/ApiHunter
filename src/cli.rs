@@ -15,6 +15,7 @@ use serde_json::Value;
 use url::Url;
 
 use crate::reports::{ReportFormat, Severity};
+use crate::transport_adapter::TransportBackend;
 use crate::transport_tls::TlsProfile;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
@@ -153,6 +154,10 @@ pub struct Cli {
     #[arg(long, value_name = "PROFILE", default_value = "system")]
     pub tls_profile: CliTlsProfile,
 
+    /// Optional transport backend for HTTP client construction.
+    #[arg(long, value_name = "BACKEND", default_value = "reqwest")]
+    pub transport_backend: CliTransportBackend,
+
     /// Accept invalid / self-signed TLS certificates (dangerous).
     #[arg(long)]
     pub danger_accept_invalid_certs: bool,
@@ -290,6 +295,11 @@ pub enum CliTlsProfile {
     Tls13Only,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliTransportBackend {
+    Reqwest,
+}
+
 impl From<CliSeverity> for Severity {
     fn from(c: CliSeverity) -> Self {
         match c {
@@ -318,6 +328,14 @@ impl From<CliTlsProfile> for TlsProfile {
             CliTlsProfile::System => TlsProfile::System,
             CliTlsProfile::Modern => TlsProfile::Modern,
             CliTlsProfile::Tls13Only => TlsProfile::Tls13Only,
+        }
+    }
+}
+
+impl From<CliTransportBackend> for TransportBackend {
+    fn from(c: CliTransportBackend) -> Self {
+        match c {
+            CliTransportBackend::Reqwest => TransportBackend::Reqwest,
         }
     }
 }

@@ -7,7 +7,9 @@ use std::{collections::HashSet, io::Write};
 use clap::Parser;
 use tempfile::NamedTempFile;
 
-use api_scanner::cli::{default_user_agents, load_urls, Cli, CliFormat, CliSeverity};
+use api_scanner::cli::{
+    default_user_agents, load_urls, Cli, CliFormat, CliSeverity, CliTlsProfile, CliTransportBackend,
+};
 use api_scanner::config::ScannerToggles;
 use api_scanner::reports::{ReportFormat, Severity};
 
@@ -254,18 +256,31 @@ fn proxy_takes_precedence_when_both_proxy_inputs_are_set() {
 #[test]
 fn tls_profile_defaults_to_system() {
     let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
-    assert!(matches!(
-        cli.tls_profile,
-        api_scanner::cli::CliTlsProfile::System
-    ));
+    assert!(matches!(cli.tls_profile, CliTlsProfile::System));
 }
 
 #[test]
 fn tls_profile_flag_parses_modern() {
     let cli = Cli::try_parse_from(["scanner", "--stdin", "--tls-profile", "modern"]).unwrap();
+    assert!(matches!(cli.tls_profile, CliTlsProfile::Modern));
+}
+
+#[test]
+fn transport_backend_defaults_to_reqwest() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
     assert!(matches!(
-        cli.tls_profile,
-        api_scanner::cli::CliTlsProfile::Modern
+        cli.transport_backend,
+        CliTransportBackend::Reqwest
+    ));
+}
+
+#[test]
+fn transport_backend_flag_parses_reqwest() {
+    let cli =
+        Cli::try_parse_from(["scanner", "--stdin", "--transport-backend", "reqwest"]).unwrap();
+    assert!(matches!(
+        cli.transport_backend,
+        CliTransportBackend::Reqwest
     ));
 }
 

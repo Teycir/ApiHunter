@@ -35,6 +35,9 @@ pub struct Config {
     /// Optional TLS profile for outbound transport.
     pub tls_profile: crate::transport_tls::TlsProfile,
 
+    /// Optional transport backend for HTTP client construction.
+    pub transport_backend: crate::transport_adapter::TransportBackend,
+
     /// Accept invalid TLS certificates (dangerous).
     pub danger_accept_invalid_certs: bool,
 

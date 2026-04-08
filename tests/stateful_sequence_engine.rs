@@ -26,6 +26,7 @@ fn test_config() -> Config {
         proxy: None,
         proxy_pool: Vec::new(),
         tls_profile: Default::default(),
+        transport_backend: Default::default(),
         danger_accept_invalid_certs: false,
         active_checks: true,
         dry_run: false,
