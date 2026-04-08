@@ -7,6 +7,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Additive transport/stealth modularization:
+  - new reusable proxy module with optional `--proxy-file` pool support (single `--proxy` still takes precedence)
+  - new reusable TLS profile module with optional `--tls-profile` (`system`, `modern`, `tls13-only`)
+  - new reusable retry policy module for transient transport status/backoff logic
+  - optional host-sticky browser persona mode via `--waf-sticky-persona`
+  - new transport adapter abstraction (`transport_adapter`) with optional `--transport-backend` (default `reqwest`)
 - New passive scanner: `api_versioning`:
   - version header disclosure checks (`api_versioning/version-header-disclosed`)
   - deprecation/sunset header signals (`api_versioning/deprecation-signaled`)
@@ -46,6 +52,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI input group now supports exactly one of `--urls`, `--stdin`, `--har`, or `--collection`.
 - Added scanner toggle flag `--no-api-versioning`.
 - Added scanner toggle flag `--no-grpc-protobuf` and runtime flag `--response-diff-deep`.
+- Transport builder wiring now uses shared adapter/options paths for both runtime scanner clients and startup URL accessibility filter client, preserving additive defaults and loose coupling.
 - Desktop full-scan profile now includes `response_diff_deep` toggle and forwards it to scanner config.
 - Documentation updates for scanner inventory, CLI flags, and API versioning coverage.
 - Authorization-matrix similarity checks now use the same body+header comparison basis as IDOR checks.
