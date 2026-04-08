@@ -31,6 +31,7 @@ fn test_config(active_checks: bool) -> Config {
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks,
         dry_run: false,

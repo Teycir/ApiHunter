@@ -43,6 +43,7 @@ fn test_config_custom(active_checks: bool, dry_run: bool, timeout_secs: u64) -> 
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks,
         dry_run,

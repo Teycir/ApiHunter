@@ -580,6 +580,7 @@ async fn run_full_scan_impl(
         default_headers: headers,
         cookies,
         proxy,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: request.danger_accept_invalid_certs,
         active_checks: request.active_checks,
         dry_run: request.dry_run,

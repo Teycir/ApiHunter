@@ -6,6 +6,7 @@
 use crate::{
     config::Config,
     error::{CapturedError, ScannerError, ScannerResult},
+    proxy::ProxyStrategy,
     waf::WafEvasion,
 };
 use dashmap::DashMap;
@@ -87,8 +88,10 @@ pub struct HttpClient {
     unauth_client_config: ClientConfig,
     per_host_clients: bool,
     clients: Arc<DashMap<String, Client>>,
+    no_redirect_clients: Arc<DashMap<String, Client>>,
     unauth_clients: Arc<DashMap<String, Client>>,
     spec_cache: Arc<DashMap<String, String>>,
+    proxy_strategy: ProxyStrategy,
     waf_enabled: bool,
     delay_ms: u64,
     retries: u32,
@@ -225,7 +228,6 @@ struct ClientConfig {
     timeout_secs: u64,
     danger_accept_invalid_certs: bool,
     default_headers: HeaderMap,
-    proxy: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -274,16 +276,17 @@ impl HttpClient {
             timeout_secs: config.politeness.timeout_secs,
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
             default_headers,
-            proxy: config.proxy.clone(),
         };
+        let proxy_strategy = ProxyStrategy::new(config.proxy.clone(), config.proxy_pool.clone());
+        let default_proxy = proxy_strategy.resolve_for_host("default");
 
-        let inner = build_client(&client_config)?;
-        let no_redirect_inner = build_client_no_redirect(&client_config)?;
+        let inner = build_client(&client_config, default_proxy.as_deref())?;
+        let no_redirect_inner = build_client_no_redirect(&client_config, default_proxy.as_deref())?;
         let unauth_client_config = ClientConfig {
             default_headers: HeaderMap::new(),
             ..client_config.clone()
         };
-        let unauth_inner = build_client(&unauth_client_config)?;
+        let unauth_inner = build_client(&unauth_client_config, default_proxy.as_deref())?;
         let unauth_strip_headers = build_unauth_strip_headers(&config.unauth_strip_headers)?;
 
         let session_store = if let Some(path) = &config.session_file {
@@ -311,8 +314,10 @@ impl HttpClient {
             unauth_client_config,
             per_host_clients: config.per_host_clients,
             clients: Arc::new(DashMap::new()),
+            no_redirect_clients: Arc::new(DashMap::new()),
             unauth_clients: Arc::new(DashMap::new()),
             spec_cache: Arc::new(DashMap::new()),
+            proxy_strategy,
             waf_enabled: config.waf_evasion.enabled,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
@@ -521,7 +526,9 @@ impl HttpClient {
         extra_headers: Option<HeaderMap>,
         body: Option<serde_json::Value>,
     ) -> Result<HttpResponse, CapturedError> {
-        let client = self.no_redirect_inner.clone();
+        let client = self.no_redirect_client_for_url(url).map_err(|e| {
+            CapturedError::from_str("http::client_no_redirect", Some(url.to_string()), e)
+        })?;
         let mut req = client.request(method.clone(), url);
 
         if self.waf_enabled {
@@ -957,7 +964,7 @@ impl HttpClient {
     }
 
     fn client_for_url(&self, url: &str) -> Result<Client, String> {
-        if !self.per_host_clients {
+        if !self.per_host_clients && !self.proxy_strategy.is_pool_enabled() {
             return Ok(self.inner.clone());
         }
 
@@ -967,14 +974,15 @@ impl HttpClient {
             return Ok(client.value().clone());
         }
 
-        let client = build_client(&self.client_config)
+        let proxy = self.proxy_strategy.resolve_for_host(&host);
+        let client = build_client(&self.client_config, proxy.as_deref())
             .map_err(|e| format!("per-host client build failed: {e}"))?;
         self.clients.insert(host, client.clone());
         Ok(client)
     }
 
     fn client_for_url_unauth(&self, url: &str) -> Result<Client, String> {
-        if !self.per_host_clients {
+        if !self.per_host_clients && !self.proxy_strategy.is_pool_enabled() {
             return Ok(self.unauth_inner.clone());
         }
 
@@ -984,9 +992,28 @@ impl HttpClient {
             return Ok(client.value().clone());
         }
 
-        let client = build_client(&self.unauth_client_config)
+        let proxy = self.proxy_strategy.resolve_for_host(&host);
+        let client = build_client(&self.unauth_client_config, proxy.as_deref())
             .map_err(|e| format!("per-host unauth client build failed: {e}"))?;
         self.unauth_clients.insert(host, client.clone());
+        Ok(client)
+    }
+
+    fn no_redirect_client_for_url(&self, url: &str) -> Result<Client, String> {
+        if !self.per_host_clients && !self.proxy_strategy.is_pool_enabled() {
+            return Ok(self.no_redirect_inner.clone());
+        }
+
+        let host = parse_host_or_unknown(url);
+
+        if let Some(client) = self.no_redirect_clients.get(&host) {
+            return Ok(client.value().clone());
+        }
+
+        let proxy = self.proxy_strategy.resolve_for_host(&host);
+        let client = build_client_no_redirect(&self.client_config, proxy.as_deref())
+            .map_err(|e| format!("per-host no-redirect client build failed: {e}"))?;
+        self.no_redirect_clients.insert(host, client.clone());
         Ok(client)
     }
 
@@ -1112,17 +1139,18 @@ fn retry_backoff(attempt: u32) -> Duration {
     Duration::from_millis(200 * exp)
 }
 
-fn build_client(cfg: &ClientConfig) -> ScannerResult<Client> {
-    build_client_with_redirect(cfg, reqwest::redirect::Policy::limited(5))
+fn build_client(cfg: &ClientConfig, proxy_url: Option<&str>) -> ScannerResult<Client> {
+    build_client_with_redirect(cfg, reqwest::redirect::Policy::limited(5), proxy_url)
 }
 
-fn build_client_no_redirect(cfg: &ClientConfig) -> ScannerResult<Client> {
-    build_client_with_redirect(cfg, reqwest::redirect::Policy::none())
+fn build_client_no_redirect(cfg: &ClientConfig, proxy_url: Option<&str>) -> ScannerResult<Client> {
+    build_client_with_redirect(cfg, reqwest::redirect::Policy::none(), proxy_url)
 }
 
 fn build_client_with_redirect(
     cfg: &ClientConfig,
     redirect: reqwest::redirect::Policy,
+    proxy_url: Option<&str>,
 ) -> ScannerResult<Client> {
     let mut builder = Client::builder()
         .timeout(Duration::from_secs(cfg.timeout_secs))
@@ -1136,7 +1164,7 @@ fn build_client_with_redirect(
         builder = builder.default_headers(cfg.default_headers.clone());
     }
 
-    if let Some(proxy_url) = &cfg.proxy {
+    if let Some(proxy_url) = proxy_url {
         let proxy = reqwest::Proxy::all(proxy_url)
             .map_err(|e| ScannerError::Config(format!("Invalid proxy: {e}")))?;
         builder = builder.proxy(proxy);

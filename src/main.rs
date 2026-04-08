@@ -28,6 +28,7 @@ use api_scanner::{
     cli::{default_user_agents, load_urls, Cli},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     http_client::HttpClient,
+    proxy::{parse_proxy_file, ProxyStrategy},
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner,
 };
@@ -72,6 +73,13 @@ async fn run(cli: Cli) -> Result<i32> {
     } else {
         cli.max_endpoints
     };
+    let proxy_pool = if cli.proxy.is_some() {
+        Vec::new()
+    } else if let Some(path) = &cli.proxy_file {
+        parse_proxy_file(path)?
+    } else {
+        Vec::new()
+    };
 
     let config = Arc::new(Config {
         max_endpoints,
@@ -92,6 +100,7 @@ async fn run(cli: Cli) -> Result<i32> {
         default_headers: build_default_headers(&cli.headers, &cli.auth_bearer, &cli.auth_basic)?,
         cookies: parse_cookies(&cli.cookies)?,
         proxy: cli.proxy.clone(),
+        proxy_pool,
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
         active_checks: cli.active_checks,
         dry_run: cli.dry_run,
@@ -402,11 +411,28 @@ fn validate_startup_inputs(cli: &Cli) -> Result<()> {
     if let Some(path) = &cli.auth_flow_b {
         validate_auth_flow_path("--auth-flow-b", path)?;
     }
+    if cli.proxy.is_none() {
+        if let Some(path) = &cli.proxy_file {
+            validate_proxy_file_path("--proxy-file", path)?;
+        }
+    }
 
     Ok(())
 }
 
 fn validate_auth_flow_path(flag: &str, path: &Path) -> Result<()> {
+    if !path.exists() {
+        bail!("{flag} file not found: {}", path.display());
+    }
+    if !path.is_file() {
+        bail!("{flag} must point to a file: {}", path.display());
+    }
+    std::fs::File::open(path)
+        .with_context(|| format!("{flag} file is not readable: {}", path.display()))?;
+    Ok(())
+}
+
+fn validate_proxy_file_path(flag: &str, path: &Path) -> Result<()> {
     if !path.exists() {
         bail!("{flag} file not found: {}", path.display());
     }
@@ -437,11 +463,15 @@ fn emit_security_hygiene_warnings(cli: &Cli) {
         warn!(
             "SECURITY WARNING: TLS certificate validation is disabled via --danger-accept-invalid-certs. Use only in controlled test environments."
         );
-        if cli.proxy.is_some() {
+        if cli.proxy.is_some() || cli.proxy_file.is_some() {
             warn!(
-                "SECURITY WARNING: --proxy does not re-enable TLS validation while --danger-accept-invalid-certs is active."
+                "SECURITY WARNING: proxy usage does not re-enable TLS validation while --danger-accept-invalid-certs is active."
             );
         }
+    }
+
+    if cli.proxy.is_some() && cli.proxy_file.is_some() {
+        warn!("Both --proxy and --proxy-file were provided; --proxy takes precedence.");
     }
 
     for raw in &cli.headers {
@@ -624,8 +654,9 @@ fn build_filter_client(
         builder = builder.default_headers(default_headers);
     }
 
-    if let Some(proxy_url) = &config.proxy {
-        builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
+    let proxy_strategy = ProxyStrategy::new(config.proxy.clone(), config.proxy_pool.clone());
+    if let Some(proxy_url) = proxy_strategy.resolve_for_host("filter") {
+        builder = builder.proxy(reqwest::Proxy::all(&proxy_url)?);
     }
 
     builder.build()

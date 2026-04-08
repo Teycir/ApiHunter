@@ -29,6 +29,9 @@ pub struct Config {
     /// Optional HTTP/HTTPS proxy URL.
     pub proxy: Option<String>,
 
+    /// Optional pool of proxy URLs (used when `proxy` is not set).
+    pub proxy_pool: Vec<String>,
+
     /// Accept invalid TLS certificates (dangerous).
     pub danger_accept_invalid_certs: bool,
 

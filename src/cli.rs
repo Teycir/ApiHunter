@@ -139,6 +139,11 @@ pub struct Cli {
     #[arg(long, value_name = "URL")]
     pub proxy: Option<String>,
 
+    /// File containing proxy entries (one per line); supports `host:port`,
+    /// `host:port:user:pass`, or full proxy URLs. Optional and additive.
+    #[arg(long, value_name = "FILE")]
+    pub proxy_file: Option<PathBuf>,
+
     /// Accept invalid / self-signed TLS certificates (dangerous).
     #[arg(long)]
     pub danger_accept_invalid_certs: bool,

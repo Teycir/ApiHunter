@@ -218,6 +218,34 @@ fn proxy_and_tls_flags() {
 }
 
 #[test]
+fn proxy_file_flag_parses() {
+    let cli =
+        Cli::try_parse_from(["scanner", "--stdin", "--proxy-file", "/tmp/proxies.txt"]).unwrap();
+    assert_eq!(
+        cli.proxy_file,
+        Some(std::path::PathBuf::from("/tmp/proxies.txt"))
+    );
+}
+
+#[test]
+fn proxy_takes_precedence_when_both_proxy_inputs_are_set() {
+    let cli = Cli::try_parse_from([
+        "scanner",
+        "--stdin",
+        "--proxy",
+        "http://127.0.0.1:8080",
+        "--proxy-file",
+        "/tmp/proxies.txt",
+    ])
+    .unwrap();
+    assert_eq!(cli.proxy.as_deref(), Some("http://127.0.0.1:8080"));
+    assert_eq!(
+        cli.proxy_file,
+        Some(std::path::PathBuf::from("/tmp/proxies.txt"))
+    );
+}
+
+#[test]
 fn headers_and_cookies_flags() {
     let cli = Cli::try_parse_from([
         "scanner",

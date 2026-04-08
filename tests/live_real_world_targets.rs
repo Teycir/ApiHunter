@@ -51,6 +51,7 @@ fn live_config(enable_active: bool, enable_websocket: bool) -> Config {
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks: enable_active,
         dry_run: true,

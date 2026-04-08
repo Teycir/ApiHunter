@@ -31,6 +31,7 @@ fn test_config_with_timeout(active_checks: bool, timeout_secs: u64) -> Config {
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks,
         dry_run: false,

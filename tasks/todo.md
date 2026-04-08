@@ -3598,3 +3598,40 @@
   - Runtime-detection follow-up:
     - replaced frontend runtime gate from `isTauri()` to direct IPC detection (`window.__TAURI_INTERNALS__.invoke`) in desktop UI.
     - eliminates false “Tauri runtime not detected” behavior in Tauri window contexts where global `isTauri` is not set.
+
+---
+
+# Task: Additive Optional Proxy Module (Loose Coupling) (Phase 33)
+
+## Plan
+- [x] Add a dedicated proxy module for strategy/parsing to keep transport concerns reusable and decoupled.
+- [x] Add optional proxy-pool input support while preserving existing single-proxy behavior.
+- [x] Integrate `HttpClient` with proxy strategy via loose coupling and no behavioral regressions.
+- [x] Add/adjust tests in `tests/` to verify precedence, optionality, and parser behavior.
+- [x] Run targeted verification and document outcomes in this task's review section.
+
+## Review
+- Changes made:
+  - Added reusable proxy module `src/proxy.rs`:
+    - `ProxyStrategy` for optional single-proxy or host-sticky pool selection.
+    - `parse_proxy_line` / `parse_proxy_file` parsing helpers with comment/blank filtering.
+  - Added additive CLI support:
+    - new `--proxy-file <FILE>` option in `src/cli.rs`.
+    - precedence is preserved: explicit `--proxy` overrides `--proxy-file`.
+  - Updated config surface and plumbing:
+    - added `proxy_pool: Vec<String>` to `Config` in `src/config.rs`.
+    - wired `main.rs` to parse proxy pool only when `--proxy` is not set.
+    - added startup validation for `--proxy-file` (only when needed).
+    - updated security hygiene warning text for proxy + invalid TLS combinations.
+  - Refactored transport integration for loose coupling:
+    - `HttpClient` now depends on `ProxyStrategy` rather than embedded proxy selection logic.
+    - proxy-aware client selection is host-sticky and optional.
+    - existing no-proxy and single-proxy behavior remains intact.
+  - Updated desktop Tauri config construction and all test config builders to include `proxy_pool: Vec::new()` for backwards compatibility.
+  - Added tests:
+    - new `tests/proxy_strategy.rs` for parser/strategy behavior.
+    - extended `tests/cli.rs` for `--proxy-file` parsing and precedence shape.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo check --all-targets` ✅
+  - `cargo test --test cli --test proxy_strategy --test http_client_retry_policy --test http_client_unauth` ✅ (run outside sandbox)

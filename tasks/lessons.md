@@ -179,3 +179,9 @@
 - Rule: when adding input sanitization in desktop forms, surface local inline validation messages near the relevant control (not only global error banners).
 - User correction pattern: CSV size caps should be tightly aligned to target-count constraints and operator expectations.
 - Rule: keep CSV upload limits conservative for this app profile (currently 5,120 bits / 640 bytes) and ensure label, helper text, and runtime enforcement all share the same source constant.
+
+## 2026-04-08
+- User correction pattern: stealth/transport improvements must be additive and optional, not a rewrite that risks existing workflows.
+- Rule: for transport hardening changes, preserve legacy single-proxy behavior by default, gate new behavior behind optional inputs, and enforce explicit precedence to avoid regressions.
+- User correction pattern: cross-cutting transport features should be reusable and loosely coupled instead of embedded in `HttpClient` internals.
+- Rule: isolate proxy/parsing/selection into dedicated modules and have clients consume strategy interfaces so the same logic can be reused by other components.

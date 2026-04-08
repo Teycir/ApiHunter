@@ -12,6 +12,7 @@ pub mod discovery;
 pub mod error;
 pub mod http_client;
 pub mod progress_tracker;
+pub mod proxy;
 pub mod reports;
 pub mod runner;
 pub mod scanner;

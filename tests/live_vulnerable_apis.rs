@@ -28,6 +28,7 @@ fn live_config() -> Config {
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks: true,
         dry_run: true,

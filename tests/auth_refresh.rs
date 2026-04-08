@@ -32,6 +32,7 @@ async fn refresh_task_can_be_cancelled_immediately() {
         default_headers: vec![],
         cookies: vec![],
         proxy: None,
+        proxy_pool: Vec::new(),
         danger_accept_invalid_certs: false,
         active_checks: false,
         dry_run: false,
