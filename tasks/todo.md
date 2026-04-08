@@ -3635,3 +3635,40 @@
   - `cargo fmt --all` ✅
   - `cargo check --all-targets` ✅
   - `cargo test --test cli --test proxy_strategy --test http_client_retry_policy --test http_client_unauth` ✅ (run outside sandbox)
+
+---
+
+# Task: Additive TLS + Transport Modules (Loose Coupling) (Phase 34)
+
+## Plan
+- [x] Add reusable TLS profile module with safe optional profiles and default no-regression behavior.
+- [x] Add reusable retry policy module and move retry status/backoff logic out of `http_client`.
+- [x] Wire modules into `HttpClient` and startup URL filter client without coupling scanner logic.
+- [x] Add CLI surface for optional TLS profile selection while preserving existing defaults.
+- [x] Update tests/config builders and run targeted verification outside sandbox.
+
+## Review
+- Changes made:
+  - Added decoupled TLS profile module at `src/transport_tls.rs`:
+    - `TlsProfile::{System, Modern, Tls13Only}`.
+    - `apply_tls_profile(builder, profile)` for reusable reqwest builder wiring.
+  - Added decoupled retry policy module at `src/retry_policy.rs`:
+    - centralized `should_retry_status` and `retry_backoff`.
+    - expanded transient status handling to include CDN edge statuses `520..524`.
+  - Integrated TLS + retry modules in transport layer:
+    - `src/http_client.rs` now consumes shared retry policy functions.
+    - `src/http_client.rs` now applies selected TLS profile when building clients.
+    - `src/main.rs` URL filter client now applies the same TLS profile for consistent transport behavior.
+  - Added optional CLI surface:
+    - new `--tls-profile` (`system` default, `modern`, `tls13-only`) in `src/cli.rs`.
+    - conversion into core `TlsProfile`.
+  - Added config plumbing:
+    - `Config` now includes `tls_profile`.
+    - populated in CLI runtime config (`src/main.rs`) and desktop runtime config (`apps/desktop/src-tauri/src/main.rs`).
+  - Updated test config builders to include `tls_profile: Default::default()` (no behavior regression by default).
+  - Added/extended tests:
+    - `tests/cli.rs`: TLS profile default/flag parsing checks.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo check --all-targets` ✅
+  - `cargo test --test cli --test proxy_strategy --test http_client_retry_policy --test http_client_unauth --test waf_user_agents` ✅ (outside sandbox)

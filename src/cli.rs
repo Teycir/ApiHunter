@@ -15,6 +15,7 @@ use serde_json::Value;
 use url::Url;
 
 use crate::reports::{ReportFormat, Severity};
+use crate::transport_tls::TlsProfile;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
@@ -143,6 +144,10 @@ pub struct Cli {
     /// `host:port:user:pass`, or full proxy URLs. Optional and additive.
     #[arg(long, value_name = "FILE")]
     pub proxy_file: Option<PathBuf>,
+
+    /// Optional TLS profile for outbound HTTP transport.
+    #[arg(long, value_name = "PROFILE", default_value = "system")]
+    pub tls_profile: CliTlsProfile,
 
     /// Accept invalid / self-signed TLS certificates (dangerous).
     #[arg(long)]
@@ -274,6 +279,13 @@ pub enum CliSeverity {
     Info,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliTlsProfile {
+    System,
+    Modern,
+    Tls13Only,
+}
+
 impl From<CliSeverity> for Severity {
     fn from(c: CliSeverity) -> Self {
         match c {
@@ -292,6 +304,16 @@ impl From<CliFormat> for ReportFormat {
             CliFormat::Pretty => ReportFormat::Pretty,
             CliFormat::Ndjson => ReportFormat::Ndjson,
             CliFormat::Sarif => ReportFormat::Sarif,
+        }
+    }
+}
+
+impl From<CliTlsProfile> for TlsProfile {
+    fn from(c: CliTlsProfile) -> Self {
+        match c {
+            CliTlsProfile::System => TlsProfile::System,
+            CliTlsProfile::Modern => TlsProfile::Modern,
+            CliTlsProfile::Tls13Only => TlsProfile::Tls13Only,
         }
     }
 }

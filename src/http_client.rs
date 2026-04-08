@@ -7,6 +7,8 @@ use crate::{
     config::Config,
     error::{CapturedError, ScannerError, ScannerResult},
     proxy::ProxyStrategy,
+    retry_policy::{retry_backoff, should_retry_status},
+    transport_tls::apply_tls_profile,
     waf::WafEvasion,
 };
 use dashmap::DashMap;
@@ -228,6 +230,7 @@ struct ClientConfig {
     timeout_secs: u64,
     danger_accept_invalid_certs: bool,
     default_headers: HeaderMap,
+    tls_profile: crate::transport_tls::TlsProfile,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -276,6 +279,7 @@ impl HttpClient {
             timeout_secs: config.politeness.timeout_secs,
             danger_accept_invalid_certs: config.danger_accept_invalid_certs,
             default_headers,
+            tls_profile: config.tls_profile,
         };
         let proxy_strategy = ProxyStrategy::new(config.proxy.clone(), config.proxy_pool.clone());
         let default_proxy = proxy_strategy.resolve_for_host("default");
@@ -1129,16 +1133,6 @@ fn build_unauth_strip_headers(raws: &[String]) -> ScannerResult<Vec<HeaderName>>
     Ok(out)
 }
 
-fn should_retry_status(status: u16) -> bool {
-    matches!(status, 429 | 500 | 502 | 503 | 504)
-}
-
-fn retry_backoff(attempt: u32) -> Duration {
-    let shift = attempt.min(6);
-    let exp = 1u64 << shift;
-    Duration::from_millis(200 * exp)
-}
-
 fn build_client(cfg: &ClientConfig, proxy_url: Option<&str>) -> ScannerResult<Client> {
     build_client_with_redirect(cfg, reqwest::redirect::Policy::limited(5), proxy_url)
 }
@@ -1159,6 +1153,7 @@ fn build_client_with_redirect(
         .deflate(true)
         .redirect(redirect)
         .tcp_keepalive(Duration::from_secs(30));
+    builder = apply_tls_profile(builder, cfg.tls_profile);
 
     if !cfg.default_headers.is_empty() {
         builder = builder.default_headers(cfg.default_headers.clone());

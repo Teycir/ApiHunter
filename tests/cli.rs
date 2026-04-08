@@ -246,6 +246,24 @@ fn proxy_takes_precedence_when_both_proxy_inputs_are_set() {
 }
 
 #[test]
+fn tls_profile_defaults_to_system() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin"]).unwrap();
+    assert!(matches!(
+        cli.tls_profile,
+        api_scanner::cli::CliTlsProfile::System
+    ));
+}
+
+#[test]
+fn tls_profile_flag_parses_modern() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--tls-profile", "modern"]).unwrap();
+    assert!(matches!(
+        cli.tls_profile,
+        api_scanner::cli::CliTlsProfile::Modern
+    ));
+}
+
+#[test]
 fn headers_and_cookies_flags() {
     let cli = Cli::try_parse_from([
         "scanner",

@@ -14,6 +14,8 @@ pub mod http_client;
 pub mod progress_tracker;
 pub mod proxy;
 pub mod reports;
+pub mod retry_policy;
 pub mod runner;
 pub mod scanner;
+pub mod transport_tls;
 pub mod waf;

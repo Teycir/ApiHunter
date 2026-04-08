@@ -27,6 +27,7 @@ fn test_config(response_diff_deep: bool) -> Config {
         cookies: vec![],
         proxy: None,
         proxy_pool: Vec::new(),
+        tls_profile: Default::default(),
         danger_accept_invalid_certs: false,
         active_checks: false,
         dry_run: false,

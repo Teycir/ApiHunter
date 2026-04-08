@@ -16,6 +16,7 @@ use api_scanner::{
         Severity,
     },
     runner::{self, ProgressEvent},
+    transport_tls::TlsProfile,
 };
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use chrono::Utc;
@@ -581,6 +582,7 @@ async fn run_full_scan_impl(
         cookies,
         proxy,
         proxy_pool: Vec::new(),
+        tls_profile: TlsProfile::System,
         danger_accept_invalid_certs: request.danger_accept_invalid_certs,
         active_checks: request.active_checks,
         dry_run: request.dry_run,

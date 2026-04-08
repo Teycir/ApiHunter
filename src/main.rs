@@ -31,6 +31,7 @@ use api_scanner::{
     proxy::{parse_proxy_file, ProxyStrategy},
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner,
+    transport_tls::apply_tls_profile,
 };
 
 // ── Entry-point ───────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ async fn run(cli: Cli) -> Result<i32> {
         cookies: parse_cookies(&cli.cookies)?,
         proxy: cli.proxy.clone(),
         proxy_pool,
+        tls_profile: cli.tls_profile.into(),
         danger_accept_invalid_certs: cli.danger_accept_invalid_certs,
         active_checks: cli.active_checks,
         dry_run: cli.dry_run,
@@ -649,6 +651,7 @@ fn build_filter_client(
         .connect_timeout(Duration::from_secs(2))
         .danger_accept_invalid_certs(config.danger_accept_invalid_certs)
         .redirect(reqwest::redirect::Policy::limited(3));
+    builder = apply_tls_profile(builder, config.tls_profile);
 
     if !default_headers.is_empty() {
         builder = builder.default_headers(default_headers);

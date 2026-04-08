@@ -32,6 +32,9 @@ pub struct Config {
     /// Optional pool of proxy URLs (used when `proxy` is not set).
     pub proxy_pool: Vec<String>,
 
+    /// Optional TLS profile for outbound transport.
+    pub tls_profile: crate::transport_tls::TlsProfile,
+
     /// Accept invalid TLS certificates (dangerous).
     pub danger_accept_invalid_certs: bool,
 

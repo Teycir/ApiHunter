@@ -44,6 +44,7 @@ fn test_config_custom(active_checks: bool, dry_run: bool, timeout_secs: u64) -> 
         cookies: vec![],
         proxy: None,
         proxy_pool: Vec::new(),
+        tls_profile: Default::default(),
         danger_accept_invalid_certs: false,
         active_checks,
         dry_run,

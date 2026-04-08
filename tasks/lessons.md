@@ -185,3 +185,5 @@
 - Rule: for transport hardening changes, preserve legacy single-proxy behavior by default, gate new behavior behind optional inputs, and enforce explicit precedence to avoid regressions.
 - User correction pattern: cross-cutting transport features should be reusable and loosely coupled instead of embedded in `HttpClient` internals.
 - Rule: isolate proxy/parsing/selection into dedicated modules and have clients consume strategy interfaces so the same logic can be reused by other components.
+- User correction pattern: modular transport upgrades should be completed as a set (proxy + TLS + retry policy), not stopped after first slice.
+- Rule: when a user asks to continue transport hardening, extend the same additive/loose-coupling pattern to remaining layers before closing the task.
