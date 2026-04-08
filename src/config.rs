@@ -120,4 +120,6 @@ pub struct WafEvasionConfig {
     pub enabled: bool,
     /// User-Agent rotation pool.
     pub user_agents: Vec<String>,
+    /// Keep a deterministic browser-like persona per host.
+    pub sticky_persona: bool,
 }

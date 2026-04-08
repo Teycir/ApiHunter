@@ -127,6 +127,10 @@ pub struct Cli {
     #[arg(long, value_name = "UA,...", value_delimiter = ',')]
     pub user_agents: Vec<String>,
 
+    /// Keep a stable browser-like persona per host (implies --waf-evasion).
+    #[arg(long)]
+    pub waf_sticky_persona: bool,
+
     // ── Proxy / TLS ──────────────────────────────────────────────────────────
     /// Extra request headers applied to every request (e.g. "Authorization: Bearer xxx").
     #[arg(long, value_name = "NAME:VALUE", value_delimiter = ',')]

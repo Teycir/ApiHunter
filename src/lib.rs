@@ -5,6 +5,7 @@
 
 pub mod auth;
 pub mod auto_report;
+pub mod browser_persona;
 pub mod cli;
 pub mod config;
 #[allow(dead_code)]

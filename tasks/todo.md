@@ -3672,3 +3672,37 @@
   - `cargo fmt --all` ✅
   - `cargo check --all-targets` ✅
   - `cargo test --test cli --test proxy_strategy --test http_client_retry_policy --test http_client_unauth --test waf_user_agents` ✅ (outside sandbox)
+
+---
+
+# Task: Additive Host-Sticky Browser Persona Mode (Phase 35)
+
+## Plan
+- [x] Add a reusable browser-persona module that deterministically builds headers per host.
+- [x] Add optional CLI/config control to enable sticky personas without changing defaults.
+- [x] Integrate sticky persona behavior in `HttpClient` while preserving existing random mode when disabled.
+- [x] Add tests in `tests/` for persona stability and CLI behavior.
+- [x] Run targeted verification outside sandbox and document results.
+
+## Review
+- Changes made:
+  - Added new reusable module `src/browser_persona.rs`:
+    - `sticky_headers_for_url` / `sticky_headers_for_host` with deterministic host-based selection.
+    - stable UA/language/fetch header profile per host.
+  - Added optional WAF sticky-persona switch:
+    - CLI flag: `--waf-sticky-persona` in `src/cli.rs`.
+    - Config field: `waf_evasion.sticky_persona` in `src/config.rs`.
+    - runtime enablement logic in `src/main.rs`: sticky mode implies WAF evasion.
+  - Integrated into transport layer:
+    - `src/http_client.rs` now switches between:
+      - existing random `WafEvasion::evasion_headers()` (default), and
+      - deterministic host-sticky persona headers when enabled.
+  - Updated desktop config wiring (`apps/desktop/src-tauri/src/main.rs`) with `sticky_persona: false` default.
+  - Updated test config fixtures to include `sticky_persona: false` for backward compatibility.
+  - Added tests:
+    - `tests/waf_persona.rs` for stability and header composition checks.
+    - `tests/cli.rs` for sticky-persona flag parse + enablement logic.
+- Validation:
+  - `cargo fmt --all` ✅
+  - `cargo check --all-targets` ✅
+  - `cargo test --test cli --test waf_persona --test waf_user_agents --test http_client_unauth --test http_client_retry_policy` ✅ (outside sandbox)

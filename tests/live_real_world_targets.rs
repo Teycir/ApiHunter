@@ -47,6 +47,7 @@ fn live_config(enable_active: bool, enable_websocket: bool) -> Config {
         waf_evasion: WafEvasionConfig {
             enabled: false,
             user_agents: vec![],
+            sticky_persona: false,
         },
         default_headers: vec![],
         cookies: vec![],

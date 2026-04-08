@@ -4,6 +4,7 @@
 // and convenience methods for the scanner modules.
 
 use crate::{
+    browser_persona,
     config::Config,
     error::{CapturedError, ScannerError, ScannerResult},
     proxy::ProxyStrategy,
@@ -95,6 +96,8 @@ pub struct HttpClient {
     spec_cache: Arc<DashMap<String, String>>,
     proxy_strategy: ProxyStrategy,
     waf_enabled: bool,
+    waf_user_agents: Vec<String>,
+    waf_sticky_persona: bool,
     delay_ms: u64,
     retries: u32,
     host_last_request: Arc<DashMap<String, tokio::time::Instant>>,
@@ -323,6 +326,8 @@ impl HttpClient {
             spec_cache: Arc::new(DashMap::new()),
             proxy_strategy,
             waf_enabled: config.waf_evasion.enabled,
+            waf_user_agents: config.waf_evasion.user_agents.clone(),
+            waf_sticky_persona: config.waf_evasion.sticky_persona,
             delay_ms: config.politeness.delay_ms,
             retries: config.politeness.retries,
             host_last_request: Arc::new(DashMap::new()),
@@ -474,7 +479,7 @@ impl HttpClient {
 
         // Rotate UA + evasion headers on every request.
         if self.waf_enabled {
-            req = req.headers(WafEvasion::evasion_headers());
+            req = req.headers(self.evasion_headers_for_url(url));
         }
 
         let mut combined_headers = HeaderMap::new();
@@ -536,7 +541,7 @@ impl HttpClient {
         let mut req = client.request(method.clone(), url);
 
         if self.waf_enabled {
-            req = req.headers(WafEvasion::evasion_headers());
+            req = req.headers(self.evasion_headers_for_url(url));
         }
 
         let mut combined_headers = HeaderMap::new();
@@ -872,7 +877,7 @@ impl HttpClient {
         let mut req = client.request(reqwest::Method::GET, url);
 
         if self.waf_enabled {
-            req = req.headers(WafEvasion::evasion_headers());
+            req = req.headers(self.evasion_headers_for_url(url));
         }
 
         let mut req = req
@@ -891,6 +896,14 @@ impl HttpClient {
         })?;
 
         self.read_response(response, url).await
+    }
+
+    fn evasion_headers_for_url(&self, url: &str) -> HeaderMap {
+        if self.waf_sticky_persona {
+            browser_persona::sticky_headers_for_url(url, &self.waf_user_agents)
+        } else {
+            WafEvasion::evasion_headers()
+        }
     }
 
     pub async fn method_probe(

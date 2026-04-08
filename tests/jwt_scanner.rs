@@ -38,6 +38,7 @@ fn test_config_custom(active_checks: bool, timeout_secs: u64) -> Config {
         waf_evasion: WafEvasionConfig {
             enabled: false,
             user_agents: vec![],
+            sticky_persona: false,
         },
         default_headers: vec![],
         cookies: vec![],

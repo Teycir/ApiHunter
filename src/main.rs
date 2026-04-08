@@ -91,12 +91,13 @@ async fn run(cli: Cli) -> Result<i32> {
             timeout_secs: cli.timeout_secs,
         },
         waf_evasion: WafEvasionConfig {
-            enabled: cli.waf_evasion || !cli.user_agents.is_empty(),
+            enabled: cli.waf_evasion || cli.waf_sticky_persona || !cli.user_agents.is_empty(),
             user_agents: if cli.user_agents.is_empty() {
                 default_user_agents()
             } else {
                 cli.user_agents.clone()
             },
+            sticky_persona: cli.waf_sticky_persona,
         },
         default_headers: build_default_headers(&cli.headers, &cli.auth_bearer, &cli.auth_basic)?,
         cookies: parse_cookies(&cli.cookies)?,

@@ -577,6 +577,7 @@ async fn run_full_scan_impl(
         waf_evasion: WafEvasionConfig {
             enabled: request.waf_evasion || !user_agents.is_empty(),
             user_agents,
+            sticky_persona: false,
         },
         default_headers: headers,
         cookies,

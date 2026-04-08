@@ -28,6 +28,7 @@ async fn refresh_task_can_be_cancelled_immediately() {
         waf_evasion: WafEvasionConfig {
             enabled: false,
             user_agents: vec![],
+            sticky_persona: false,
         },
         default_headers: vec![],
         cookies: vec![],

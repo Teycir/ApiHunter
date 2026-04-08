@@ -186,6 +186,12 @@ fn explicit_waf_evasion_flag() {
 }
 
 #[test]
+fn explicit_waf_sticky_persona_flag() {
+    let cli = Cli::try_parse_from(["scanner", "--stdin", "--waf-sticky-persona"]).unwrap();
+    assert!(cli.waf_sticky_persona);
+}
+
+#[test]
 fn output_and_format_flags() {
     let cli = Cli::try_parse_from([
         "scanner",
@@ -575,19 +581,30 @@ fn max_endpoints_nonzero_preserved() {
 
 #[test]
 fn waf_enabled_when_user_agents_provided() {
-    // run() logic: waf_evasion || !user_agents.is_empty()
+    // run() logic: waf_evasion || waf_sticky_persona || !user_agents.is_empty()
     let waf_evasion = false;
+    let waf_sticky_persona = false;
     let user_agents = ["CustomBot/1.0".to_string()];
-    let enabled = waf_evasion || !user_agents.is_empty();
+    let enabled = waf_evasion || waf_sticky_persona || !user_agents.is_empty();
     assert!(enabled);
 }
 
 #[test]
 fn waf_disabled_when_neither_flag_nor_agents() {
     let waf_evasion = false;
+    let waf_sticky_persona = false;
     let user_agents: Vec<String> = vec![];
-    let enabled = waf_evasion || !user_agents.is_empty();
+    let enabled = waf_evasion || waf_sticky_persona || !user_agents.is_empty();
     assert!(!enabled);
+}
+
+#[test]
+fn waf_enabled_when_sticky_persona_requested() {
+    let waf_evasion = false;
+    let waf_sticky_persona = true;
+    let user_agents: Vec<String> = vec![];
+    let enabled = waf_evasion || waf_sticky_persona || !user_agents.is_empty();
+    assert!(enabled);
 }
 
 #[test]
