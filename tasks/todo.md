@@ -1,13 +1,25 @@
 # Task: Bump Version to 0.3.1 + Push (Phase 59)
 
 ## Plan
-- [ ] Bump project and desktop version metadata to `0.3.1`.
-- [ ] Rebuild desktop binary to validate versioned release output.
-- [ ] Commit the version + desktop UI changes.
-- [ ] Push `main` to `origin`.
+- [x] Bump project and desktop version metadata to `0.3.1`.
+- [x] Rebuild desktop binary to validate versioned release output.
+- [x] Commit the version + desktop UI changes.
+- [x] Push `main` to `origin`.
 
 ## Review
-- Pending.
+- Version bump applied:
+  - `Cargo.toml` -> `apihunter 0.3.1`
+  - `apps/desktop/package.json` + `package-lock.json` -> `0.3.1`
+  - `apps/desktop/src-tauri/Cargo.toml` + `tauri.conf.json` -> `0.3.1`
+  - lockfiles refreshed (`Cargo.lock`, `apps/desktop/src-tauri/Cargo.lock`)
+- Desktop release visibility retained from Phase 58 changes:
+  - compile-time `__APP_VERSION__` wiring and Overview release chip.
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+- Git:
+  - commit: `34f0961`
+  - push: `main -> origin/main` successful
 
 ---
 
