@@ -66,6 +66,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Desktop full-scan section labels were simplified by removing numbered prefixes from subsection headers.
 - Desktop advanced settings panel now uses the same right-aligned collapse caret treatment and full-width layout behavior as adjacent scan sections.
 - Desktop exports now include an Insomnia Runner-data JSON file (array of key-value objects) for Runner preview/upload flows when collection import UI is unavailable.
+- Desktop `Overview` now shows a persistent `release: vX.Y.Z` chip, and desktop runtime auto-fetches backend health so release version is visible without a manual health-check click.
 
 ### Fixed
 - Restored full test-suite compatibility after introducing `response_diff_deep` by adding the missing field to `tests/mass_assignment_scanner.rs` test config initialization.

@@ -2,6 +2,8 @@ import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+const UI_RELEASE_VERSION = __APP_VERSION__;
+
 type HealthResponse = {
   status: string;
   appVersion: string;
@@ -359,6 +361,14 @@ export default function App() {
     };
   }, [tauriRuntimeAvailable]);
 
+  useEffect(() => {
+    if (!tauriRuntimeAvailable) {
+      return;
+    }
+
+    void fetchHealth();
+  }, [tauriRuntimeAvailable]);
+
   const progressPct = useMemo(() => {
     if (totalUrls <= 0) return 0;
     return Math.min(100, Math.round((completedUrls / totalUrls) * 100));
@@ -394,6 +404,7 @@ export default function App() {
       ranking: TEXT_ENCODER.encode(exports.discoveryRankingJson).length,
     };
   }, [exports]);
+  const releaseVersion = health?.appVersion ?? UI_RELEASE_VERSION;
 
   async function fetchHealth() {
     setError(null);
@@ -812,6 +823,7 @@ export default function App() {
           reports directly from the desktop app.
         </p>
         <div className="hero-metrics">
+          <span className="metric-chip">release: v{releaseVersion}</span>
           <span className="metric-chip">
             targets: {validTargetCount}/{MAX_TARGETS}
           </span>

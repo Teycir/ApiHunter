@@ -1,3 +1,39 @@
+# Task: Bump Version to 0.3.1 + Push (Phase 59)
+
+## Plan
+- [ ] Bump project and desktop version metadata to `0.3.1`.
+- [ ] Rebuild desktop binary to validate versioned release output.
+- [ ] Commit the version + desktop UI changes.
+- [ ] Push `main` to `origin`.
+
+## Review
+- Pending.
+
+---
+
+# Task: Desktop UI Release Version + Rebuild (Phase 58)
+
+## Plan
+- [x] Add desktop release version metadata wiring for the frontend build.
+- [x] Show the current release version in the desktop `Overview` UI.
+- [x] Rebuild desktop binary with `npm run tauri build`.
+- [x] Record validation output and artifact path in review notes.
+
+## Review
+- Version visibility updates:
+  - Added Vite compile-time constant `__APP_VERSION__` from `npm_package_version`.
+  - Added desktop UI release chip in `Overview`: `release: v{releaseVersion}`.
+  - Added desktop auto-health fetch on Tauri runtime start so runtime app version appears without manual click.
+- Type wiring updates:
+  - Declared `__APP_VERSION__` in `apps/desktop/src/vite-env.d.ts`.
+- Changelog update:
+  - Added Unreleased entry for persistent desktop release-version visibility.
+- Validation:
+  - `npm run tauri build` (in `apps/desktop`) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
 # Task: README Desktop Snapshots (Phase 57)
 
 ## Plan
