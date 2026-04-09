@@ -441,6 +441,20 @@ Desktop scan input supports:
 - Results cards now hard-wrap long check IDs/URLs to prevent boundary overflow
 - Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
 
+### Desktop Snapshots
+
+<p align="center">
+  <img src="docs/images/desktop/overview-and-full-scan.png" alt="ApiHunter Desktop overview and full scan input panels" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop/full-scan-controls.png" alt="ApiHunter Desktop full scan controls and presets" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop/live-progress-panel.png" alt="ApiHunter Desktop live progress panel while waiting for scan start" width="900" />
+</p>
+
 If you want a release desktop binary:
 
 ```bash

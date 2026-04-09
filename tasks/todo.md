@@ -1,3 +1,23 @@
+# Task: README Desktop Snapshots (Phase 57)
+
+## Plan
+- [x] Copy the three provided desktop snapshot PNGs into a tracked docs image folder with stable ASCII filenames.
+- [x] Add a `Desktop Snapshots` section to `README.md` in the desktop quick-start area and embed all three images.
+- [x] Verify Markdown/image paths resolve in-repo and review the final diff.
+- [ ] Commit and push the change to `main`.
+
+## Review
+- Added three tracked snapshot assets:
+  - `docs/images/desktop/overview-and-full-scan.png`
+  - `docs/images/desktop/full-scan-controls.png`
+  - `docs/images/desktop/live-progress-panel.png`
+- Updated `README.md` Desktop Quick Start area with a new `Desktop Snapshots` section using centered `<img>` blocks.
+- Validation:
+  - `git diff -- README.md` confirms the new section insertion and image paths.
+  - `git status --short` shows only expected files changed (`README.md`, `tasks/todo.md`, `docs/images/desktop/*`).
+
+---
+
 # Task: Insomnia Runner Data Export (Phase 56)
 
 ## Plan
