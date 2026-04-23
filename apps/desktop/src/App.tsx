@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 
 const UI_RELEASE_VERSION = __APP_VERSION__;
 
@@ -118,6 +119,36 @@ type FullScanResponse = {
 
 type SaveExportResponse = {
   path: string;
+};
+
+type LoadedScanResponse = {
+  path: string;
+  meta: {
+    generatedAt: string;
+    elapsedMs: number;
+    scanned: number;
+    skipped: number;
+    scannerVer: string;
+  };
+  summary: {
+    total: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    info: number;
+    errors: number;
+  };
+  findings: Array<{
+    url: string;
+    check: string;
+    title: string;
+    severity: string;
+    detail: string;
+    evidence?: string;
+    scanner: string;
+  }>;
+  errors: unknown[];
 };
 
 type ScanEventPayload = {
@@ -286,6 +317,8 @@ export default function App() {
   const [exportPrefix, setExportPrefix] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
+  const [loadedScan, setLoadedScan] = useState<LoadedScanResponse | null>(null);
+  const [loadScanPath, setLoadScanPath] = useState("");
 
   function handleTargetInputChange(raw: string) {
     const sanitized = sanitizeTargetTextareaInput(raw);
@@ -811,6 +844,47 @@ export default function App() {
     }
   }
 
+  async function loadPastScan() {
+    if (!loadScanPath.trim()) {
+      setError("Enter a scan directory path.");
+      return;
+    }
+    setError(null);
+    setLoadedScan(null);
+    try {
+      const result = await invokeCommand<LoadedScanResponse>("load_past_scan", {
+        scanDir: loadScanPath.trim(),
+      });
+      setLoadedScan(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function browseScanDirectory() {
+    if (!tauriRuntimeAvailable) {
+      setError("Directory picker requires Tauri runtime.");
+      return;
+    }
+    setError(null);
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Scan Export Directory",
+      });
+      console.log("Dialog result:", selected);
+      if (selected && typeof selected === "string") {
+        setLoadScanPath(selected);
+      } else if (!selected) {
+        console.log("User cancelled dialog");
+      }
+    } catch (err) {
+      console.error("Browse error:", err);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <main className="app-shell">
       <CollapsiblePanel title="Overview" className="panel-hero" defaultOpen>
@@ -851,6 +925,129 @@ export default function App() {
             <p>scanner version: {health.scannerVersion}</p>
           </div>
         )}
+      </CollapsiblePanel>
+
+      <CollapsiblePanel title="Load Past Scan" defaultOpen={false}>
+        <div className="scan-form">
+          <label htmlFor="loadScanPath">Scan Directory Path</label>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              id="loadScanPath"
+              type="text"
+              value={loadScanPath}
+              onChange={(e) => setLoadScanPath(e.target.value)}
+              placeholder="/home/user/Downloads/apihunter-scan-..."
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={browseScanDirectory}
+              style={{ margin: 0 }}
+            >
+              Browse
+            </button>
+          </div>
+          <button type="button" className="btn" onClick={loadPastScan}>
+            Load Scan
+          </button>
+          {loadedScan && (
+            <div className="status-ok">
+              <h3>Loaded Scan Summary</h3>
+              <p><strong>Path:</strong> {loadedScan.path}</p>
+              <p><strong>Scanner:</strong> {loadedScan.meta.scannerVer}</p>
+              <p><strong>Elapsed:</strong> {(loadedScan.meta.elapsedMs / 1000).toFixed(2)}s</p>
+              <p><strong>Scanned:</strong> {loadedScan.meta.scanned} URLs</p>
+              
+              <h4>Findings Overview</h4>
+              <div className="result-grid">
+                <article className="result-card">
+                  <h3>Total: {loadedScan.summary.total}</h3>
+                  <p style={{ color: "#dc3545", fontWeight: "bold" }}>Critical: {loadedScan.summary.critical}</p>
+                  <p style={{ color: "#fd7e14", fontWeight: "bold" }}>High: {loadedScan.summary.high}</p>
+                  <p>Medium: {loadedScan.summary.medium}</p>
+                  <p>Low: {loadedScan.summary.low}</p>
+                  <p>Info: {loadedScan.summary.info}</p>
+                  <p>Errors: {loadedScan.summary.errors}</p>
+                </article>
+              </div>
+
+              {(loadedScan.summary.critical > 0 || loadedScan.summary.high > 0) && (
+                <>
+                  <h4>Critical & High Severity Findings</h4>
+                  <div className="log-view" style={{ maxHeight: "400px", overflow: "auto" }}>
+                    {loadedScan.findings
+                      .filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH")
+                      .map((finding, idx) => (
+                        <article
+                          key={idx}
+                          className="result-card"
+                          style={{
+                            marginBottom: "12px",
+                            borderLeft: finding.severity === "CRITICAL" ? "4px solid #dc3545" : "4px solid #fd7e14",
+                          }}
+                        >
+                          <p style={{ fontWeight: "bold", color: finding.severity === "CRITICAL" ? "#dc3545" : "#fd7e14" }}>
+                            [{finding.severity}] {finding.title}
+                          </p>
+                          <p><strong>URL:</strong> {finding.url}</p>
+                          <p><strong>Check:</strong> {finding.check}</p>
+                          <p><strong>Scanner:</strong> {finding.scanner}</p>
+                          <p><strong>Detail:</strong> {finding.detail}</p>
+                          {finding.evidence && (
+                            <details style={{ marginTop: "8px" }}>
+                              <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Evidence</summary>
+                              <pre style={{ 
+                                background: "#f5f5f5", 
+                                padding: "8px", 
+                                borderRadius: "4px",
+                                overflow: "auto",
+                                maxHeight: "200px",
+                                fontSize: "12px"
+                              }}>{finding.evidence}</pre>
+                            </details>
+                          )}
+                        </article>
+                      ))}
+                  </div>
+                </>
+              )}
+
+              <h4>Findings by Scanner</h4>
+              <div className="result-card">
+                {Object.entries(
+                  loadedScan.findings.reduce((acc, f) => {
+                    acc[f.scanner] = (acc[f.scanner] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                )
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([scanner, count]) => (
+                    <p key={scanner}>
+                      <strong>{scanner}:</strong> {count}
+                    </p>
+                  ))}
+              </div>
+
+              <h4>Top Checks</h4>
+              <div className="result-card">
+                {Object.entries(
+                  loadedScan.findings.reduce((acc, f) => {
+                    acc[f.check] = (acc[f.check] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                )
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([check, count]) => (
+                    <p key={check}>
+                      <strong>{check}:</strong> {count}
+                    </p>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
       </CollapsiblePanel>
 
       <CollapsiblePanel title="Full Scan" defaultOpen>

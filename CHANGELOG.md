@@ -4,7 +4,37 @@ All notable changes to this project will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+
+
+## [0.3.2] - 2026-04-23
+
+### Added
+- **Scan Loading Feature**: Load and analyze past scan results from export directories
+  - New `--load-scan <DIR>` CLI flag to load previous scan exports
+  - Core `scan_loader` module with auto-detection of `.ndjson` and `findings.json` formats
+  - Desktop "Load Past Scan" panel with native directory picker (Browse button)
+  - Support for severity filtering and baseline diffing on loaded scans
+  - All output formats (pretty, ndjson, sarif) work with loaded scans
+- Desktop scan loading UI enhancements:
+  - Native directory picker using `@tauri-apps/plugin-dialog`
+  - Detailed findings display focused on Critical & High severity
+  - Color-coded severity indicators (red for critical, orange for high)
+  - Collapsible evidence sections with formatted output
+  - Findings grouped by scanner module
+  - Top 10 checks ranked by frequency
+  - Manual path input as fallback option
+
+### Changed
+- `ReportMeta.scanner_ver` changed from `&'static str` to `String` for deserialization compatibility
+- `CapturedErrorRecord`, `ReportMeta`, and `ReportSummary` now implement `Deserialize` and `Clone`
+- Desktop capabilities updated to include `dialog:allow-open` permission
+- Scan loader architecture: core logic in `scan_loader.rs`, minimal wrappers in CLI and desktop
+
+### Fixed
+- Desktop browse button now uses proper Tauri dialog plugin instead of broken HTML5 directory picker
+- Added debug logging to browse function for troubleshooting
+
+## [0.3.1] - 2026-04-17
 
 ### Added
 - Additive transport/stealth modularization:
@@ -135,7 +165,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI via `clap` with `--min-severity`, `--concurrency`, `--output-path`
 - WAF evasion headers and random UA pool
 
-[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.2
+[0.3.1]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.1.0

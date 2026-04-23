@@ -329,18 +329,18 @@ pub struct ReportDocument {
 }
 
 /// Top-level metadata about the run.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportMeta {
     pub generated_at: DateTime<Utc>,
     pub elapsed_ms: u128,
     pub scanned: usize,
     pub skipped: usize,
-    pub scanner_ver: &'static str,
+    pub scanner_ver: String,
     pub runtime_metrics: RuntimeMetrics,
 }
 
 /// Counts by severity — useful at a glance without reading all findings.
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReportSummary {
     pub total: usize,
     pub critical: usize,
@@ -352,7 +352,7 @@ pub struct ReportSummary {
 }
 
 /// A serialisable wrapper around [`CapturedError`].
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapturedErrorRecord {
     pub url: Option<String>,
     pub kind: String,
@@ -675,7 +675,7 @@ pub fn build_document(result: &RunResult) -> ReportDocument {
             elapsed_ms: result.elapsed.as_millis(),
             scanned: result.scanned,
             skipped: result.skipped,
-            scanner_ver: env!("CARGO_PKG_VERSION"),
+            scanner_ver: env!("CARGO_PKG_VERSION").to_string(),
             runtime_metrics: result.metrics.clone(),
         },
         summary,

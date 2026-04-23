@@ -30,7 +30,7 @@ use api_scanner::{
     http_client::HttpClient,
     proxy::{parse_proxy_file, ProxyStrategy},
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
-    runner,
+    runner, scan_loader,
     transport_adapter::{RedirectMode, TransportClientOptions},
 };
 
@@ -56,6 +56,11 @@ async fn main() {
 // ── Core async logic ──────────────────────────────────────────────────────────
 
 async fn run(cli: Cli) -> Result<i32> {
+    // Handle --load-scan mode
+    if let Some(ref scan_dir) = cli.load_scan {
+        return handle_load_scan(scan_dir, &cli).await;
+    }
+
     let start = Instant::now();
     validate_startup_inputs(&cli)?;
     emit_security_hygiene_warnings(&cli);
@@ -246,7 +251,7 @@ async fn run(cli: Cli) -> Result<i32> {
             elapsed_ms: 0,
             scanned: 0,
             skipped: 0,
-            scanner_ver: env!("CARGO_PKG_VERSION"),
+            scanner_ver: env!("CARGO_PKG_VERSION").to_string(),
             runtime_metrics: runner::RuntimeMetrics::default(),
         });
     }
@@ -713,4 +718,27 @@ async fn enforce_filter_host_delay(
     if !sleep_for.is_zero() {
         tokio::time::sleep(sleep_for).await;
     }
+}
+
+async fn handle_load_scan(scan_dir: &std::path::Path, cli: &Cli) -> Result<i32> {
+    let loaded = scan_loader::load_scan(scan_dir)?;
+    info!(path = %loaded.path.display(), findings = loaded.findings.len(), "Loaded past scan");
+
+    let min_sev: Severity = cli.min_severity.map(Into::into).unwrap_or(Severity::Info);
+    let print_summary = cli.summary || !cli.quiet;
+    
+    let report_cfg = ReportConfig {
+        format: cli.format.into(),
+        output_path: cli.output.clone(),
+        print_summary,
+        quiet: cli.quiet,
+        stream: false,
+    };
+
+    scan_loader::process_loaded_scan(
+        loaded,
+        &min_sev,
+        cli.baseline.as_deref(),
+        report_cfg,
+    )
 }

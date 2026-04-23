@@ -303,6 +303,16 @@ struct SaveExportResponse {
     path: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadedScanResponse {
+    path: String,
+    meta: api_scanner::reports::ReportMeta,
+    summary: api_scanner::reports::ReportSummary,
+    findings: Vec<Finding>,
+    errors: Vec<CapturedErrorRecord>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ScanEventPayload {
@@ -495,6 +505,20 @@ fn save_export(
 
     Ok(SaveExportResponse {
         path: output_path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn load_past_scan(scan_dir: String) -> Result<LoadedScanResponse, String> {
+    let loaded = api_scanner::scan_loader::load_scan(&scan_dir)
+        .map_err(|e| format!("Failed to load scan: {e}"))?;
+    
+    Ok(LoadedScanResponse {
+        path: loaded.path.to_string_lossy().to_string(),
+        meta: loaded.meta,
+        summary: loaded.summary,
+        findings: loaded.findings,
+        errors: loaded.errors,
     })
 }
 
@@ -1590,11 +1614,13 @@ fn emit_scan_event(app: &tauri::AppHandle, payload: ScanEventPayload) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             health_check,
             run_quick_scan,
             run_full_scan,
-            save_export
+            save_export,
+            load_past_scan
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

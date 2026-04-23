@@ -17,6 +17,7 @@ pub mod proxy;
 pub mod reports;
 pub mod retry_policy;
 pub mod runner;
+pub mod scan_loader;
 pub mod scanner;
 pub mod transport_adapter;
 pub mod transport_tls;

@@ -34,7 +34,7 @@ use crate::transport_tls::TlsProfile;
     group(
         ArgGroup::new("input")
             .required(true)
-            .args(["urls", "stdin", "har", "collection"])
+            .args(["urls", "stdin", "har", "collection", "load_scan"])
     )
 )]
 pub struct Cli {
@@ -54,6 +54,10 @@ pub struct Cli {
     /// Path to a Postman/Insomnia collection export (JSON).
     #[arg(long, value_name = "FILE", group = "input")]
     pub collection: Option<PathBuf>,
+
+    /// Load a past scan from an export directory.
+    #[arg(long, value_name = "DIR", group = "input")]
+    pub load_scan: Option<PathBuf>,
 
     /// Skip pre-filtering of inaccessible URLs (enabled by default).
     #[arg(long)]
