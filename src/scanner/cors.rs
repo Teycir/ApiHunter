@@ -33,8 +33,12 @@ fn extract_domain_from_url(url: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn generate_probe_origins(url: &str) -> Vec<String> {
-    let mut origins = vec!["null".to_string(), "https://cdn.example.net".to_string()];
+
+    let mut origins = vec![
+        "null".to_string(),
+        "https://evil.com".to_string(),
+        "https://attacker.example.net".to_string(),fn generate_probe_origins(url: &str) -> Vec<String> {
+    ];
 
     if let Some(domain) = extract_domain_from_url(url) {
         let scheme = if url.starts_with("https://") {
@@ -48,7 +52,6 @@ fn generate_probe_origins(url: &str) -> Vec<String> {
         origins.push(format!("{}://www.{}", scheme, domain));
     }
 
-    // Keep probe set unique and randomize order to avoid deterministic fingerprints.
     let mut seen = HashSet::new();
     origins.retain(|origin| seen.insert(origin.clone()));
     if origins.len() > 1 {
@@ -240,10 +243,16 @@ impl Scanner for CorsScanner {
 
             // ── Origin reflected ──────────────────────────────────────────────
             if acao == Some(origin.as_str()) {
-                // Skip same-origin echoes; they are not exploitable via CORS.
                 if !target_origin.is_empty() && origin.as_str() == target_origin.as_str() {
                     continue;
                 }
+                
+                // Only flag HIGH severity for arbitrary origins (evil.com, attacker.example.net)
+                let is_arbitrary_origin = origin == "https://evil.com" 
+                    || origin == "https://attacker.example.net"
+                    || origin.contains("evil")
+                    || origin.contains("attacker");
+                
                 if *origin == "null" {
                     findings.push(
                         Finding::new(
@@ -264,21 +273,21 @@ impl Scanner for CorsScanner {
                             "Explicitly disallow the 'null' origin and restrict CORS to known origins.",
                         ),
                     );
-                } else {
+                } else if is_arbitrary_origin {
                     let creds = acac == Some("true");
                     findings.push(
                         Finding::new(
                             url,
                             "cors/reflected-origin",
-                            "Reflected CORS origin",
+                            "Reflected CORS origin (arbitrary domain)",
                             if creds { Severity::High } else { Severity::Low },
                             if creds {
                                 format!(
-                                    "Origin '{origin}' reflected with credentials allowed — \
-                                     potential credential theft via cross-origin request."
+                                    "Arbitrary origin '{origin}' reflected with credentials allowed — \
+                                     potential credential theft via cross-origin request from attacker-controlled domain."
                                 )
                             } else {
-                                format!("Origin '{origin}' reflected (credentials not allowed).")
+                                format!("Arbitrary origin '{origin}' reflected (credentials not allowed).")
                             },
                             "cors",
                         )
@@ -291,6 +300,28 @@ impl Scanner for CorsScanner {
                         ))
                         .with_remediation(
                             "Validate origins against an allowlist and only enable credentials for trusted origins.",
+                        ),
+                    );
+                } else {
+                    // Trusted subdomain reflected - this is allowlist-based CORS (secure)
+                    findings.push(
+                        Finding::new(
+                            url,
+                            "cors/allowlist-based",
+                            "CORS configured with allowlist",
+                            Severity::Info,
+                            format!("Origin '{origin}' is reflected, but this appears to be allowlist-based CORS (trusted subdomain). Verify the allowlist only includes trusted domains."),
+                            "cors",
+                        )
+                        .with_evidence(format!(
+                            "Origin: {origin}\n\
+                             Access-Control-Allow-Origin: {}\n\
+                             Access-Control-Allow-Credentials: {}",
+                            acao.unwrap_or("-"),
+                            acac.unwrap_or("-"),
+                        ))
+                        .with_remediation(
+                            "Review CORS allowlist to ensure only trusted domains are included.",
                         ),
                     );
                 }

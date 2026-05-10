@@ -245,6 +245,50 @@ struct DebugEndpoint {
     body_validators: &'static [fn(&str) -> bool],
 }
 
+/// Returns `true` when the body looks like an error page (404, 403, etc.).
+fn is_likely_error_page(resp: &HttpResponse) -> bool {
+    let ct = resp
+        .headers
+        .get("content-type")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+    if !is_html_content_type(ct) {
+        return false;
+    }
+    
+    let body_lower = resp.body.to_ascii_lowercase();
+    body_lower.contains("404")
+        || body_lower.contains("not found")
+        || body_lower.contains("page not found")
+        || body_lower.contains("403")
+        || body_lower.contains("forbidden")
+        || body_lower.contains("error")
+        || body_lower.contains("<title>404</title>")
+        || body_lower.contains("<title>403</title>")
+}
+
+/// Returns `true` when the body looks like public marketing content.
+fn is_marketing_content(resp: &HttpResponse) -> bool {
+    let body_lower = resp.body.to_ascii_lowercase();
+    let marketing_markers = [
+        "about us",
+        "our mission",
+        "our team",
+        "contact us",
+        "privacy policy",
+        "terms of service",
+        "copyright",
+        "all rights reserved",
+    ];
+    
+    let marker_count = marketing_markers
+        .iter()
+        .filter(|marker| body_lower.contains(*marker))
+        .count();
+    
+    marker_count >= 2
+}
+
 /// Returns `true` when the body looks like a dotenv file (`KEY=VALUE` lines).
 fn is_dotenv(body: &str) -> bool {
     static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^[A-Z_][A-Z0-9_]*=.+").unwrap());
@@ -2448,6 +2492,17 @@ async fn check_authorization_matrix(
         return;
     };
     let authed_sig = idor_response_signature(&authed_primary);
+    
+    // Skip if both responses are error pages
+    if is_likely_error_page(&authed_primary) && is_likely_error_page(&unauth_primary) {
+        return;
+    }
+    
+    // Skip if response is public marketing content
+    if is_marketing_content(&authed_primary) {
+        return;
+    }
+    
     let unauth_same_basis = if (200..400).contains(&unauth_primary.status) {
         let unauth_sig = idor_response_signature(&unauth_primary);
         idor_match_basis(&authed_sig, &unauth_sig)
