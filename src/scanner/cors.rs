@@ -34,10 +34,11 @@ fn extract_domain_from_url(url: &str) -> Option<String> {
 }
 
 
+fn generate_probe_origins(url: &str) -> Vec<String> {
     let mut origins = vec![
         "null".to_string(),
         "https://evil.com".to_string(),
-        "https://attacker.example.net".to_string(),fn generate_probe_origins(url: &str) -> Vec<String> {
+        "https://attacker.example.net".to_string(),
     ];
 
     if let Some(domain) = extract_domain_from_url(url) {

@@ -53,8 +53,19 @@ fn batch_payload() -> Value {
 }
 
 fn alias_dos_payload() -> Value {
-    let aliases: String = (0..10).map(|i| format!("a{i}: __typename ")).collect();
+    // 50 aliases: most GraphQL servers allow 10–100; we use 50 as a baseline
+    // to reliably trigger cost-limit / alias-count defences.
+    let aliases: String = (0..50).map(|i| format!("a{i}: __typename ")).collect();
     json!({ "query": format!("{{ {aliases} }}") })
+}
+
+fn depth_bomb_payload(depth: usize) -> Value {
+    // Nest __typename inside fragment spreads to probe depth limits.
+    // Most servers cap depth at 10–15; we probe at `depth`.
+    let query = (0..depth).fold("__typename".to_string(), |inner, _| {
+        format!("... on Query {{ {inner} }}")
+    });
+    json!({ "query": format!("{{ {query} }}") })
 }
 
 fn mutation_fuzz_payloads() -> Vec<(&'static str, Value)> {
@@ -329,22 +340,22 @@ async fn probe_endpoint(
     let alias = alias_dos_payload();
     if let Ok(ar) = client.post_json(url, &alias).await {
         if let Ok(av) = serde_json::from_str::<Value>(&ar.body) {
-            let resolved = (0..10)
+            let resolved = (0..50)
                 .filter(|i| av.pointer(&format!("/data/a{i}")).is_some())
                 .count();
-            if resolved >= 10 {
+            if resolved >= 50 {
                 findings.push(
                     Finding::new(
                         url,
                         "graphql/alias-amplification",
                         "GraphQL alias amplification possible",
-                        Severity::Low,
-                        "Server resolves all query aliases without restriction. \
+                        Severity::Medium,
+                        "Server resolves all 50 query aliases without restriction. \
                      Malicious clients can craft deeply aliased queries to amplify \
                      server-side work (alias-based DoS).",
                         "graphql",
                     )
-                    .with_evidence(format!("{resolved}/10 aliases resolved"))
+                    .with_evidence(format!("{resolved}/50 aliases resolved"))
                     .with_remediation(
                         "Enforce query depth/complexity limits and alias count caps.",
                     ),
@@ -352,6 +363,38 @@ async fn probe_endpoint(
             }
         }
     }
+
+    // ── Step 4b: Query depth limit probe ─────────────────────────────────────
+    let depth_payload = depth_bomb_payload(15);
+    if let Ok(dr) = client.post_json(url, &depth_payload).await {
+        if let Ok(dv) = serde_json::from_str::<Value>(&dr.body) {
+            // If data is non-null and no errors, depth limits are absent
+            let has_data = dv.get("data").map(|d| !d.is_null()).unwrap_or(false);
+            let has_errors = dv
+                .get("errors")
+                .and_then(|e| e.as_array())
+                .map(|arr| !arr.is_empty())
+                .unwrap_or(false);
+            if has_data && !has_errors {
+                findings.push(
+                    Finding::new(
+                        url,
+                        "graphql/no-depth-limit",
+                        "GraphQL query depth limit absent",
+                        Severity::Low,
+                        "A deeply nested query (depth 15) was accepted without errors. \
+                     No query depth limiting appears to be enforced.",
+                        "graphql",
+                    )
+                    .with_evidence("depth-15 probe returned data without errors")
+                    .with_remediation(
+                        "Enforce a maximum query depth (typically 5–10) and use complexity analysis.",
+                    ),
+                );
+            }
+        }
+    }
+
 
     // ── Step 5: GraphiQL / playground UI exposed ──────────────────────────────
     if let Ok(gr) = client.get(url).await {

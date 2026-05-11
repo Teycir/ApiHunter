@@ -29,6 +29,9 @@ type HmacSha256 = Hmac<Sha256>;
 static JWT_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap());
 
+/// Claims whose mere presence in a JWT payload warrants a finding.
+/// NOTE: `scope` is intentionally excluded — it is a standard OAuth 2.0 claim.
+/// Overprivileged scope values are checked separately below.
 static SENSITIVE_CLAIMS: &[&str] = &[
     "email",
     "role",
@@ -36,7 +39,11 @@ static SENSITIVE_CLAIMS: &[&str] = &[
     "is_admin",
     "admin",
     "permissions",
-    "scope",
+];
+
+/// Scope values that indicate overprivileged access.
+static OVERPRIVILEGED_SCOPE_TOKENS: &[&str] = &[
+    "admin", "superuser", "superadmin", "root", "write:*", "*", "all",
 ];
 
 const LONG_LIVED_SECS: i64 = 60 * 60 * 24 * 30; // 30 days
@@ -239,6 +246,17 @@ async fn analyze_jwt(
     for key in SENSITIVE_CLAIMS {
         if payload.get(*key).is_some() {
             hits.push(*key);
+        }
+    }
+
+    // Check scope separately: only flag if it contains overprivileged tokens.
+    if let Some(scope_val) = payload.get("scope").and_then(Value::as_str) {
+        let scope_lower = scope_val.to_ascii_lowercase();
+        let overprivileged = OVERPRIVILEGED_SCOPE_TOKENS
+            .iter()
+            .any(|t| scope_lower.split_whitespace().any(|tok| tok == *t));
+        if overprivileged {
+            hits.push("scope (overprivileged value)");
         }
     }
 

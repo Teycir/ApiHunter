@@ -125,16 +125,18 @@ fn random_probe_token(len: usize) -> String {
 }
 
 fn random_redirect_probe() -> String {
+    // Use the RFC 2606 `.invalid` TLD — these addresses can never be legitimately
+    // registered as redirect URIs, eliminating CDN / shared-domain false positives.
     const PROBES: &[&str] = &[
-        "https://app.example.net/callback",
-        "https://cdn.example.net/oauth/callback",
-        "https://portal.example.org/auth/callback",
+        "https://attacker.apihunter-probe.invalid/callback",
+        "https://evil.apihunter-probe.invalid/oauth/callback",
+        "https://openredirect.apihunter-probe.invalid/auth/callback",
     ];
     let mut rng = rand::thread_rng();
     PROBES
         .choose(&mut rng)
         .copied()
-        .unwrap_or("https://app.example.net/callback")
+        .unwrap_or("https://attacker.apihunter-probe.invalid/callback")
         .to_string()
 }
 

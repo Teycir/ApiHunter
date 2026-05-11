@@ -90,7 +90,14 @@ impl Scanner for CspScanner {
             }
         };
 
+        // Only check CSP on successful responses — error pages (4xx/5xx) are not
+        // expected to carry a CSP and flagging them causes high false-positive rates.
+        if resp.status != 200 {
+            return (findings, errors);
+        }
+
         // ── Header presence ───────────────────────────────────────────────────
+
         let csp_value = match resp.header("content-security-policy") {
             Some(v) => v.to_string(),
             None => {

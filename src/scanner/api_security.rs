@@ -1086,9 +1086,52 @@ async fn check_secrets_in_response(
                     chk.name
                 ))
                 .with_remediation(
-                    "Remove secrets from responses and rotate exposed credentials immediately.",
+                    "Remove secrets from response bodies and rotate exposed credentials immediately.",
                 ),
             );
+        }
+    }
+
+    // ── Scan response headers for secrets ────────────────────────────────────
+    // Non-standard / vendor headers (X-Debug-Token, X-Internal-Key, etc.) can
+    // inadvertently expose tokens. Skip well-known informational headers.
+    const SKIP_HEADER_PREFIXES: &[&str] = &[
+        "content-", "cache-", "accept-", "access-control-", "strict-transport-",
+        "x-content-type", "x-frame-", "x-xss-", "referrer-", "permissions-",
+        "vary", "age", "date", "etag", "expires", "last-modified", "transfer-encoding",
+        "connection", "keep-alive", "server", "x-powered-by",
+    ];
+    for (hname, hvalue) in &resp.headers {
+        let lower_name = hname.to_ascii_lowercase();
+        if SKIP_HEADER_PREFIXES.iter().any(|p| lower_name.starts_with(p)) {
+            continue;
+        }
+        for chk in SECRET_CHECKS {
+            if let Some(m) = chk.re.find(hvalue) {
+                let redacted = redact(m.as_str());
+                findings.push(
+                    Finding::new(
+                        url,
+                        format!("api_security/secret-in-header/{}", slug(chk.name)),
+                        format!("Possible {} in response header", chk.name),
+                        Severity::High,
+                        format!(
+                            "Possible {} found in response header `{hname}`. \
+                             Secrets should never appear in HTTP response headers.",
+                            chk.name
+                        ),
+                        "api_security",
+                    )
+                    .with_evidence(format!(
+                        "Header: {hname}\nPattern: {}\nMatch (redacted): {redacted}\nURL: {url}",
+                        chk.name
+                    ))
+                    .with_remediation(
+                        "Remove secrets from response headers and rotate exposed credentials immediately.",
+                    ),
+                );
+                break; // One finding per header is enough
+            }
         }
     }
 }
