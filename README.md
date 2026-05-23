@@ -40,6 +40,8 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Securi
 
 Use cases: offense for red-team/API pentest discovery and exploit validation, and defense for CI/CD regression gating, continuous API hardening, and early misconfiguration detection.
 
+> **Scanning at scale?** See [Triage Mode](docs/triage.md) — rank thousands of targets by risk score in minutes using two lightweight probes per host (InternetDB + ipinfo.io), then deep-scan only what matters.
+
 ## Naming
 
 - Project/repository: `ApiHunter`
@@ -669,11 +671,12 @@ Complete documentation is available in `docs/`. Start with:
 - [Findings & Remediation](docs/findings.md)
 - [Security Policy](SECURITY.md)
 - [HOWTO](HOWTO.md)
+- [Triage Mode](docs/triage.md)
 
 ## Roadmap
 
 **Completed:** WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, expanded Nuclei importer (regex/dsl + safe preflight chains), Docker image  
-**Next:** Expand CVE templates, stealth hardening (remove scanner markers, randomize probes), broader matcher/operator parity for advanced Nuclei expressions
+**Next:** Triage mode (InternetDB + ipinfo.io risk scoring for large target lists), expand CVE templates, stealth hardening (remove scanner markers, randomize probes), broader matcher/operator parity for advanced Nuclei expressions
 
 ## Installation
 

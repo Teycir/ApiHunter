@@ -235,7 +235,7 @@ const TOGGLE_FIELDS: Array<{
   { key: "websocket", label: "WebSocket", hint: "Upgrade/origin and auth boundary checks." },
 ];
 
-const MAX_TARGETS = 100;
+const MAX_TARGETS = Infinity;
 const MAX_CSV_FILE_BITS = 5 * 1024;
 const MAX_CSV_FILE_BYTES = Math.floor(MAX_CSV_FILE_BITS / 8);
 const MAX_TARGET_INPUT_CHARS = 32_000;
@@ -456,10 +456,6 @@ export default function App() {
       setError("Add at least one target URL.");
       return;
     }
-    if (targetUrls.length > MAX_TARGETS) {
-      setError(`A maximum of ${MAX_TARGETS} targets is allowed per scan.`);
-      return;
-    }
     if (invalidTargets.length > 0) {
       setError(
         `Found ${invalidTargets.length} invalid target URL(s). Example: ${invalidTargets[0]}`,
@@ -578,12 +574,6 @@ export default function App() {
         ...parseTargetsText(targetInput),
         ...csvTargets,
       ]);
-      if (merged.length > MAX_TARGETS) {
-        setCsvImportError(
-          `CSV import would exceed ${MAX_TARGETS} targets. Remove some entries first.`,
-        );
-        return;
-      }
 
       setTargetInput(merged.join("\n"));
       setError(null);
@@ -899,7 +889,7 @@ export default function App() {
         <div className="hero-metrics">
           <span className="metric-chip">release: v{releaseVersion}</span>
           <span className="metric-chip">
-            targets: {validTargetCount}/{MAX_TARGETS}
+            targets: {validTargetCount}
           </span>
           <span className="metric-chip">parallel workers: {effectiveParallel}</span>
           <span className="metric-chip">
@@ -1052,7 +1042,7 @@ export default function App() {
 
       <CollapsiblePanel title="Full Scan" defaultOpen>
         <form onSubmit={runFullScan} className="scan-form">
-          <label htmlFor="targetInput">Targets (max 100)</label>
+          <label htmlFor="targetInput">Targets</label>
           <textarea
             id="targetInput"
             rows={6}
@@ -1079,12 +1069,8 @@ export default function App() {
                 onChange={importTargetsFromCsv}
               />
             </label>
-            <span
-              className={
-                targetCount > MAX_TARGETS ? "target-count-error" : "muted"
-              }
-            >
-              {targetCount}/{MAX_TARGETS} targets
+            <span className="muted">
+              {targetCount} targets
             </span>
           </div>
           {csvImportError && (

@@ -21,4 +21,5 @@ pub mod scan_loader;
 pub mod scanner;
 pub mod transport_adapter;
 pub mod transport_tls;
+pub mod triage;
 pub mod waf;
