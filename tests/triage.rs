@@ -257,7 +257,7 @@ async fn triage_raw_score_preserves_ordering_within_band() {
 
 // ── severity bands ────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[test]
 fn triage_severity_bands_cover_full_0_100_range() {
     for (score, expected) in [
         (0u8,   TriageSeverity::Low),
