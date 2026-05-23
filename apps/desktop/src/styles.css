@@ -716,7 +716,134 @@ body {
   .per-target-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Additional utility classes ──────────────────────────────────────── */
+/* ─── Results enrichment ──────────────────────────────────────────────── */
+
+/* 1. Severity heatmap */
+.heatmap-wrap {
+  margin-bottom: 16px;
+}
+.heatmap-bar {
+  display: flex;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--color-border-soft);
+  gap: 2px;
+}
+.heatmap-seg {
+  height: 100%;
+  min-width: 4px;
+  transition: width 300ms ease;
+}
+.seg-critical { background: var(--color-critical); }
+.seg-high     { background: var(--color-high); }
+.seg-medium   { background: var(--color-medium); }
+.seg-low      { background: var(--color-low); }
+.seg-info     { background: var(--color-info); }
+
+.heatmap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 7px;
+}
+.heatmap-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--color-text-mid);
+}
+.heatmap-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 2/3/4. Meta row: worst target, efficiency, error rate */
+.result-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.meta-card {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+.meta-card--worst {
+  border-color: var(--color-critical);
+  background: #fff5f5;
+}
+.meta-card--warn {
+  border-color: var(--color-high);
+  background: #fff8f2;
+}
+.meta-card-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+.meta-card--worst .meta-card-label { color: var(--color-critical); }
+.meta-card--warn  .meta-card-label { color: var(--color-high); }
+.meta-card-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.meta-card--worst .meta-card-value { color: var(--color-critical); }
+.meta-card-sub {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+/* 9. Check severity breakdown */
+.sev-breakdown-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sev-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sev-breakdown-check {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--color-text-mid);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sev-breakdown-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 680px) {
+  .result-meta-row { flex-direction: column; }
+}
 
 /* Active preset button highlight */
 .preset-btn--active {
@@ -742,6 +869,34 @@ body {
 /* Enrich saved path confirmation */
 .enrich-saved-path {
   font-size: 0.82rem;
+  color: var(--color-low);
+}
+
+/* Empty state when no findings loaded yet */
+.enrich-empty-notice {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  padding: 16px 18px;
+  font-size: 0.9rem;
+  color: var(--color-text-mid);
+}
+.enrich-empty-notice p { margin: 0; }
+
+/* Loaded NDJSON status bar */
+.enrich-ndjson-loaded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-ok-bg);
+  border: 1px solid var(--color-ok-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+}
+.enrich-ndjson-count {
+  flex: 1;
+  font-weight: 600;
   color: var(--color-low);
 }
 

@@ -6,7 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 
 
-## [Unreleased]
+
+
+## [0.6.0] - 2026-04-28
 
 ### Added
 - **Enrich → Deep-Scan Promote Flow**:
@@ -16,6 +18,59 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Desktop: new **Enrich Mode** collapsible panel (between Triage and Full Scan) with findings NDJSON input, **Load from Last Scan** button, per-host result cards (score, severity, ports, CVEs, signals), per-host **→ Deep Scan** promote button, bulk **Promote hosts scoring ≥ N → Deep Scan** control, and **Save Enriched NDJSON** button. Promotion merges hosts into the Full Scan textarea and applies the Deep Active preset.
 - **Enrich test suite** (`tests/enrich.rs`): 25 deterministic unit and integration tests covering NDJSON parsing, empty/single/multi-finding inputs, host deduplication (same host, different ports, default-port normalisation), field pass-through, `EnrichConfig` defaults, JSON serialisation round-trip, and `EnrichResult` shape invariants.
 - **`docs/enrich.md`** updated with dedicated Enrich CLI Usage section, complete `apihunter enrich` flag table, and full three-step mass-sweep → enrich → deep-scan pipeline example.
+
+## [0.5.0] - 2026-04-27
+
+### Added
+- **Discovery Configuration**: Fine-grained control over endpoint discovery phase
+  - New `DiscoveryConfig` to manage `max_sitemaps`, `max_scripts`, and per-step `timeout_secs`
+  - CLI arguments for discovery controls
+  - Desktop UI integration with preset-based scan configurations
+  - Prevents scanner stalls on large or complex targets
+- **Enrich Workflow**: Multi-stage pipeline for threat intelligence enrichment
+  - `apihunter enrich` CLI subcommand for processing NDJSON findings
+  - Desktop Enrich Mode panel with per-host result cards
+  - Scan presets: `quick`, `mass`, `balanced`, `deep`
+  - Comprehensive test suite in `tests/enrich.rs`
+  - Documentation for mass-sweep → enrich → deep-scan pipeline
+
+### Changed
+- Refactored `triage` module to `threat_intel` for improved domain clarity
+- Desktop UI now uses design tokens for improved maintainability
+- Removed deprecated triage subcommand and UI components
+
+### Fixed
+- CORS bypass URL formatting (missing period in prefix construction)
+- Triage engine now reports true total hit count before top-N truncation
+
+## [0.4.0] - 2026-04-26
+
+### Added
+- **Triage Mode**: Large-scale target scanning with risk scoring
+  - Lightweight probes using InternetDB and ipinfo.io
+  - CLI subcommand with `--min-score`, `--top`, `--concurrency`, `--timeout-secs` flags
+  - `--promote-to` flag writes top-N targets to file for piping into full scan
+  - Pretty table, JSON, and NDJSON output formats
+  - Desktop UI integration with per-row and bulk promotion to Full Scan
+  - Severity badges, VULN chip, CVE highlighting
+- **CLI Enhancements**:
+  - `--fail-on` severity threshold for CI/CD integration
+  - Automated build failures based on vulnerability levels
+- **Desktop Features**:
+  - Triage functionality via Tauri commands
+  - Per-target promotion buttons
+  - Bulk "Promote Top N" action
+  - Save Triage JSON export
+  - Removed target count limitations to support large lists
+
+### Changed
+- Improved scanner accuracy and reduced false positives
+- Enhanced security probe coverage in api_security scanner
+- Secrets detection now includes response headers
+
+### Fixed
+- Desktop Tauri invoke parameter mapping for triage requests
+- Test suite async function annotations
 
 ## [0.3.2] - 2026-04-23
 
@@ -176,7 +231,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI via `clap` with `--min-severity`, `--concurrency`, `--output-path`
 - WAF evasion headers and random UA pool
 
-[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.6.0
+[0.5.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.5.0
+[0.4.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.4.0
 [0.3.2]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.3.0

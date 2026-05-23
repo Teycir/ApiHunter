@@ -302,7 +302,6 @@ function sanitizeRuntimeInput(raw: string, field: RuntimeLimitField): number {
 const PRESET_LABELS: Record<string, string> = {
   mass: "Mass Sweep",
   quick: "Quick Passive",
-  balanced: "Balanced",
   deep: "Deep Active",
 };
 
@@ -483,6 +482,111 @@ export default function App() {
   }, [exports]);
   const releaseVersion = health?.appVersion ?? UI_RELEASE_VERSION;
 
+  // ── Derived results analytics ──────────────────────────────────────────
+  const parsedFindings = useMemo(() => {
+    if (!exports) return [];
+    return exports.ndjson.split("\n").flatMap((line) => {
+      try {
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        if (
+          typeof obj.url === "string" &&
+          typeof obj.check === "string" &&
+          typeof obj.severity === "string" &&
+          typeof obj.scanner === "string"
+        ) {
+          return [{ url: obj.url, check: obj.check, severity: obj.severity, scanner: obj.scanner }];
+        }
+        return [];
+      } catch { return []; }
+    });
+  }, [exports]);
+
+  const worstTarget = useMemo(() => {
+    if (!exports || exports.targetSummaries.length === 0) return null;
+    return [...exports.targetSummaries].sort(
+      (a, b) =>
+        (b.critical * 4 + b.high * 2 + b.medium) -
+        (a.critical * 4 + a.high * 2 + a.medium)
+    )[0];
+  }, [exports]);
+
+  const errorRate = useMemo(() => {
+    if (!summary || summary.scanned === 0) return 0;
+    return summary.errors / summary.scanned;
+  }, [summary]);
+
+  const scanEfficiency = useMemo(() => {
+    if (!summary || summary.scanned === 0) return 0;
+    return summary.findingsTotal / summary.scanned;
+  }, [summary]);
+
+  const scannerCoverage = useMemo(() => {
+    if (parsedFindings.length === 0) return [];
+    const counts: Record<string, number> = {};
+    for (const f of parsedFindings) {
+      counts[f.scanner] = (counts[f.scanner] ?? 0) + 1;
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [parsedFindings]);
+
+  const cleanTargets = useMemo(() => {
+    if (!exports) return [];
+    return exports.targetSummaries.filter((t) => t.discoveries === 0);
+  }, [exports]);
+
+  const topVulnPaths = useMemo(() => {
+    if (parsedFindings.length === 0) return [];
+    const counts: Record<string, number> = {};
+    for (const f of parsedFindings) {
+      try {
+        const path = new URL(f.url).pathname || "/";
+        counts[path] = (counts[path] ?? 0) + 1;
+      } catch { /* skip unparseable */ }
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+  }, [parsedFindings]);
+
+  const checkSeverityBreakdown = useMemo(() => {
+    if (parsedFindings.length === 0) return [];
+    const map: Record<string, Record<string, number>> = {};
+    for (const f of parsedFindings) {
+      if (!map[f.check]) map[f.check] = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+      const sev = f.severity.toUpperCase();
+      map[f.check][sev] = (map[f.check][sev] ?? 0) + 1;
+    }
+    return Object.entries(map)
+      .map(([check, sevs]) => ({ 
+        check, 
+        CRITICAL: sevs.CRITICAL ?? 0,
+        HIGH: sevs.HIGH ?? 0,
+        MEDIUM: sevs.MEDIUM ?? 0,
+        LOW: sevs.LOW ?? 0,
+        INFO: sevs.INFO ?? 0,
+        total: Object.values(sevs).reduce((a, b) => a + b, 0) 
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [parsedFindings]);
+
+  const repeatOffenders = useMemo(() => {
+    if (parsedFindings.length === 0) return [];
+    const hostsByCheck: Record<string, Set<string>> = {};
+    for (const f of parsedFindings) {
+      try {
+        const host = new URL(f.url).hostname;
+        if (!hostsByCheck[f.check]) hostsByCheck[f.check] = new Set();
+        hostsByCheck[f.check].add(host);
+      } catch { /* skip */ }
+    }
+    return Object.entries(hostsByCheck)
+      .map(([check, hosts]) => ({ check, hostCount: hosts.size }))
+      .filter((e) => e.hostCount > 1)
+      .sort((a, b) => b.hostCount - a.hostCount)
+      .slice(0, 10);
+  }, [parsedFindings]);
+
   async function fetchHealth() {
     setError(null);
     try {
@@ -585,6 +689,18 @@ export default function App() {
       setExportPrefix(
         buildExportPrefix(result.scanId, targetUrls.length, startedAt),
       );
+      // Auto-populate Enrich panel with finding lines from this scan
+      const findingLines = result.exports.ndjson.split("\n").filter((line) => {
+        try {
+          const obj = JSON.parse(line) as Record<string, unknown>;
+          return typeof obj.url === "string" && typeof obj.check === "string" && typeof obj.severity === "string";
+        } catch {
+          return false;
+        }
+      });
+      setEnrichNdjson(findingLines.join("\n"));
+      setEnrichResult(null);
+      setEnrichSavedPath(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -644,8 +760,9 @@ export default function App() {
     setToggles((prev) => ({ ...prev, [field]: value }));
   }
 
-  function applyPreset(mode: "quick" | "mass" | "balanced" | "deep") {
+  function applyPreset(mode: "quick" | "mass" | "deep") {
     const allScanners = { ...DEFAULT_TOGGLES };
+    setActivePreset(mode);
     if (mode === "quick") {
       setActiveChecks(false);
       setDryRun(true);
@@ -698,25 +815,6 @@ export default function App() {
         cveTemplates: false,
         websocket: false,
       });
-      return;
-    }
-
-    if (mode === "balanced") {
-      setActiveChecks(true);
-      setDryRun(true);
-      setResponseDiffDeep(true);
-      setNoDiscovery(false);
-      setNoFilter(false);
-      setFilterTimeout(3);
-      setMaxEndpoints(80);
-      setConcurrency(5);
-      setTimeoutSecs(15);
-      setRetries(1);
-      setDelayMs(50);
-      setWafEvasion(false);
-      setPerHostClients(true);
-      setAdaptiveConcurrency(false);
-      setToggles(allScanners);
       return;
     }
 
@@ -950,19 +1048,26 @@ export default function App() {
 
   // ── Enrich mode handlers ────────────────────────────────────────────────
 
-  /** Load the NDJSON from the last Full Scan result into the Enrich input. */
-  function loadNdjsonFromLastScan() {
-    if (!exports) return;
-    // The full-scan NDJSON starts with a meta line; filter to finding lines only.
-    const lines = exports.ndjson.split("\n").filter((line) => {
-      try {
-        const obj = JSON.parse(line) as Record<string, unknown>;
-        return typeof obj.url === "string" && typeof obj.check === "string" && typeof obj.severity === "string";
-      } catch {
-        return false;
+  /** Browse and load an NDJSON file from disk into the Enrich input. */
+  async function browseAndLoadNdjsonFile() {
+    if (!tauriRuntimeAvailable) {
+      setError("File picker requires Tauri runtime.");
+      return;
+    }
+    setError(null);
+    try {
+      const selected = await open({
+        multiple: false,
+        title: "Select Findings NDJSON File",
+        filters: [{ name: "NDJSON", extensions: ["ndjson", "jsonl", "json"] }],
+      });
+      if (selected && typeof selected === "string") {
+        const result = await invokeCommand<{ content: string }>("read_text_file", { path: selected });
+        setEnrichNdjson(result.content.trim());
       }
-    });
-    setEnrichNdjson(lines.join("\n"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function runEnrich(e: FormEvent) {
@@ -1207,229 +1312,6 @@ export default function App() {
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel title="Enrich Mode" defaultOpen={false}>
-        <p className="muted" style={{ marginBottom: "16px" }}>
-          Add threat-intel context (InternetDB + ipinfo.io + RDAP) to findings from a previous scan.
-          One probe per unique host. Promotes high-scoring hosts directly to Full Scan with the
-          Deep Active preset applied.
-        </p>
-
-        <form onSubmit={runEnrich} className="scan-form">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <label htmlFor="enrichNdjsonInput" style={{ margin: 0 }}>Findings NDJSON</label>
-            {exports && (
-              <button
-                type="button"
-                className="btn secondary"
-                style={{ margin: 0, padding: "4px 10px", fontSize: "12px" }}
-                onClick={loadNdjsonFromLastScan}
-              >
-                Load from Last Scan
-              </button>
-            )}
-          </div>
-          <textarea
-            id="enrichNdjsonInput"
-            rows={6}
-            required
-            value={enrichNdjson}
-            onChange={(e) => setEnrichNdjson(e.target.value)}
-            placeholder={'{"url":"https://api.example.com/v1/users","check":"cors/origin-reflected","title":"...","severity":"HIGH"}\n...'}
-          />
-          <p className="muted">
-            Paste findings NDJSON from a previous scan, or click <strong>Load from Last Scan</strong> after a Full Scan completes.
-          </p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label htmlFor="enrichConcurrency">Concurrency</label>
-              <input
-                id="enrichConcurrency"
-                type="number"
-                min="1"
-                max="200"
-                value={enrichConcurrency}
-                onChange={(e) => setEnrichConcurrency(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <label htmlFor="enrichTimeout">Timeout (seconds)</label>
-              <input
-                id="enrichTimeout"
-                type="number"
-                min="1"
-                max="60"
-                value={enrichTimeout}
-                onChange={(e) => setEnrichTimeout(Number(e.target.value))}
-              />
-            </div>
-          </div>
-
-          <button type="submit" className="btn" disabled={enrichLoading}>
-            {enrichLoading ? "Enriching…" : "Run Enrich"}
-          </button>
-        </form>
-
-        {enrichResult && (
-          <div style={{ marginTop: "24px" }}>
-            {/* ── Summary bar ───────────────────────────────────────────── */}
-            <div className="status-ok" style={{ marginBottom: "16px" }}>
-              <p>
-                <strong>{enrichResult.enrichedCount}</strong> of {enrichResult.totalFindings} findings enriched
-                across <strong>{enrichResult.uniqueHosts}</strong> unique hosts &nbsp;·&nbsp;
-                {(enrichResult.elapsedMs / 1000).toFixed(1)}s
-                {enrichResult.errors.length > 0 && (
-                  <span style={{ color: "var(--color-critical)", marginLeft: "8px" }}>
-                    {enrichResult.errors.length} probe error(s)
-                  </span>
-                )}
-              </p>
-            </div>
-
-            {/* ── Bulk promote + save controls ───────────────────────────── */}
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
-              <label style={{ fontWeight: "bold", fontSize: "13px" }}>Promote hosts scoring ≥</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={enrichPromoteMinScore}
-                onChange={(e) => setEnrichPromoteMinScore(Number(e.target.value))}
-                style={{ width: "64px" }}
-              />
-              <button
-                type="button"
-                className="btn secondary"
-                style={{ margin: 0 }}
-                onClick={() => promoteEnrichAboveScore(enrichPromoteMinScore)}
-                title="Merge qualifying hosts into Full Scan and apply Deep Active preset"
-              >
-                → Deep Scan
-              </button>
-              <button
-                type="button"
-                className="btn secondary"
-                style={{ margin: 0 }}
-                onClick={() => void saveEnrichedNdjson()}
-              >
-                Save Enriched NDJSON
-              </button>
-              {enrichSavedPath && (
-                <span className="enrich-saved-path">Saved: {enrichSavedPath}</span>
-              )}
-            </div>
-
-            {/* ── Per-host result cards ──────────────────────────────────── */}
-            <div style={{ maxHeight: "680px", overflow: "auto" }}>
-              {enrichResult.hosts.map((host, idx) => {
-                const borderColor =
-                  host.severity === "CRITICAL" ? "var(--color-critical)" :
-                  host.severity === "HIGH"     ? "var(--color-high)" :
-                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
-                const badgeBg =
-                  host.severity === "CRITICAL" ? "var(--color-critical)" :
-                  host.severity === "HIGH"     ? "var(--color-high)" :
-                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
-                const badgeColor = host.severity === "MEDIUM" ? "#212529" : "white";
-
-                return (
-                  <article
-                    key={idx}
-                    className="result-card"
-                    style={{ marginBottom: "10px", borderLeft: `4px solid ${borderColor}` }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontWeight: "bold", fontSize: "15px", margin: "0 0 2px" }}>
-                          #{idx + 1} {host.host}
-                        </p>
-                        <p style={{ fontSize: "0.82rem", color: "var(--color-text-muted)", margin: 0 }}>
-                          Score: <strong>{host.score}</strong>/100
-                          {host.asn && `  ·  ${host.asn}`}
-                          {host.country && ` (${host.country})`}
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
-                        <span style={{
-                          background: badgeBg, color: badgeColor,
-                          padding: "3px 8px", borderRadius: "4px",
-                          fontSize: "11px", fontWeight: "bold", letterSpacing: "0.05em",
-                        }}>
-                          {host.severity}
-                        </span>
-                        {host.hasLikelyVulnerability && (
-                          <span style={{
-                            background: "var(--color-critical)", color: "#fff",
-                            padding: "3px 8px", borderRadius: "4px",
-                            fontSize: "11px", fontWeight: "bold",
-                          }}>
-                            VULN
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          className="btn secondary"
-                          style={{ margin: 0, padding: "3px 10px", fontSize: "12px" }}
-                          onClick={() => promoteEnrichHost(host.representativeUrl)}
-                          title={`Promote ${host.representativeUrl} to Full Scan with Deep Active preset`}
-                        >
-                          → Deep Scan
-                        </button>
-                      </div>
-                    </div>
-
-                    {(host.ports.length > 0 || host.cveIds.length > 0 || host.domainAgeDays !== null) && (
-                      <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                        {host.ports.length > 0 && (
-                          <span><strong>Ports:</strong> {host.ports.join(", ")}</span>
-                        )}
-                        {host.cveIds.length > 0 && (
-                          <span style={{ color: "var(--color-critical)" }}><strong>CVEs:</strong> {host.cveIds.join(", ")}</span>
-                        )}
-                        {host.domainAgeDays !== null && (
-                          <span><strong>Domain age:</strong> {host.domainAgeDays}d</span>
-                        )}
-                      </div>
-                    )}
-
-                    {host.signals.length > 0 && (
-                      <details style={{ marginTop: "6px" }}>
-                        <summary style={{ cursor: "pointer", fontSize: "0.83rem", color: "var(--color-text-muted)" }}>
-                          Signals ({host.signals.length})
-                        </summary>
-                        <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
-                          {host.signals.map((sig, sidx) => (
-                            <li key={sidx} style={{ fontSize: "0.8rem", color: "var(--color-text-mid)" }}>{sig}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-
-                    <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", margin: "6px 0 0" }}>
-                      {host.representativeUrl}
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
-
-            {/* ── Probe errors ───────────────────────────────────────────── */}
-            {enrichResult.errors.length > 0 && (
-              <details style={{ marginTop: "12px" }}>
-                <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--color-critical)", fontSize: "0.85rem" }}>
-                  Probe errors ({enrichResult.errors.length})
-                </summary>
-                <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
-                  {enrichResult.errors.map((err, idx) => (
-                    <p key={idx} style={{ fontSize: "0.82rem", color: "var(--color-critical)", margin: "2px 0" }}>{err}</p>
-                  ))}
-                </div>
-              </details>
-            )}
-          </div>
-        )}
-      </CollapsiblePanel>
-
       <CollapsiblePanel title="Full Scan" defaultOpen>
         <form onSubmit={runFullScan} className="scan-form">
           <label htmlFor="targetInput">Targets</label>
@@ -1487,7 +1369,7 @@ export default function App() {
               <button
                 type="button"
                 className={`btn secondary preset-btn${activePreset === "mass" ? " preset-btn--active" : ""}`}
-                onClick={() => applyPreset("mass")}
+                onClick={() => { applyPreset("mass"); }}
                 title="Passive sweep of large target lists — produces NDJSON for Enrich → Deep Scan pipeline"
               >
                 Mass Sweep
@@ -1495,21 +1377,14 @@ export default function App() {
               <button
                 type="button"
                 className={`btn secondary preset-btn${activePreset === "quick" ? " preset-btn--active" : ""}`}
-                onClick={() => applyPreset("quick")}
+                onClick={() => { applyPreset("quick"); }}
               >
                 Quick Passive
               </button>
               <button
                 type="button"
-                className={`btn secondary preset-btn${activePreset === "balanced" ? " preset-btn--active" : ""}`}
-                onClick={() => applyPreset("balanced")}
-              >
-                Balanced (Recommended)
-              </button>
-              <button
-                type="button"
                 className={`btn secondary preset-btn${activePreset === "deep" ? " preset-btn--active" : ""}`}
-                onClick={() => applyPreset("deep")}
+                onClick={() => { applyPreset("deep"); }}
               >
                 Deep Active
               </button>
@@ -1937,6 +1812,63 @@ export default function App() {
 
       {summary && (
         <CollapsiblePanel title="Results" defaultOpen>
+
+          {/* ── 1. Severity heatmap ───────────────────────────────────── */}
+          {summary.findingsTotal > 0 && (() => {
+            const total = summary.critical + summary.high + summary.medium + summary.low + summary.info;
+            const pct = (n: number) => total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0%";
+            return (
+              <div className="heatmap-wrap">
+                <div className="heatmap-bar">
+                  {summary.critical > 0 && <div className="heatmap-seg seg-critical" style={{ width: pct(summary.critical) }} title={`Critical: ${summary.critical}`} />}
+                  {summary.high     > 0 && <div className="heatmap-seg seg-high"     style={{ width: pct(summary.high) }}     title={`High: ${summary.high}`} />}
+                  {summary.medium   > 0 && <div className="heatmap-seg seg-medium"   style={{ width: pct(summary.medium) }}   title={`Medium: ${summary.medium}`} />}
+                  {summary.low      > 0 && <div className="heatmap-seg seg-low"      style={{ width: pct(summary.low) }}      title={`Low: ${summary.low}`} />}
+                  {summary.info     > 0 && <div className="heatmap-seg seg-info"     style={{ width: pct(summary.info) }}     title={`Info: ${summary.info}`} />}
+                </div>
+                <div className="heatmap-legend">
+                  {[
+                    { label: "Critical", val: summary.critical, cls: "seg-critical" },
+                    { label: "High",     val: summary.high,     cls: "seg-high" },
+                    { label: "Medium",   val: summary.medium,   cls: "seg-medium" },
+                    { label: "Low",      val: summary.low,      cls: "seg-low" },
+                    { label: "Info",     val: summary.info,     cls: "seg-info" },
+                  ].filter((s) => s.val > 0).map((s) => (
+                    <span key={s.label} className="heatmap-legend-item">
+                      <span className={`heatmap-dot ${s.cls}`} />
+                      {s.label} <strong>{s.val}</strong> ({pct(s.val)})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── 2. Worst target + 3. Error rate flag + 4. Efficiency ─── */}
+          <div className="result-meta-row">
+            {worstTarget && (worstTarget.critical > 0 || worstTarget.high > 0 || worstTarget.medium > 0) && (
+              <div className="meta-card meta-card--worst">
+                <span className="meta-card-label">⚠ Start here</span>
+                <span className="meta-card-value" title={worstTarget.target}>{worstTarget.target}</span>
+                <span className="meta-card-sub">
+                  C:{worstTarget.critical} H:{worstTarget.high} M:{worstTarget.medium} · score {worstTarget.critical * 4 + worstTarget.high * 2 + worstTarget.medium}
+                </span>
+              </div>
+            )}
+            <div className="meta-card">
+              <span className="meta-card-label">Scan efficiency</span>
+              <span className="meta-card-value">{scanEfficiency.toFixed(2)}</span>
+              <span className="meta-card-sub">findings / URL scanned</span>
+            </div>
+            {errorRate > 0 && (
+              <div className={`meta-card ${errorRate >= 0.2 ? "meta-card--warn" : ""}`}>
+                <span className="meta-card-label">{errorRate >= 0.2 ? "⚠ High error rate" : "Error rate"}</span>
+                <span className="meta-card-value">{(errorRate * 100).toFixed(1)}%</span>
+                <span className="meta-card-sub">{summary.errors} errors / {summary.scanned} scanned{errorRate >= 0.2 ? " — WAF or auth issue?" : ""}</span>
+              </div>
+            )}
+          </div>
+
           <div className="result-grid">
             <article className="result-card">
               <h3>Summary</h3>
@@ -1962,10 +1894,11 @@ export default function App() {
               {summary.topChecks.length === 0 ? (
                 <p>No findings reported.</p>
               ) : (
-                <ul>
+                <ul className="check-list">
                   {summary.topChecks.map((entry) => (
-                    <li key={entry.check}>
-                      {entry.check}: {entry.count}
+                    <li key={entry.check} className="check-item">
+                      <span className="check-name">{entry.check}</span>
+                      <span className="check-count">{entry.count}</span>
                     </li>
                   ))}
                 </ul>
@@ -1978,14 +1911,147 @@ export default function App() {
                 {exports.discoveryRanking.length === 0 ? (
                   <p>No target discoveries reported.</p>
                 ) : (
-                  <ul>
+                  <ul className="check-list">
                     {exports.discoveryRanking.map((entry) => (
-                      <li key={`${entry.rank}-${entry.target}`}>
-                        #{entry.rank} {entry.target}: {entry.discoveries}
+                      <li key={`${entry.rank}-${entry.target}`} className="check-item">
+                        <span className="check-name" title={entry.target}>#{entry.rank} {entry.target}</span>
+                        <span className="check-count">{entry.discoveries}</span>
                       </li>
                     ))}
                   </ul>
                 )}
+              </article>
+            )}
+
+            {/* ── Ranking by most HIGH findings ──────────────────────── */}
+            {exports && exports.targetSummaries.some((t) => t.high > 0) && (
+              <article className="result-card">
+                <h3 style={{ color: "var(--color-high)" }}>Most Highs</h3>
+                <ul className="check-list">
+                  {[...exports.targetSummaries]
+                    .filter((t) => t.high > 0)
+                    .sort((a, b) => b.high - a.high)
+                    .map((t) => (
+                      <li key={t.target} className="check-item">
+                        <span className="check-name" title={t.target}>{t.target}</span>
+                        <span className="check-count" style={{ background: "#fff5ee", color: "var(--color-high)", border: "1px solid var(--color-high)" }}>{t.high}</span>
+                      </li>
+                    ))}
+                </ul>
+              </article>
+            )}
+
+            {/* ── Ranking by most CRITICAL findings ──────────────────── */}
+            {exports && exports.targetSummaries.some((t) => t.critical > 0) && (
+              <article className="result-card">
+                <h3 style={{ color: "var(--color-critical)" }}>Most Criticals</h3>
+                <ul className="check-list">
+                  {[...exports.targetSummaries]
+                    .filter((t) => t.critical > 0)
+                    .sort((a, b) => b.critical - a.critical)
+                    .map((t) => (
+                      <li key={t.target} className="check-item">
+                        <span className="check-name" title={t.target}>{t.target}</span>
+                        <span className="check-count" style={{ background: "#fff0f0", color: "var(--color-critical)", border: "1px solid var(--color-critical)" }}>{t.critical}</span>
+                      </li>
+                    ))}
+                </ul>
+              </article>
+            )}
+
+            {/* ── 5. Scanner coverage ────────────────────────────────── */}
+            {scannerCoverage.length > 0 && (
+              <article className="result-card">
+                <h3>Scanner coverage</h3>
+                <ul className="check-list">
+                  {scannerCoverage.map(([scanner, count]) => (
+                    <li key={scanner} className="check-item">
+                      <span className="check-name">{scanner}</span>
+                      <span className="check-count">{count}</span>
+                    </li>
+                  ))}
+                </ul>
+                {exports && (() => {
+                  const active = new Set(scannerCoverage.map(([s]) => s));
+                  const all = ["cors","csp","graphql","apiSecurity","jwt","openapi","apiVersioning","grpcProtobuf","massAssignment","oauthOidc","rateLimit","cveTemplates","websocket"];
+                  const silent = all.filter((s) => !active.has(s));
+                  return silent.length > 0 ? (
+                    <p className="muted" style={{ marginTop: "8px", fontSize: "0.78rem" }}>
+                      Silent: {silent.join(", ")}
+                    </p>
+                  ) : null;
+                })()}
+              </article>
+            )}
+
+            {/* ── 6. Clean targets ───────────────────────────────────── */}
+            {cleanTargets.length > 0 && (
+              <article className="result-card">
+                <h3>Clean targets <span style={{ fontWeight: 400, fontSize: "0.82rem", color: "var(--color-text-muted)" }}>({cleanTargets.length})</span></h3>
+                <details>
+                  <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
+                    Zero findings — show all
+                  </summary>
+                  <ul className="check-list" style={{ marginTop: "6px" }}>
+                    {cleanTargets.map((t) => (
+                      <li key={t.target} className="check-item">
+                        <span className="check-name" title={t.target}>{t.target}</span>
+                        <span className="check-count" style={{ background: "var(--color-ok-bg)", color: "var(--color-low)", border: "1px solid var(--color-ok-border)" }}>✓</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </article>
+            )}
+
+            {/* ── 8. Top vulnerable paths ────────────────────────────── */}
+            {topVulnPaths.length > 0 && (
+              <article className="result-card">
+                <h3>Top vulnerable paths</h3>
+                <ul className="check-list">
+                  {topVulnPaths.map(([path, count]) => (
+                    <li key={path} className="check-item">
+                      <span className="check-name">{path}</span>
+                      <span className="check-count">{count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            )}
+
+            {/* ── 9. Check-to-severity breakdown ─────────────────────── */}
+            {checkSeverityBreakdown.length > 0 && (
+              <article className="result-card">
+                <h3>Check severity breakdown <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--color-text-muted)" }}>top 5</span></h3>
+                <div className="sev-breakdown-table">
+                  {checkSeverityBreakdown.map((row) => (
+                    <div key={row.check} className="sev-breakdown-row">
+                      <span className="sev-breakdown-check" title={row.check}>{row.check}</span>
+                      <div className="sev-breakdown-chips">
+                        {(row.CRITICAL ?? 0) > 0 && <span className="sev-chip critical">C:{row.CRITICAL}</span>}
+                        {(row.HIGH     ?? 0) > 0 && <span className="sev-chip high">H:{row.HIGH}</span>}
+                        {(row.MEDIUM   ?? 0) > 0 && <span className="sev-chip medium">M:{row.MEDIUM}</span>}
+                        {(row.LOW      ?? 0) > 0 && <span className="sev-chip low">L:{row.LOW}</span>}
+                        {(row.INFO     ?? 0) > 0 && <span className="sev-chip info">I:{row.INFO}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )}
+
+            {/* ── 10. Repeat offender checks ─────────────────────────── */}
+            {repeatOffenders.length > 0 && (
+              <article className="result-card">
+                <h3>Repeat offenders <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--color-text-muted)" }}>by distinct hosts</span></h3>
+                <ul className="check-list">
+                  {repeatOffenders.map(({ check, hostCount }) => (
+                    <li key={check} className="check-item">
+                      <span className="check-name">{check}</span>
+                      <span className="check-count" style={{ background: "#fff0f0", color: "var(--color-critical)", border: "1px solid var(--color-critical)" }}>{hostCount} hosts</span>
+                    </li>
+                  ))}
+                </ul>
               </article>
             )}
 
@@ -1995,12 +2061,13 @@ export default function App() {
                 {exports.targetSummaries.length === 0 ? (
                   <p>No target summaries available.</p>
                 ) : (
-                  <ul>
+                  <ul className="check-list">
                     {exports.targetSummaries.map((entry) => (
-                      <li key={entry.target}>
-                        {entry.target}: {entry.discoveries} discoveries (C:
-                        {entry.critical} H:{entry.high} M:{entry.medium} L:
-                        {entry.low} I:{entry.info} E:{entry.errors})
+                      <li key={entry.target} className="check-item">
+                        <span className="check-name" title={entry.target}>{entry.target}</span>
+                        <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", flexShrink: 0 }}>
+                          C:{entry.critical} H:{entry.high} M:{entry.medium} L:{entry.low}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -2088,6 +2155,236 @@ export default function App() {
           )}
         </CollapsiblePanel>
       )}
+
+      <CollapsiblePanel title="Enrich Mode" defaultOpen={!!enrichNdjson}>
+        <p className="muted" style={{ marginBottom: "12px" }}>
+          Adds threat-intel context (InternetDB · ipinfo.io · RDAP) to the findings from your last scan — one probe per unique host.
+          After a Full Scan completes the findings are loaded automatically. You can then run Enrich and promote high-scoring hosts directly to a Deep Active scan.
+        </p>
+
+        {!enrichNdjson && (
+          <div className="enrich-empty-notice">
+            <p>
+              No findings loaded yet. Run a <strong>Full Scan</strong> above — the results will appear here automatically.
+              You can also load an NDJSON file saved from a previous scan:
+            </p>
+            <button
+              type="button"
+              className="btn secondary"
+              style={{ marginTop: "8px" }}
+              onClick={() => void browseAndLoadNdjsonFile()}
+            >
+              Browse NDJSON file…
+            </button>
+            <p className="muted" style={{ marginTop: "8px", fontSize: "0.8rem" }}>
+              The NDJSON file is saved when you click <em>Save NDJSON</em> (or <em>Save All Reports</em>) in the Results panel.
+              It lives in the timestamped export folder next to the scan JSON.
+            </p>
+          </div>
+        )}
+
+        {enrichNdjson && (
+          <form onSubmit={runEnrich} className="scan-form">
+            <div className="enrich-ndjson-loaded">
+              <span className="enrich-ndjson-count">
+                {enrichNdjson.split("\n").filter(Boolean).length} finding lines ready
+              </span>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0, padding: "4px 10px", fontSize: "12px" }}
+                onClick={() => void browseAndLoadNdjsonFile()}
+              >
+                Replace with file…
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label htmlFor="enrichConcurrency">Concurrency</label>
+                <input
+                  id="enrichConcurrency"
+                  type="number"
+                  min="1"
+                  max="200"
+                  value={enrichConcurrency}
+                  onChange={(e) => setEnrichConcurrency(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label htmlFor="enrichTimeout">Timeout (seconds)</label>
+                <input
+                  id="enrichTimeout"
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={enrichTimeout}
+                  onChange={(e) => setEnrichTimeout(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn" disabled={enrichLoading}>
+              {enrichLoading ? "Enriching…" : "Run Enrich"}
+            </button>
+          </form>
+        )}
+
+        {enrichResult && (
+          <div style={{ marginTop: "24px" }}>
+            <div className="status-ok" style={{ marginBottom: "16px" }}>
+              <p>
+                <strong>{enrichResult.enrichedCount}</strong> of {enrichResult.totalFindings} findings enriched
+                across <strong>{enrichResult.uniqueHosts}</strong> unique hosts &nbsp;·&nbsp;
+                {(enrichResult.elapsedMs / 1000).toFixed(1)}s
+                {enrichResult.errors.length > 0 && (
+                  <span style={{ color: "var(--color-critical)", marginLeft: "8px" }}>
+                    {enrichResult.errors.length} probe error(s)
+                  </span>
+                )}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
+              <label style={{ fontWeight: "bold", fontSize: "13px" }}>Promote hosts scoring ≥</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={enrichPromoteMinScore}
+                onChange={(e) => setEnrichPromoteMinScore(Number(e.target.value))}
+                style={{ width: "64px" }}
+              />
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0 }}
+                onClick={() => promoteEnrichAboveScore(enrichPromoteMinScore)}
+                title="Merge qualifying hosts into Full Scan and apply Deep Active preset"
+              >
+                → Deep Scan
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0 }}
+                onClick={() => void saveEnrichedNdjson()}
+              >
+                Save Enriched NDJSON
+              </button>
+              {enrichSavedPath && (
+                <span className="enrich-saved-path">Saved: {enrichSavedPath}</span>
+              )}
+            </div>
+
+            <div style={{ maxHeight: "680px", overflow: "auto" }}>
+              {enrichResult.hosts.map((host, idx) => {
+                const borderColor =
+                  host.severity === "CRITICAL" ? "var(--color-critical)" :
+                  host.severity === "HIGH"     ? "var(--color-high)" :
+                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
+                const badgeBg =
+                  host.severity === "CRITICAL" ? "var(--color-critical)" :
+                  host.severity === "HIGH"     ? "var(--color-high)" :
+                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
+                const badgeColor = host.severity === "MEDIUM" ? "#212529" : "white";
+
+                return (
+                  <article
+                    key={idx}
+                    className="result-card"
+                    style={{ marginBottom: "10px", borderLeft: `4px solid ${borderColor}` }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: "bold", fontSize: "15px", margin: "0 0 2px" }}>
+                          #{idx + 1} {host.host}
+                        </p>
+                        <p style={{ fontSize: "0.82rem", color: "var(--color-text-muted)", margin: 0 }}>
+                          Score: <strong>{host.score}</strong>/100
+                          {host.asn && `  ·  ${host.asn}`}
+                          {host.country && ` (${host.country})`}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                        <span style={{
+                          background: badgeBg, color: badgeColor,
+                          padding: "3px 8px", borderRadius: "4px",
+                          fontSize: "11px", fontWeight: "bold", letterSpacing: "0.05em",
+                        }}>
+                          {host.severity}
+                        </span>
+                        {host.hasLikelyVulnerability && (
+                          <span style={{
+                            background: "var(--color-critical)", color: "#fff",
+                            padding: "3px 8px", borderRadius: "4px",
+                            fontSize: "11px", fontWeight: "bold",
+                          }}>
+                            VULN
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          style={{ margin: 0, padding: "3px 10px", fontSize: "12px" }}
+                          onClick={() => promoteEnrichHost(host.representativeUrl)}
+                          title={`Promote ${host.representativeUrl} to Full Scan with Deep Active preset`}
+                        >
+                          → Deep Scan
+                        </button>
+                      </div>
+                    </div>
+
+                    {(host.ports.length > 0 || host.cveIds.length > 0 || host.domainAgeDays !== null) && (
+                      <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                        {host.ports.length > 0 && (
+                          <span><strong>Ports:</strong> {host.ports.join(", ")}</span>
+                        )}
+                        {host.cveIds.length > 0 && (
+                          <span style={{ color: "var(--color-critical)" }}><strong>CVEs:</strong> {host.cveIds.join(", ")}</span>
+                        )}
+                        {host.domainAgeDays !== null && (
+                          <span><strong>Domain age:</strong> {host.domainAgeDays}d</span>
+                        )}
+                      </div>
+                    )}
+
+                    {host.signals.length > 0 && (
+                      <details style={{ marginTop: "6px" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "0.83rem", color: "var(--color-text-muted)" }}>
+                          Signals ({host.signals.length})
+                        </summary>
+                        <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
+                          {host.signals.map((sig, sidx) => (
+                            <li key={sidx} style={{ fontSize: "0.8rem", color: "var(--color-text-mid)" }}>{sig}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+
+                    <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", margin: "6px 0 0" }}>
+                      {host.representativeUrl}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+
+            {enrichResult.errors.length > 0 && (
+              <details style={{ marginTop: "12px" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--color-critical)", fontSize: "0.85rem" }}>
+                  Probe errors ({enrichResult.errors.length})
+                </summary>
+                <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
+                  {enrichResult.errors.map((err, idx) => (
+                    <p key={idx} style={{ fontSize: "0.82rem", color: "var(--color-critical)", margin: "2px 0" }}>{err}</p>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+      </CollapsiblePanel>
     </main>
   );
 }
