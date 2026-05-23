@@ -522,6 +522,58 @@ fn load_past_scan(scan_dir: String) -> Result<LoadedScanResponse, String> {
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TriageRequest {
+    targets: Vec<String>,
+    #[serde(default)]
+    concurrency: Option<usize>,
+    #[serde(default)]
+    timeout_secs: Option<u64>,
+    #[serde(default)]
+    min_score: Option<u8>,
+    #[serde(default)]
+    top_n: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TriageResponse {
+    entries: Vec<api_scanner::triage::types::TriageEntry>,
+    total: usize,
+    elapsed_ms: u64,
+    errors: Vec<String>,
+}
+
+#[tauri::command]
+async fn run_triage(request: TriageRequest) -> Result<TriageResponse, String> {
+    if request.targets.is_empty() {
+        return Err("No targets provided".to_string());
+    }
+    if request.targets.len() > 1000 {
+        return Err(format!("Too many targets: {} (max 1000)", request.targets.len()));
+    }
+
+    let config = api_scanner::triage::types::TriageConfig {
+        concurrency: request.concurrency.unwrap_or(100),
+        timeout: std::time::Duration::from_secs(request.timeout_secs.unwrap_or(5)),
+        min_score: request.min_score.unwrap_or(0),
+        top_n: request.top_n.unwrap_or(0),
+    };
+
+    let result = api_scanner::triage::run_triage(request.targets, config)
+        .await
+        .map_err(|e| format!("Triage failed: {e}"))?;
+
+    Ok(TriageResponse {
+        entries: result.entries,
+        total: result.total,
+        elapsed_ms: result.elapsed_ms,
+        errors: result.errors,
+    })
+}
+
+
 async fn run_full_scan_impl(
     app: tauri::AppHandle,
     request: FullScanRequest,
@@ -1620,7 +1672,8 @@ pub fn run() {
             run_quick_scan,
             run_full_scan,
             save_export,
-            load_past_scan
+            load_past_scan,
+            run_triage
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
