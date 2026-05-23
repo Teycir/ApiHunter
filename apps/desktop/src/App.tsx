@@ -2025,9 +2025,16 @@ function CollapsiblePanel({
   className?: string;
   defaultOpen?: boolean;
 }) {
+  // Use local state so parent re-renders (logs, progress, scan state) don't
+  // force the panel back to its initial open/closed state on every render.
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const panelClassName = className ? `panel ${className}` : "panel";
   return (
-    <details className={`${panelClassName} collapsible-panel`} open={defaultOpen}>
+    <details
+      className={`${panelClassName} collapsible-panel`}
+      open={isOpen}
+      onToggle={(e) => setIsOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
       <summary className="panel-summary">{title}</summary>
       <div className="panel-body">{children}</div>
     </details>
