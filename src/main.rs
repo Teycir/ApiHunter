@@ -25,7 +25,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth, auto_report,
-    cli::{default_user_agents, load_triage_targets, load_urls, Cli, CliPreset, EnrichCli, EnrichFormat, TriageCli, TriageFormat},
+    cli::{default_user_agents, load_urls, Cli, CliPreset, EnrichCli, EnrichFormat},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     enrich::{enrich_findings, load_findings_ndjson, EnrichConfig},
     http_client::HttpClient,
@@ -33,16 +33,12 @@ use api_scanner::{
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
     runner, scan_loader,
     transport_adapter::{RedirectMode, TransportClientOptions},
-    triage::{run_triage as run_triage_engine, types::TriageConfig},
 };
 
 // ── Entry-point ───────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
-    // Intercept `apihunter triage …` before Clap processes the rest.
-    // We strip the "triage" token and re-parse against TriageCli so that
-    // the existing full-scan Cli struct is completely unchanged.
     let raw_args: Vec<String> = std::env::args().collect();
 
     // Intercept `apihunter enrich …`
@@ -55,24 +51,6 @@ async fn main() {
         let enrich_cli = EnrichCli::parse_from(enrich_argv);
         init_tracing(enrich_cli.quiet);
         match run_enrich_cli(enrich_cli).await {
-            Ok(code) => process::exit(code),
-            Err(err) => {
-                error!("{err:#}");
-                process::exit(2);
-            }
-        }
-    }
-
-    if raw_args.get(1).map(|s| s.as_str()) == Some("triage") {
-        // Build a new argv without the "triage" token for TriageCli::parse_from.
-        let triage_argv: Vec<String> = raw_args[0..1]
-            .iter()
-            .chain(raw_args[2..].iter())
-            .cloned()
-            .collect();
-        let triage_cli = TriageCli::parse_from(triage_argv);
-        init_tracing(triage_cli.quiet);
-        match run_triage_cli(triage_cli).await {
             Ok(code) => process::exit(code),
             Err(err) => {
                 error!("{err:#}");
@@ -386,157 +364,6 @@ async fn run(cli: Cli) -> Result<i32> {
     }
 
     Ok(code)
-}
-
-// ── Triage subcommand ─────────────────────────────────────────────────────────
-
-async fn run_triage_cli(cli: TriageCli) -> Result<i32> {
-    let targets = load_triage_targets(&cli)?;
-    if targets.is_empty() {
-        warn!("No targets provided — nothing to triage.");
-        return Ok(0);
-    }
-
-    if !cli.quiet {
-        eprintln!(
-            "ApiHunter v{} | Triage | Targets: {} | Concurrency: {}",
-            env!("CARGO_PKG_VERSION"),
-            targets.len(),
-            cli.concurrency,
-        );
-    }
-
-    let config = TriageConfig {
-        concurrency: cli.concurrency,
-        timeout: std::time::Duration::from_secs(cli.timeout_secs),
-        min_score: cli.min_score,
-        top_n: cli.top,
-    };
-
-    let result = run_triage_engine(targets, config)
-        .await
-        .context("Triage engine failed")?;
-
-    if !cli.quiet {
-        eprintln!(
-            "Triage complete: {} entries in {:.1}s ({} errors)",
-            result.total,
-            result.elapsed_ms as f64 / 1000.0,
-            result.errors.len(),
-        );
-    }
-
-    // ── Format output ─────────────────────────────────────────────────────────
-    let output_text = match cli.format {
-        TriageFormat::Pretty => format_triage_pretty(&result),
-        TriageFormat::Json => serde_json::to_string_pretty(&result.entries)
-            .context("Failed to serialise triage results to JSON")?,
-        TriageFormat::Ndjson => result
-            .entries
-            .iter()
-            .map(|e| serde_json::to_string(e).unwrap_or_default())
-            .collect::<Vec<_>>()
-            .join("\n"),
-    };
-
-    // ── Write output ──────────────────────────────────────────────────────────
-    if let Some(ref path) = cli.output {
-        std::fs::write(path, &output_text)
-            .with_context(|| format!("Failed to write triage output to {}", path.display()))?;
-        if !cli.quiet {
-            eprintln!("Triage output written to {}", path.display());
-        }
-    } else {
-        println!("{output_text}");
-    }
-
-    // ── Promote targets ───────────────────────────────────────────────────────
-    if let Some(ref promote_path) = cli.promote_to {
-        let promoted: Vec<&str> = result
-            .entries
-            .iter()
-            .map(|e| e.target.as_str())
-            .collect();
-        let promote_content = promoted.join("\n");
-        std::fs::write(promote_path, &promote_content).with_context(|| {
-            format!(
-                "Failed to write promoted targets to {}",
-                promote_path.display()
-            )
-        })?;
-        if !cli.quiet {
-            eprintln!(
-                "Promoted {} targets to {}",
-                promoted.len(),
-                promote_path.display()
-            );
-        }
-    }
-
-    Ok(0)
-}
-
-fn format_triage_pretty(result: &api_scanner::triage::types::TriageResult) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-
-    if result.entries.is_empty() {
-        out.push_str("No entries matched the triage filters.\n");
-        return out;
-    }
-
-    // Header
-    let _ = writeln!(
-        out,
-        "{:<5} {:<8} {:<8} {:<20} {:<18} {}",
-        "RANK", "SCORE", "SEV", "TARGET", "IP", "SIGNALS"
-    );
-    let _ = writeln!(out, "{}", "─".repeat(90));
-
-    for (i, entry) in result.entries.iter().enumerate() {
-        let sev_label = match entry.severity {
-            api_scanner::triage::types::TriageSeverity::Critical => "CRITICAL",
-            api_scanner::triage::types::TriageSeverity::High     => "HIGH    ",
-            api_scanner::triage::types::TriageSeverity::Medium   => "MEDIUM  ",
-            api_scanner::triage::types::TriageSeverity::Low      => "LOW     ",
-        };
-        let ip_display = entry
-            .resolved_ip
-            .as_deref()
-            .unwrap_or("-");
-        let signals_preview = entry.signals.join(", ");
-        let signals_trimmed = if signals_preview.len() > 60 {
-            format!("{}…", &signals_preview[..57])
-        } else {
-            signals_preview
-        };
-        let _ = writeln!(
-            out,
-            "{:<5} {:<8} {:<8} {:<20} {:<18} {}",
-            i + 1,
-            entry.score,
-            sev_label,
-            truncate(&entry.target, 19),
-            truncate(ip_display, 17),
-            signals_trimmed,
-        );
-    }
-
-    if !result.errors.is_empty() {
-        let _ = writeln!(out, "\nErrors ({}):", result.errors.len());
-        for err in &result.errors {
-            let _ = writeln!(out, "  {err}");
-        }
-    }
-    out
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max.saturating_sub(1)])
-    }
 }
 
 // ── Preset application ────────────────────────────────────────────────────────

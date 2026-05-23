@@ -1,8 +1,8 @@
 // tests/triage_regression.rs
 //
-// Non-regression test suite for triage mode against 200 stable real targets.
+// Non-regression test suite for the threat-intel probe engine against 200 stable real targets.
 //
-// This suite validates that the triage engine produces consistent, complete
+// This suite validates that the engine produces consistent, complete
 // results against a curated list of stable infrastructure IPs (DNS servers,
 // CDNs, root servers, major cloud providers, etc.).
 //
@@ -17,9 +17,9 @@
 
 use std::{collections::HashSet, fs, path::Path, time::Duration};
 
-use api_scanner::triage::{
-    run_triage,
-    types::TriageConfig,
+use api_scanner::threat_intel::{
+    run_probes,
+    types::ThreatIntelConfig,
 };
 
 const DEFAULT_TARGET_FILE: &str = "targets/triage-regression-200.txt";
@@ -40,8 +40,8 @@ fn load_targets() -> Vec<String> {
         .collect()
 }
 
-fn triage_config() -> TriageConfig {
-    TriageConfig {
+fn triage_config() -> ThreatIntelConfig {
+    ThreatIntelConfig {
         concurrency: 20,
         timeout: Duration::from_secs(10),
         min_score: 0,
@@ -61,9 +61,9 @@ async fn triage_regression_completeness() {
         triage_config().timeout.as_secs()
     );
     
-    let result = run_triage(targets.clone(), triage_config())
+    let result = run_probes(targets.clone(), triage_config())
         .await
-        .expect("run_triage must not fail at engine level");
+        .expect("run_probes must not fail at engine level");
     
     println!("\n=== SUMMARY ===");
     println!("elapsed: {}ms", result.elapsed_ms);
@@ -100,12 +100,11 @@ async fn triage_regression_completeness() {
 async fn triage_regression_scoring_distribution() {
     let targets = load_targets();
     
-    let result = run_triage(targets, triage_config())
+    let result = run_probes(targets, triage_config())
         .await
-        .expect("run_triage must not fail");
+        .expect("run_probes must not fail");
     
     let mut score_buckets = [0usize; 5];
-    let mut severity_info = 0;
     let mut severity_low = 0;
     let mut severity_medium = 0;
     let mut severity_high = 0;
@@ -129,11 +128,10 @@ async fn triage_regression_scoring_distribution() {
         
         // Severity distribution
         match entry.severity.as_str() {
-            "info" => severity_info += 1,
-            "low" => severity_low += 1,
-            "medium" => severity_medium += 1,
-            "high" => severity_high += 1,
-            "critical" => severity_critical += 1,
+            "LOW"      => severity_low += 1,
+            "MEDIUM"   => severity_medium += 1,
+            "HIGH"     => severity_high += 1,
+            "CRITICAL" => severity_critical += 1,
             _ => {},
         }
         
@@ -153,7 +151,6 @@ async fn triage_regression_scoring_distribution() {
     println!("81-100: {} entries", score_buckets[4]);
     
     println!("\n=== SEVERITY DISTRIBUTION ===");
-    println!("info: {}", severity_info);
     println!("low: {}", severity_low);
     println!("medium: {}", severity_medium);
     println!("high: {}", severity_high);
@@ -192,9 +189,9 @@ async fn triage_regression_scoring_distribution() {
 async fn triage_regression_error_handling() {
     let targets = load_targets();
     
-    let result = run_triage(targets, triage_config())
+    let result = run_probes(targets, triage_config())
         .await
-        .expect("run_triage must not fail at engine level");
+        .expect("run_probes must not fail at engine level");
     
     println!("\n=== ERROR ANALYSIS ===");
     println!("total errors: {}", result.errors.len());
@@ -241,9 +238,9 @@ async fn triage_regression_error_handling() {
 async fn triage_regression_top_scorers() {
     let targets = load_targets();
     
-    let result = run_triage(targets, triage_config())
+    let result = run_probes(targets, triage_config())
         .await
-        .expect("run_triage must not fail");
+        .expect("run_probes must not fail");
     
     println!("\n=== TOP 20 SCORERS ===");
     for (i, entry) in result.entries.iter().take(20).enumerate() {
@@ -279,9 +276,9 @@ async fn triage_regression_known_dns_servers() {
     // Validate specific known targets have expected characteristics
     let targets = load_targets();
     
-    let result = run_triage(targets, triage_config())
+    let result = run_probes(targets, triage_config())
         .await
-        .expect("run_triage must not fail");
+        .expect("run_probes must not fail");
     
     println!("\n=== KNOWN TARGET VALIDATION ===");
     

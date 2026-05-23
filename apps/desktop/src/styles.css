@@ -662,3 +662,30 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Pipeline callout ──────────────────────────────────────────────────── */
+.pipeline-callout {
+  margin: 10px 0 4px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--color-accent, #0d6efd) 8%, transparent);
+  border-left: 3px solid var(--color-accent, #0d6efd);
+  border-radius: 4px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--color-text, inherit);
+}
+
+.pipeline-step {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: var(--color-accent, #0d6efd);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.pipeline-hint {
+  color: var(--color-text-muted, #6c757d);
+}

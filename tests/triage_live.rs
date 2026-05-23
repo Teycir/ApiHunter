@@ -1,6 +1,6 @@
 // tests/triage_live.rs
 //
-// Live integration tests for the triage engine.
+// Live integration tests for the threat-intel probe engine.
 //
 // These tests hit real external APIs (Shodan InternetDB, ipinfo.io, RDAP)
 // and are decorated #[ignore] — they do not run in CI.  Run manually:
@@ -19,10 +19,9 @@
 
 use std::{fs, path::Path, time::Duration};
 
-use api_scanner::triage::{
-    run_triage,
-    types::TriageConfig,
-    TriageError,
+use api_scanner::threat_intel::{
+    run_probes,
+    types::ThreatIntelConfig,
 };
 
 // ── Default targets ───────────────────────────────────────────────────────────
@@ -83,8 +82,8 @@ fn load_targets() -> Vec<String> {
     DEFAULT_TARGETS.iter().map(|s| s.to_string()).collect()
 }
 
-fn triage_config() -> TriageConfig {
-    TriageConfig {
+fn triage_config() -> ThreatIntelConfig {
+    ThreatIntelConfig {
         concurrency: 10,
         timeout: Duration::from_secs(8),
         min_score: 0,
@@ -100,9 +99,9 @@ async fn triage_live_returns_entries_for_known_ips() {
     let targets = load_targets();
     println!("triage_live: probing {} targets", targets.len());
 
-    let result = run_triage(targets.clone(), triage_config())
+    let result = run_probes(targets.clone(), triage_config())
         .await
-        .expect("run_triage must not fail at engine level");
+        .expect("run_probes must not fail at engine level");
 
     // Print a summary so --nocapture output is useful.
     println!(
@@ -153,7 +152,7 @@ async fn triage_live_google_dns_has_port_53_open() {
     // Port 53 should always be present in its InternetDB record.
     // If InternetDB is down or the record is empty, the test is skipped
     // rather than failed — we don't want probe outages to fail the suite.
-    let result = run_triage(
+    let result = run_probes(
         vec!["8.8.8.8".to_string()],
         triage_config(),
     )
@@ -190,7 +189,7 @@ async fn triage_live_google_dns_has_port_53_open() {
 #[ignore = "hits real internet — run manually"]
 async fn triage_live_cloudflare_has_asn_signal() {
     // 1.1.1.1 is Cloudflare — ipinfo.io always returns an AS13335 org entry.
-    let result = run_triage(
+    let result = run_probes(
         vec!["1.1.1.1".to_string()],
         triage_config(),
     )
@@ -229,7 +228,7 @@ async fn triage_live_engine_errors_are_never_silent() {
         "1.1.1.1".to_string(),
     ];
 
-    let result = run_triage(targets.clone(), triage_config())
+    let result = run_probes(targets.clone(), triage_config())
         .await
         .expect("engine must not fail");
 
@@ -262,10 +261,10 @@ async fn triage_live_engine_errors_are_never_silent() {
 #[tokio::test]
 #[ignore = "hits real internet — run manually"]
 async fn triage_live_result_is_complete_not_partial() {
-    // run_triage must return Ok even when every probe fails (network down,
+    // run_probes must return Ok even when every probe fails (network down,
     // all timeouts).  Engine-level Err is only for structural failures.
     // This test uses a very short timeout to force probe timeouts.
-    let config = TriageConfig {
+    let config = ThreatIntelConfig {
         concurrency: 5,
         timeout: Duration::from_millis(1), // guaranteed timeout for every probe
         min_score: 0,
@@ -275,7 +274,7 @@ async fn triage_live_result_is_complete_not_partial() {
     let targets: Vec<String> = DEFAULT_TARGETS.iter().map(|s| s.to_string()).collect();
     let n = targets.len();
 
-    let result = run_triage(targets, config)
+    let result = run_probes(targets, config)
         .await
         .expect("engine must return Ok even when all probes time out");
 

@@ -1,26 +1,23 @@
 //! Post-scan enrichment.
 //!
 //! Takes a scan-findings NDJSON stream, extracts unique target hosts,
-//! runs lightweight threat-intel probes via the triage engine, and
+//! runs lightweight threat-intel probes via the threat_intel engine, and
 //! produces enriched NDJSON where every finding gains a `threat_intel`
 //! block: open ports, CVE IDs, ASN, country, domain age.
 //!
 //! # Architecture note
 //!
-//! Enrichment is a *post-scan* step — it is intentionally separate from
-//! the scanner pipeline. The triage probes add **depth** (threat context),
-//! not **speed**. Running them before or during a mass scan increases
-//! latency per target; running them after means the fast sweep finishes
-//! first and only the confirmed-vulnerable hosts pay the probe cost.
+//! Enrichment is a *post-scan* step — intentionally separate from the scanner
+//! pipeline. The threat-intel probes add **depth** (context), not **speed**.
+//! Running them before or during a mass scan increases latency; running them
+//! after means the fast sweep finishes first and only confirmed-interesting
+//! hosts pay the probe cost.
 //!
 //! Pipeline:
 //! ```text
 //! 5 000 targets
 //!   │
 //!   ▼  apihunter --preset mass --urls all.txt --output findings.ndjson
-//!   │  (fast passive sweep, high concurrency, no discovery)
-//!   ▼
-//! findings.ndjson   (only hosts with ≥ 1 finding)
 //!   │
 //!   ▼  apihunter enrich --findings findings.ndjson --output enriched.ndjson
 //!   │  (one InternetDB+ipinfo+RDAP probe per unique host)
@@ -29,9 +26,6 @@
 //!   │
 //!   ▼  apihunter --preset deep --urls hot-targets.txt --active-checks
 //! ```
-//!
-//! One triage probe per *unique host* regardless of how many findings
-//! came from that host — probes are never duplicated.
 
 use std::{
     collections::HashMap,
@@ -44,9 +38,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::triage::{
-    run_triage,
-    types::{TriageConfig, TriageEntry},
+use crate::threat_intel::{
+    run_probes,
+    types::{ThreatIntelConfig, ThreatIntelEntry},
 };
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -71,12 +65,11 @@ pub struct RawFinding {
 /// Original finding + threat-intel overlay.
 #[derive(Debug, Clone, Serialize)]
 pub struct EnrichedFinding {
-    /// All original finding fields pass through unchanged.
     #[serde(flatten)]
     pub finding: RawFinding,
-    /// Threat-intel from triage probes. None when the host could not be
-    /// resolved or all probes timed out / errored.
-    pub threat_intel: Option<TriageEntry>,
+    /// Threat-intel from probes. None when the host could not be resolved
+    /// or all probes timed out / errored.
+    pub threat_intel: Option<ThreatIntelEntry>,
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -115,6 +108,7 @@ pub struct EnrichResult {
     /// `threat_intel: null`).
     pub triage_errors: Vec<String>,
 }
+
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -195,27 +189,27 @@ pub async fn enrich_findings(
         "Enrichment: starting threat-intel probes"
     );
 
-    // Run triage probes (InternetDB + ipinfo.io + RDAP).
-    let triage_config = TriageConfig {
+    // Run threat-intel probes (InternetDB + ipinfo.io + RDAP).
+    let probe_config = ThreatIntelConfig {
         concurrency: config.concurrency,
         timeout: config.timeout,
         min_score: 0,
         top_n: 0,
     };
 
-    let triage_result = run_triage(unique_probe_targets, triage_config)
+    let probe_result = run_probes(unique_probe_targets, probe_config)
         .await
-        .context("Triage probes failed during enrichment")?;
+        .context("Threat-intel probes failed during enrichment")?;
 
     tracing::info!(
-        probed = triage_result.total,
-        errors = triage_result.errors.len(),
-        elapsed_ms = triage_result.elapsed_ms,
-        "Enrichment: triage probes complete"
+        probed = probe_result.total,
+        errors = probe_result.errors.len(),
+        elapsed_ms = probe_result.elapsed_ms,
+        "Enrichment: threat-intel probes complete"
     );
 
-    // Build host-probe-target → TriageEntry lookup map.
-    let intel_map: HashMap<String, TriageEntry> = triage_result
+    // Build host → ThreatIntelEntry lookup map.
+    let intel_map: HashMap<String, ThreatIntelEntry> = probe_result
         .entries
         .into_iter()
         .map(|entry| {
@@ -240,7 +234,7 @@ pub async fn enrich_findings(
         total_findings,
         unique_hosts,
         elapsed_ms: start.elapsed().as_millis() as u64,
-        triage_errors: triage_result.errors,
+        triage_errors: probe_result.errors,
     })
 }
 

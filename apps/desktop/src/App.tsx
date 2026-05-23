@@ -151,29 +151,6 @@ type LoadedScanResponse = {
   errors: unknown[];
 };
 
-type TriageEntry = {
-  target: string;
-  resolvedIp: string | null;
-  score: number;
-  rawScore: number;
-  severity: string;
-  signals: string[];
-  hasLikelyVulnerability: boolean;
-  ports: number[];
-  cveIds: string[];
-  asn: string | null;
-  country: string | null;
-  domainAgeDays: number | null;
-  responseMs: number;
-};
-
-type TriageResponse = {
-  entries: TriageEntry[];
-  total: number;
-  elapsedMs: number;
-  errors: string[];
-};
-
 type EnrichHostResult = {
   host: string;
   /** Origin URL (scheme+host+port) used for promote-to-deep-scan. */
@@ -368,17 +345,6 @@ export default function App() {
   const [loadedScan, setLoadedScan] = useState<LoadedScanResponse | null>(null);
   const [loadScanPath, setLoadScanPath] = useState("");
   
-  // Triage state
-  const [triageInput, setTriageInput] = useState("");
-  const [triageResult, setTriageResult] = useState<TriageResponse | null>(null);
-  const [triageLoading, setTriageLoading] = useState(false);
-  const [triageConcurrency, setTriageConcurrency] = useState(100);
-  const [triageTimeout, setTriageTimeout] = useState(5);
-  const [triageMinScore, setTriageMinScore] = useState(0);
-  const [triageTopN, setTriageTopN] = useState(0);
-  const [triagePromoteN, setTriagePromoteN] = useState(10);
-  const [triageSavedPath, setTriageSavedPath] = useState<string | null>(null);
-
   // Enrich state
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
@@ -973,75 +939,6 @@ export default function App() {
     }
   }
 
-  async function runTriage(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setTriageResult(null);
-    setTriageSavedPath(null);
-    setTriageLoading(true);
-
-    const targets = triageInput
-      .split(/[\n,;]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    if (targets.length === 0) {
-      setError("No targets provided");
-      setTriageLoading(false);
-      return;
-    }
-
-    try {
-      // NOTE: Tauri maps args by parameter name; the command signature is
-      //   async fn run_triage(request: TriageRequest) → wrap in { request: … }
-      const result = await invokeCommand<TriageResponse>("run_triage", {
-        request: {
-          targets,
-          concurrency: triageConcurrency,
-          timeoutSecs: triageTimeout,
-          minScore: triageMinScore,
-          topN: triageTopN > 0 ? triageTopN : undefined,
-        },
-      });
-      setTriageResult(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTriageLoading(false);
-    }
-  }
-
-  /** Merge a single triage target into the Full Scan textarea. */
-  function promoteTriageTarget(target: string) {
-    const existing = parseTargetsText(targetInput);
-    const merged = dedupeTargets([...existing, target]);
-    setTargetInput(merged.join("\n"));
-  }
-
-  /** Promote the top N triage entries into the Full Scan textarea. */
-  function promoteTriageTopN(n: number) {
-    if (!triageResult) return;
-    const top = triageResult.entries.slice(0, n).map((e) => e.target);
-    const existing = parseTargetsText(targetInput);
-    const merged = dedupeTargets([...existing, ...top]);
-    setTargetInput(merged.join("\n"));
-  }
-
-  /** Save triage results as a JSON file. */
-  async function saveTriageJson() {
-    if (!triageResult) return;
-    setTriageSavedPath(null);
-    const content = JSON.stringify(triageResult, null, 2);
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const fileName = `apihunter-triage-${ts}.json`;
-    try {
-      const path = await saveExportFile(fileName, "application/json", content, `apihunter-triage-${ts}`);
-      setTriageSavedPath(path);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   // ── Enrich mode handlers ────────────────────────────────────────────────
 
   /** Load the NDJSON from the last Full Scan result into the Enrich input. */
@@ -1292,237 +1189,6 @@ export default function App() {
             </div>
           )}
         </div>
-      </CollapsiblePanel>
-
-      <CollapsiblePanel title="Triage Mode" defaultOpen={false}>
-        <form onSubmit={runTriage} className="scan-form">
-          <p style={{ marginBottom: "16px", color: "#666" }}>
-            Rank targets by risk score using lightweight passive probes (InternetDB + ipinfo.io + RDAP).
-            Accepts IPs or domains — one per line, comma, or semicolon separated.
-          </p>
-
-          <label htmlFor="triageInput">Targets (IPs or domains)</label>
-          <textarea
-            id="triageInput"
-            rows={6}
-            required
-            value={triageInput}
-            onChange={(e) => setTriageInput(e.target.value)}
-            placeholder={"8.8.8.8\n1.1.1.1\nexample.com\napi.target.org"}
-          />
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label htmlFor="triageConcurrency">Concurrency</label>
-              <input
-                id="triageConcurrency"
-                type="number"
-                min="1"
-                max="500"
-                value={triageConcurrency}
-                onChange={(e) => setTriageConcurrency(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <label htmlFor="triageTimeout">Timeout (seconds)</label>
-              <input
-                id="triageTimeout"
-                type="number"
-                min="1"
-                max="60"
-                value={triageTimeout}
-                onChange={(e) => setTriageTimeout(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <label htmlFor="triageMinScore">Min Score (0–100)</label>
-              <input
-                id="triageMinScore"
-                type="number"
-                min="0"
-                max="100"
-                value={triageMinScore}
-                onChange={(e) => setTriageMinScore(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <label htmlFor="triageTopN">Top N (0 = all)</label>
-              <input
-                id="triageTopN"
-                type="number"
-                min="0"
-                max="10000"
-                value={triageTopN}
-                onChange={(e) => setTriageTopN(Number(e.target.value))}
-              />
-            </div>
-          </div>
-
-          <button type="submit" className="btn" disabled={triageLoading}>
-            {triageLoading ? "Running Triage…" : "Run Triage"}
-          </button>
-        </form>
-
-        {triageResult && (
-          <div style={{ marginTop: "24px" }}>
-            {/* ── Summary bar ─────────────────────────────────────────────── */}
-            <div className="status-ok" style={{ marginBottom: "16px" }}>
-              <p>
-                <strong>{triageResult.total}</strong> entries &nbsp;·&nbsp;
-                {(triageResult.elapsedMs / 1000).toFixed(1)}s
-                {triageResult.errors.length > 0 && (
-                  <span style={{ color: "#dc3545", marginLeft: "8px" }}>
-                    {triageResult.errors.length} probe error(s)
-                  </span>
-                )}
-              </p>
-            </div>
-
-            {/* ── Bulk actions ─────────────────────────────────────────────── */}
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
-              <label style={{ fontWeight: "bold", fontSize: "13px" }}>Promote top</label>
-              <input
-                type="number"
-                min="1"
-                max={triageResult.total}
-                value={triagePromoteN}
-                onChange={(e) => setTriagePromoteN(Number(e.target.value))}
-                style={{ width: "64px" }}
-              />
-              <button
-                type="button"
-                className="btn secondary"
-                style={{ margin: 0 }}
-                onClick={() => promoteTriageTopN(triagePromoteN)}
-              >
-                Promote Top {triagePromoteN} → Full Scan
-              </button>
-              <button
-                type="button"
-                className="btn secondary"
-                style={{ margin: 0 }}
-                onClick={saveTriageJson}
-              >
-                Save Triage JSON
-              </button>
-              {triageSavedPath && (
-                <span style={{ fontSize: "12px", color: "#28a745" }}>
-                  Saved: {triageSavedPath}
-                </span>
-              )}
-            </div>
-
-            {/* ── Result cards ─────────────────────────────────────────────── */}
-            <div style={{ maxHeight: "680px", overflow: "auto" }}>
-              {triageResult.entries.map((entry, idx) => {
-                const borderColor =
-                  entry.severity === "CRITICAL" ? "#dc3545" :
-                  entry.severity === "HIGH"     ? "#fd7e14" :
-                  entry.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
-                const badgeBg =
-                  entry.severity === "CRITICAL" ? "#dc3545" :
-                  entry.severity === "HIGH"     ? "#fd7e14" :
-                  entry.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
-                const badgeColor =
-                  entry.severity === "MEDIUM" ? "#212529" : "white";
-
-                return (
-                  <article
-                    key={idx}
-                    className="result-card"
-                    style={{ marginBottom: "10px", borderLeft: `4px solid ${borderColor}` }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontWeight: "bold", fontSize: "15px", margin: "0 0 2px" }}>
-                          #{idx + 1} {entry.target}
-                        </p>
-                        <p style={{ fontSize: "13px", color: "#666", margin: 0 }}>
-                          {entry.resolvedIp && `IP: ${entry.resolvedIp}  ·  `}
-                          Score: <strong>{entry.score}</strong>/100
-                          {entry.asn && `  ·  ${entry.asn}`}
-                          {entry.country && ` (${entry.country})`}
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
-                        <span style={{
-                          background: badgeBg, color: badgeColor,
-                          padding: "3px 8px", borderRadius: "4px",
-                          fontSize: "11px", fontWeight: "bold", letterSpacing: "0.05em",
-                        }}>
-                          {entry.severity}
-                        </span>
-                        {entry.hasLikelyVulnerability && (
-                          <span style={{
-                            background: "#dc3545", color: "white",
-                            padding: "3px 8px", borderRadius: "4px",
-                            fontSize: "11px", fontWeight: "bold",
-                          }}>
-                            VULN
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          className="btn secondary"
-                          style={{ margin: 0, padding: "3px 10px", fontSize: "12px" }}
-                          onClick={() => promoteTriageTarget(entry.target)}
-                          title="Add this target to Full Scan"
-                        >
-                          → Full Scan
-                        </button>
-                      </div>
-                    </div>
-
-                    {(entry.ports.length > 0 || entry.cveIds.length > 0 || entry.domainAgeDays !== null) && (
-                      <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                        {entry.ports.length > 0 && (
-                          <span><strong>Ports:</strong> {entry.ports.join(", ")}</span>
-                        )}
-                        {entry.cveIds.length > 0 && (
-                          <span style={{ color: "#dc3545" }}><strong>CVEs:</strong> {entry.cveIds.join(", ")}</span>
-                        )}
-                        {entry.domainAgeDays !== null && (
-                          <span><strong>Domain age:</strong> {entry.domainAgeDays}d</span>
-                        )}
-                      </div>
-                    )}
-
-                    {entry.signals.length > 0 && (
-                      <details style={{ marginTop: "6px" }}>
-                        <summary style={{ cursor: "pointer", fontSize: "13px", color: "#555" }}>
-                          Signals ({entry.signals.length})
-                        </summary>
-                        <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
-                          {entry.signals.map((sig, sidx) => (
-                            <li key={sidx} style={{ fontSize: "12px", color: "#444" }}>{sig}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-
-                    <p style={{ fontSize: "11px", color: "#aaa", margin: "6px 0 0" }}>
-                      {entry.responseMs}ms
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
-
-            {/* ── Probe errors ─────────────────────────────────────────────── */}
-            {triageResult.errors.length > 0 && (
-              <details style={{ marginTop: "12px" }}>
-                <summary style={{ cursor: "pointer", fontWeight: "bold", color: "#dc3545", fontSize: "13px" }}>
-                  Probe errors ({triageResult.errors.length})
-                </summary>
-                <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
-                  {triageResult.errors.map((err, idx) => (
-                    <p key={idx} style={{ fontSize: "12px", color: "#dc3545", margin: "2px 0" }}>{err}</p>
-                  ))}
-                </div>
-              </details>
-            )}
-          </div>
-        )}
       </CollapsiblePanel>
 
       <CollapsiblePanel title="Enrich Mode" defaultOpen={false}>
@@ -1805,6 +1471,14 @@ export default function App() {
               <button
                 type="button"
                 className="btn secondary preset-btn"
+                onClick={() => applyPreset("mass")}
+                title="Passive sweep of large target lists — produces NDJSON for Enrich → Deep Scan pipeline"
+              >
+                Mass Sweep
+              </button>
+              <button
+                type="button"
+                className="btn secondary preset-btn"
                 onClick={() => applyPreset("quick")}
               >
                 Quick Passive
@@ -1824,6 +1498,17 @@ export default function App() {
                 Deep Active
               </button>
             </div>
+          </div>
+          <div className="pipeline-callout">
+            <strong>Recommended pipeline:</strong>{" "}
+            <span className="pipeline-step">Mass Sweep</span>
+            {" → "}
+            <span className="pipeline-step">Enrich</span>
+            {" → "}
+            <span className="pipeline-step">Deep Active</span>
+            <span className="pipeline-hint">
+              {" "}— Run a Mass Sweep to collect findings NDJSON, enrich hosts with threat-intel, then promote high-scoring targets for a deep active scan.
+            </span>
           </div>
           {invalidTargets.length > 0 && (
             <p className="status-error compact">
