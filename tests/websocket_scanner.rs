@@ -45,6 +45,7 @@ fn test_config(active_checks: bool) -> Config {
         per_host_clients: false,
         adaptive_concurrency: false,
         no_discovery: false,
+        discovery: Default::default(),
         toggles: ScannerToggles {
             cors: false,
             csp: false,

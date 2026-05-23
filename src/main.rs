@@ -26,7 +26,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use api_scanner::{
     auth, auto_report,
     cli::{default_user_agents, load_urls, Cli, CliPreset, EnrichCli, EnrichFormat},
-    config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
+    config::{Config, DiscoveryConfig, PolitenessConfig, ScannerToggles, WafEvasionConfig},
     enrich::{enrich_findings, load_findings_ndjson, EnrichConfig},
     http_client::HttpClient,
     proxy::{parse_proxy_file, ProxyStrategy},
@@ -144,6 +144,11 @@ async fn run(cli: Cli) -> Result<i32> {
         per_host_clients: cli.per_host_clients,
         adaptive_concurrency: cli.adaptive_concurrency,
         no_discovery: cli.no_discovery,
+        discovery: DiscoveryConfig {
+            max_sitemaps: cli.discovery_max_sitemaps,
+            max_scripts: cli.discovery_max_scripts,
+            timeout_secs: cli.discovery_timeout,
+        },
         quiet: cli.quiet,
         toggles: ScannerToggles {
             cors: !cli.no_cors,

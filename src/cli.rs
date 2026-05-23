@@ -71,6 +71,26 @@ pub struct Cli {
     #[arg(long)]
     pub no_discovery: bool,
 
+    // ── Discovery depth controls ─────────────────────────────────────────────
+    /// Maximum number of sitemap files fetched per site (index + sub-sitemaps).
+    /// Lower this when targets have deeply nested sitemap indexes that stall the
+    /// scanner.  Set to 1 to disable sitemap-index recursion entirely.
+    #[arg(long, default_value_t = 5, value_name = "N")]
+    pub discovery_max_sitemaps: usize,
+
+    /// Maximum number of external <script src> files fetched per seed page.
+    /// Lower this for JS-heavy SPAs with dozens of bundles.
+    #[arg(long, default_value_t = 10, value_name = "N")]
+    pub discovery_max_scripts: usize,
+
+    /// Per-step wall-clock timeout for each discovery sub-step (seconds).
+    /// Each of the six steps (robots, sitemap, swagger, js, headers,
+    /// common-paths) is independently wrapped in this limit.
+    /// Worst-case discovery time is roughly 6 × this value.
+    /// Defaults to 2 × --timeout-secs when not set.
+    #[arg(long, value_name = "SECS")]
+    pub discovery_timeout: Option<u64>,
+
     // ── Output ───────────────────────────────────────────────────────────────
     /// Write findings to this file path (default: stdout).
     #[arg(short = 'o', long, value_name = "FILE")]

@@ -51,6 +51,7 @@ async fn refresh_task_can_be_cancelled_immediately() {
         per_host_clients: false,
         adaptive_concurrency: false,
         no_discovery: false,
+        discovery: Default::default(),
         toggles: ScannerToggles {
             cors: false,
             csp: false,

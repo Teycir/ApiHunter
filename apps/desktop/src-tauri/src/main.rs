@@ -113,7 +113,16 @@ struct FullScanRequest {
     per_host_clients: bool,
     adaptive_concurrency: bool,
     toggles: ScanToggleRequest,
+    /// Maximum sitemap files fetched per site (balanced=5, deep=20).
+    #[serde(default = "default_discovery_max_sitemaps")]
+    discovery_max_sitemaps: usize,
+    /// Maximum external script files fetched per page (balanced=10, deep=20).
+    #[serde(default = "default_discovery_max_scripts")]
+    discovery_max_scripts: usize,
 }
+
+fn default_discovery_max_sitemaps() -> usize { 5 }
+fn default_discovery_max_scripts() -> usize { 10 }
 
 impl FullScanRequest {
     fn quick(target_url: String) -> Self {
@@ -158,6 +167,8 @@ impl FullScanRequest {
                 cve_templates: false,
                 websocket: false,
             },
+            discovery_max_sitemaps: 5,
+            discovery_max_scripts: 10,
         }
     }
 
@@ -676,6 +687,11 @@ async fn run_full_scan_impl(
         per_host_clients: request.per_host_clients,
         adaptive_concurrency: request.adaptive_concurrency,
         no_discovery: request.no_discovery,
+        discovery: api_scanner::config::DiscoveryConfig {
+            max_sitemaps: request.discovery_max_sitemaps.max(1),
+            max_scripts: request.discovery_max_scripts,
+            timeout_secs: None,
+        },
         quiet: true,
         toggles: ScannerToggles {
             cors: request.toggles.cors,

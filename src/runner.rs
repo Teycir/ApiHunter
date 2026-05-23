@@ -670,10 +670,11 @@ async fn run_discovery_per_site(
     config: &Config,
     client: &HttpClient,
 ) -> (Vec<String>, Vec<CapturedError>, usize) {
-    const MAX_SITEMAPS: usize = 5;
-    const MAX_SCRIPTS: usize = 10;
-    let discovery_timeout_secs = config.politeness.timeout_secs.saturating_mul(2).max(1);
-    let discovery_timeout = Duration::from_secs(discovery_timeout_secs);
+    let max_sitemaps = config.discovery.max_sitemaps;
+    let max_scripts  = config.discovery.max_scripts;
+    let discovery_timeout = Duration::from_secs(
+        config.discovery.effective_timeout_secs(config.politeness.timeout_secs),
+    );
 
     let mut all_discovered: HashSet<String> = HashSet::new();
     let mut all_errors: Vec<CapturedError> = Vec::new();
@@ -690,9 +691,9 @@ async fn run_discovery_per_site(
         let mut site_discovered: HashSet<String> = HashSet::new();
         let mut errors: Vec<CapturedError> = Vec::new();
         let robots = RobotsDiscovery::new(client, &base, &host);
-        let sitemap = SitemapDiscovery::new(client, &base, &host, MAX_SITEMAPS);
+        let sitemap = SitemapDiscovery::new(client, &base, &host, max_sitemaps);
         let swagger = SwaggerDiscovery::new(client, &base, &host);
-        let js = JsDiscovery::new(client, js_seed, &host, MAX_SCRIPTS);
+        let js = JsDiscovery::new(client, js_seed, &host, max_scripts);
         let headers = HeaderDiscovery::new(client, &base, &host);
         let common_paths = CommonPathDiscovery::new(client, &base, config.concurrency, Vec::new());
 

@@ -61,6 +61,7 @@ fn test_config_custom(active_checks: bool, timeout_secs: u64) -> Config {
         per_host_clients: false,
         adaptive_concurrency: false,
         no_discovery: false,
+        discovery: Default::default(),
         toggles: ScannerToggles {
             cors: true,
             csp: true,

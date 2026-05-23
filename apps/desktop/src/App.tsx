@@ -299,6 +299,13 @@ function sanitizeRuntimeInput(raw: string, field: RuntimeLimitField): number {
   return clampRuntimeValue(parsed, field);
 }
 
+const PRESET_LABELS: Record<string, string> = {
+  mass: "Mass Sweep",
+  quick: "Quick Passive",
+  balanced: "Balanced",
+  deep: "Deep Active",
+};
+
 export default function App() {
   const tauriRuntimeAvailable = hasTauriIpc();
   const [targetInput, setTargetInput] = useState("https://httpbin.org");
@@ -328,6 +335,7 @@ export default function App() {
   const [unauthStripHeadersInput, setUnauthStripHeadersInput] = useState("");
   const [userAgentsInput, setUserAgentsInput] = useState("");
   const [toggles, setToggles] = useState<ScanToggleState>(DEFAULT_TOGGLES);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -358,6 +366,7 @@ export default function App() {
   function handleTargetInputChange(raw: string) {
     const sanitized = sanitizeTargetTextareaInput(raw);
     setTargetInput(sanitized.value);
+    setActivePreset(null); // clear preset highlight when user edits manually
     if (sanitized.truncated) {
       setTargetInputNotice(
         `Target input was truncated at ${MAX_TARGET_INPUT_CHARS.toLocaleString()} characters.`,
@@ -1071,14 +1080,14 @@ export default function App() {
       <CollapsiblePanel title="Load Past Scan" defaultOpen={false}>
         <div className="scan-form">
           <label htmlFor="loadScanPath">Scan Directory Path</label>
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="path-input-row">
             <input
               id="loadScanPath"
               type="text"
               value={loadScanPath}
               onChange={(e) => setLoadScanPath(e.target.value)}
               placeholder="/home/user/Downloads/apihunter-scan-..."
-              style={{ flex: 1 }}
+              className="path-input-flex"
             />
             <button
               type="button"
@@ -1104,8 +1113,8 @@ export default function App() {
               <div className="result-grid">
                 <article className="result-card">
                   <h3>Total: {loadedScan.summary.total}</h3>
-                  <p style={{ color: "#dc3545", fontWeight: "bold" }}>Critical: {loadedScan.summary.critical}</p>
-                  <p style={{ color: "#fd7e14", fontWeight: "bold" }}>High: {loadedScan.summary.high}</p>
+                  <p style={{ color: "var(--color-critical)", fontWeight: "bold" }}>Critical: {loadedScan.summary.critical}</p>
+                  <p style={{ color: "var(--color-high)", fontWeight: "bold" }}>High: {loadedScan.summary.high}</p>
                   <p>Medium: {loadedScan.summary.medium}</p>
                   <p>Low: {loadedScan.summary.low}</p>
                   <p>Info: {loadedScan.summary.info}</p>
@@ -1125,10 +1134,10 @@ export default function App() {
                           className="result-card"
                           style={{
                             marginBottom: "12px",
-                            borderLeft: finding.severity === "CRITICAL" ? "4px solid #dc3545" : "4px solid #fd7e14",
+                            borderLeft: finding.severity === "CRITICAL" ? "4px solid var(--color-critical)" : "4px solid var(--color-high)",
                           }}
                         >
-                          <p style={{ fontWeight: "bold", color: finding.severity === "CRITICAL" ? "#dc3545" : "#fd7e14" }}>
+                          <p style={{ fontWeight: "bold", color: finding.severity === "CRITICAL" ? "var(--color-critical)" : "var(--color-high)" }}>
                             [{finding.severity}] {finding.title}
                           </p>
                           <p><strong>URL:</strong> {finding.url}</p>
@@ -1139,7 +1148,7 @@ export default function App() {
                             <details style={{ marginTop: "8px" }}>
                               <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Evidence</summary>
                               <pre style={{ 
-                                background: "#f5f5f5", 
+                                background: "var(--color-surface-alt)", 
                                 padding: "8px", 
                                 borderRadius: "4px",
                                 overflow: "auto",
@@ -1154,37 +1163,44 @@ export default function App() {
                 </>
               )}
 
-              <h4>Findings by Scanner</h4>
-              <div className="result-card">
-                {Object.entries(
-                  loadedScan.findings.reduce((acc, f) => {
-                    acc[f.scanner] = (acc[f.scanner] || 0) + 1;
-                    return acc;
-                  }, {} as Record<string, number>)
-                )
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([scanner, count]) => (
-                    <p key={scanner}>
-                      <strong>{scanner}:</strong> {count}
-                    </p>
-                  ))}
-              </div>
-
-              <h4>Top Checks</h4>
-              <div className="result-card">
-                {Object.entries(
-                  loadedScan.findings.reduce((acc, f) => {
-                    acc[f.check] = (acc[f.check] || 0) + 1;
-                    return acc;
-                  }, {} as Record<string, number>)
-                )
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 10)
-                  .map(([check, count]) => (
-                    <p key={check}>
-                      <strong>{check}:</strong> {count}
-                    </p>
-                  ))}
+              <div className="result-grid results-layout--two-col" style={{ marginTop: "12px" }}>
+                <article className="result-card">
+                  <h3>By Scanner</h3>
+                  <ul className="check-list">
+                    {Object.entries(
+                      loadedScan.findings.reduce((acc, f) => {
+                        acc[f.scanner] = (acc[f.scanner] || 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>)
+                    )
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([scanner, count]) => (
+                        <li key={scanner} className="check-item">
+                          <span className="check-name">{scanner}</span>
+                          <span className="check-count">{count}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </article>
+                <article className="result-card">
+                  <h3>Top Checks</h3>
+                  <ul className="check-list">
+                    {Object.entries(
+                      loadedScan.findings.reduce((acc, f) => {
+                        acc[f.check] = (acc[f.check] || 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>)
+                    )
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 10)
+                      .map(([check, count]) => (
+                        <li key={check} className="check-item">
+                          <span className="check-name">{check}</span>
+                          <span className="check-count">{count}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </article>
               </div>
             </div>
           )}
@@ -1192,7 +1208,7 @@ export default function App() {
       </CollapsiblePanel>
 
       <CollapsiblePanel title="Enrich Mode" defaultOpen={false}>
-        <p style={{ marginBottom: "16px", color: "#666" }}>
+        <p className="muted" style={{ marginBottom: "16px" }}>
           Add threat-intel context (InternetDB + ipinfo.io + RDAP) to findings from a previous scan.
           One probe per unique host. Promotes high-scoring hosts directly to Full Scan with the
           Deep Active preset applied.
@@ -1263,7 +1279,7 @@ export default function App() {
                 across <strong>{enrichResult.uniqueHosts}</strong> unique hosts &nbsp;·&nbsp;
                 {(enrichResult.elapsedMs / 1000).toFixed(1)}s
                 {enrichResult.errors.length > 0 && (
-                  <span style={{ color: "#dc3545", marginLeft: "8px" }}>
+                  <span style={{ color: "var(--color-critical)", marginLeft: "8px" }}>
                     {enrichResult.errors.length} probe error(s)
                   </span>
                 )}
@@ -1299,7 +1315,7 @@ export default function App() {
                 Save Enriched NDJSON
               </button>
               {enrichSavedPath && (
-                <span style={{ fontSize: "12px", color: "#28a745" }}>Saved: {enrichSavedPath}</span>
+                <span className="enrich-saved-path">Saved: {enrichSavedPath}</span>
               )}
             </div>
 
@@ -1307,13 +1323,13 @@ export default function App() {
             <div style={{ maxHeight: "680px", overflow: "auto" }}>
               {enrichResult.hosts.map((host, idx) => {
                 const borderColor =
-                  host.severity === "CRITICAL" ? "#dc3545" :
-                  host.severity === "HIGH"     ? "#fd7e14" :
-                  host.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
+                  host.severity === "CRITICAL" ? "var(--color-critical)" :
+                  host.severity === "HIGH"     ? "var(--color-high)" :
+                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
                 const badgeBg =
-                  host.severity === "CRITICAL" ? "#dc3545" :
-                  host.severity === "HIGH"     ? "#fd7e14" :
-                  host.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
+                  host.severity === "CRITICAL" ? "var(--color-critical)" :
+                  host.severity === "HIGH"     ? "var(--color-high)" :
+                  host.severity === "MEDIUM"   ? "var(--color-medium)" : "var(--color-border)";
                 const badgeColor = host.severity === "MEDIUM" ? "#212529" : "white";
 
                 return (
@@ -1327,7 +1343,7 @@ export default function App() {
                         <p style={{ fontWeight: "bold", fontSize: "15px", margin: "0 0 2px" }}>
                           #{idx + 1} {host.host}
                         </p>
-                        <p style={{ fontSize: "13px", color: "#666", margin: 0 }}>
+                        <p style={{ fontSize: "0.82rem", color: "var(--color-text-muted)", margin: 0 }}>
                           Score: <strong>{host.score}</strong>/100
                           {host.asn && `  ·  ${host.asn}`}
                           {host.country && ` (${host.country})`}
@@ -1343,7 +1359,7 @@ export default function App() {
                         </span>
                         {host.hasLikelyVulnerability && (
                           <span style={{
-                            background: "#dc3545", color: "white",
+                            background: "var(--color-critical)", color: "#fff",
                             padding: "3px 8px", borderRadius: "4px",
                             fontSize: "11px", fontWeight: "bold",
                           }}>
@@ -1368,7 +1384,7 @@ export default function App() {
                           <span><strong>Ports:</strong> {host.ports.join(", ")}</span>
                         )}
                         {host.cveIds.length > 0 && (
-                          <span style={{ color: "#dc3545" }}><strong>CVEs:</strong> {host.cveIds.join(", ")}</span>
+                          <span style={{ color: "var(--color-critical)" }}><strong>CVEs:</strong> {host.cveIds.join(", ")}</span>
                         )}
                         {host.domainAgeDays !== null && (
                           <span><strong>Domain age:</strong> {host.domainAgeDays}d</span>
@@ -1378,18 +1394,18 @@ export default function App() {
 
                     {host.signals.length > 0 && (
                       <details style={{ marginTop: "6px" }}>
-                        <summary style={{ cursor: "pointer", fontSize: "13px", color: "#555" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "0.83rem", color: "var(--color-text-muted)" }}>
                           Signals ({host.signals.length})
                         </summary>
                         <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
                           {host.signals.map((sig, sidx) => (
-                            <li key={sidx} style={{ fontSize: "12px", color: "#444" }}>{sig}</li>
+                            <li key={sidx} style={{ fontSize: "0.8rem", color: "var(--color-text-mid)" }}>{sig}</li>
                           ))}
                         </ul>
                       </details>
                     )}
 
-                    <p style={{ fontSize: "11px", color: "#aaa", margin: "6px 0 0" }}>
+                    <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", margin: "6px 0 0" }}>
                       {host.representativeUrl}
                     </p>
                   </article>
@@ -1400,12 +1416,12 @@ export default function App() {
             {/* ── Probe errors ───────────────────────────────────────────── */}
             {enrichResult.errors.length > 0 && (
               <details style={{ marginTop: "12px" }}>
-                <summary style={{ cursor: "pointer", fontWeight: "bold", color: "#dc3545", fontSize: "13px" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--color-critical)", fontSize: "0.85rem" }}>
                   Probe errors ({enrichResult.errors.length})
                 </summary>
                 <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
                   {enrichResult.errors.map((err, idx) => (
-                    <p key={idx} style={{ fontSize: "12px", color: "#dc3545", margin: "2px 0" }}>{err}</p>
+                    <p key={idx} style={{ fontSize: "0.82rem", color: "var(--color-critical)", margin: "2px 0" }}>{err}</p>
                   ))}
                 </div>
               </details>
@@ -1470,7 +1486,7 @@ export default function App() {
             <div className="preset-buttons">
               <button
                 type="button"
-                className="btn secondary preset-btn"
+                className={`btn secondary preset-btn${activePreset === "mass" ? " preset-btn--active" : ""}`}
                 onClick={() => applyPreset("mass")}
                 title="Passive sweep of large target lists — produces NDJSON for Enrich → Deep Scan pipeline"
               >
@@ -1478,21 +1494,21 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="btn secondary preset-btn"
+                className={`btn secondary preset-btn${activePreset === "quick" ? " preset-btn--active" : ""}`}
                 onClick={() => applyPreset("quick")}
               >
                 Quick Passive
               </button>
               <button
                 type="button"
-                className="btn secondary preset-btn"
+                className={`btn secondary preset-btn${activePreset === "balanced" ? " preset-btn--active" : ""}`}
                 onClick={() => applyPreset("balanced")}
               >
                 Balanced (Recommended)
               </button>
               <button
                 type="button"
-                className="btn secondary preset-btn"
+                className={`btn secondary preset-btn${activePreset === "deep" ? " preset-btn--active" : ""}`}
                 onClick={() => applyPreset("deep")}
               >
                 Deep Active
@@ -1862,7 +1878,11 @@ export default function App() {
           </details>
 
           <button type="submit" className="btn" disabled={loading}>
-            {loading ? "Scanning..." : "Run Full Scan"}
+            {loading
+              ? `Scanning${activePreset ? ` (${PRESET_LABELS[activePreset]})` : ""}\u2026`
+              : activePreset
+              ? `Run Full Scan \u2014 ${PRESET_LABELS[activePreset]}`
+              : "Run Full Scan"}
           </button>
         </form>
 
@@ -2077,11 +2097,13 @@ function CollapsiblePanel({
   children,
   className,
   defaultOpen = true,
+  panelRef,
 }: {
   title: string;
   children: ReactNode;
   className?: string;
   defaultOpen?: boolean;
+  panelRef?: React.RefObject<HTMLElement | null>;
 }) {
   // Use local state so parent re-renders (logs, progress, scan state) don't
   // force the panel back to its initial open/closed state on every render.
@@ -2089,6 +2111,7 @@ function CollapsiblePanel({
   const panelClassName = className ? `panel ${className}` : "panel";
   return (
     <details
+      ref={panelRef as React.RefObject<HTMLDetailsElement> | undefined}
       className={`${panelClassName} collapsible-panel`}
       open={isOpen}
       onToggle={(e) => setIsOpen((e.currentTarget as HTMLDetailsElement).open)}

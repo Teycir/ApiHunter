@@ -70,6 +70,7 @@ fn live_config(enable_active: bool, enable_websocket: bool) -> Config {
         per_host_clients: false,
         adaptive_concurrency: false,
         no_discovery: true,
+        discovery: Default::default(),
         toggles: ScannerToggles {
             cors: true,
             csp: true,

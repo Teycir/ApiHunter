@@ -81,8 +81,55 @@ pub struct Config {
     /// Skip endpoint discovery and scan only provided seed URLs.
     pub no_discovery: bool,
 
+    /// Fine-grained discovery controls (depth, breadth, timeouts per step).
+    pub discovery: DiscoveryConfig,
+
     /// Suppress verbose progress output.
     pub quiet: bool,
+}
+
+/// Controls how deep and wide each discovery sub-step is allowed to go.
+///
+/// These knobs let operators tune the discovery phase without disabling it
+/// entirely.  Lowering them is the primary fix when a target's sitemap tree
+/// or JS bundle count causes the scanner to stall for hours.
+#[derive(Debug, Clone)]
+pub struct DiscoveryConfig {
+    /// Maximum number of sitemap files to fetch per site (index + sub-sitemaps).
+    /// Default: 5.  Set to 1 to disable sitemap-index recursion.
+    pub max_sitemaps: usize,
+
+    /// Maximum number of external `<script src>` files to fetch per page.
+    /// Default: 10.
+    pub max_scripts: usize,
+
+    /// Per-step wall-clock timeout (seconds).  Each discovery sub-step
+    /// (robots, sitemap, swagger, js, headers, common-paths) is independently
+    /// wrapped in this timeout, so the worst-case discovery wall time is
+    /// roughly `6 × timeout_secs`.
+    /// Default: 2 × politeness.timeout_secs (matches previous behaviour).
+    /// Set explicitly to override without changing the scan timeout.
+    pub timeout_secs: Option<u64>,
+}
+
+impl DiscoveryConfig {
+    /// Resolve the effective per-step timeout.
+    /// Falls back to `2 × politeness_timeout_secs` when not explicitly set,
+    /// matching the behaviour that existed before this field was introduced.
+    pub fn effective_timeout_secs(&self, politeness_timeout_secs: u64) -> u64 {
+        self.timeout_secs
+            .unwrap_or_else(|| politeness_timeout_secs.saturating_mul(2).max(1))
+    }
+}
+
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            max_sitemaps: 5,
+            max_scripts: 10,
+            timeout_secs: None,
+        }
+    }
 }
 
 /// Individual scanner toggle flags.
