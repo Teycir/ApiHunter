@@ -897,6 +897,7 @@ async fn handle_load_scan(scan_dir: &std::path::Path, cli: &Cli) -> Result<i32> 
     info!(path = %loaded.path.display(), findings = loaded.findings.len(), "Loaded past scan");
 
     let min_sev: Severity = cli.min_severity.map(Into::into).unwrap_or(Severity::Info);
+    let fail_on: Severity = cli.fail_on.into();
     let print_summary = cli.summary || !cli.quiet;
     
     let report_cfg = ReportConfig {
@@ -910,6 +911,7 @@ async fn handle_load_scan(scan_dir: &std::path::Path, cli: &Cli) -> Result<i32> 
     scan_loader::process_loaded_scan(
         loaded,
         &min_sev,
+        &fail_on,
         cli.baseline.as_deref(),
         report_cfg,
     )

@@ -132,6 +132,7 @@ fn load_from_ndjson(path: &Path, dir: &Path) -> Result<LoadedScan> {
 pub fn process_loaded_scan(
     loaded: LoadedScan,
     min_severity: &Severity,
+    fail_on: &Severity,
     baseline_path: Option<&Path>,
     report_cfg: ReportConfig,
 ) -> Result<i32> {
@@ -163,5 +164,5 @@ pub fn process_loaded_scan(
     reporter.finalize();
 
     let summary = reports::build_summary(&result);
-    Ok(reports::exit_code(&summary, min_severity))
+    Ok(reports::exit_code(&summary, fail_on))
 }

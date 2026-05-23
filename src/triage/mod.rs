@@ -112,12 +112,13 @@ pub async fn run_triage(
     // that the normalised score would collapse into a tie.
     entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
 
+    // Record the full count before truncation so callers know the true hit count.
+    let total = entries.len();
+
     // Apply top-N truncation
     if config.top_n > 0 && entries.len() > config.top_n {
         entries.truncate(config.top_n);
     }
-
-    let total = entries.len();
 
     Ok(TriageResult {
         entries,

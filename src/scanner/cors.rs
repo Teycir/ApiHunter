@@ -210,7 +210,7 @@ impl Scanner for CorsScanner {
                         None => continue,
                     };
                     for prefix in REGEX_BYPASS_PREFIXES {
-                        let bypass = format!("{}://{}{}", scheme, prefix, rest);
+                        let bypass = format!("{}://{}.{}", scheme, prefix, rest);
                         match probe_cors_response(client, url, &bypass).await {
                             Ok(r) => {
                                 if r.header("access-control-allow-origin") == Some(&bypass)
