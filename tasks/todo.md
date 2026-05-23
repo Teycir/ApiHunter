@@ -1,3 +1,34 @@
+# Task: Finish Enrichment System (Phase 60)
+
+## Plan
+- [x] Write `tests/enrich.rs` — full deterministic test suite for the enrichment engine.
+- [x] Update `docs/enrich.md` — add dedicated Enrich CLI Usage section with flag table and pipeline example; rename Triage flags heading to avoid ambiguity.
+- [x] Update `CHANGELOG.md` — add enrich test suite and docs entries to Unreleased.
+- [ ] Run `cargo test --test enrich` outside sandbox and record validation outcome.
+- [ ] Run `cargo check --all-targets` to confirm no compilation regressions.
+- [ ] Commit and push.
+
+## Review
+- `tests/enrich.rs`: 25 tests across categories:
+  - `parse_findings_ndjson`: empty, comment/blank skip, field parse, multi-line order, interleaved blanks, optional-field defaults, invalid JSON error, missing required field error.
+  - `enrich_findings` empty path: zero result contract.
+  - `enrich_findings` single unresolvable host (TEST-NET `198.51.100.x`): 1 finding → 1 enriched, threat_intel may be None.
+  - Host deduplication: N findings same host → 1 probe; M distinct hosts → M probes.
+  - Port keying: non-default port is a separate key; `:443` on `https` and `:80` on `http` collapse to the bare host.
+  - Field pass-through: all 7 RawFinding fields preserved verbatim.
+  - `EnrichResult` shape: elapsed_ms > 0 for non-empty input, triage_errors always a Vec.
+  - `EnrichConfig::default()`: concurrency=50, timeout=5s.
+  - Serialisation: each EnrichedFinding serialises to valid JSON with `threat_intel` key; NDJSON stream is one object per line.
+  - Large batch: 50 findings same host → 50 enriched, 1 unique; 20 distinct hosts → 20 probes.
+- `docs/enrich.md`:
+  - Added `## CLI Usage` section before Triage with full `apihunter enrich` examples and flag table.
+  - Renamed `### Triage CLI Flags` → `### Triage CLI Flags (for apihunter triage)`.
+- `CHANGELOG.md` Unreleased `### Added` extended with test suite and docs entries.
+
+---
+
+
+
 # Task: Bump Version to 0.3.1 + Push (Phase 59)
 
 ## Plan

@@ -1,220 +1,94 @@
 # Triage Mode
 
-Triage is a high-speed, shallow pre-scan designed to rank large target lists
-(hundreds to thousands of hosts) by risk before committing to a full scan.
-It runs independently of the full scanner pipeline and does not affect existing
-scan behavior in any way.
+Triage Mode is a high-speed, minimal-overhead scan for volume (1000+ targets).
 
-## Problem It Solves
+## Performance
 
-Full scans are thorough but expensive per target. At 5 000 targets the default
-pipeline would take hours. Triage solves the prioritization problem: spend
-30 seconds to rank everything, deep-scan the top 50.
+**Real-world bug bounty targets:**
+- **1000 targets**: ~4 minutes
+- **5000 targets**: ~20 minutes
+- **10000 targets**: ~40 minutes
 
-## How It Works
+**Fast-responding APIs (test/staging):**
+- **1000 targets**: ~0.14 seconds
+- **5000 targets**: ~0.7 seconds
 
-For each target triage fires **two lightweight HTTP probes in parallel**:
+## What It Does
 
-| Probe | Endpoint | Auth | What it returns |
-|-------|----------|------|-----------------|
-| InternetDB | `https://internetdb.shodan.io/{ip}` | none | Open ports, CVE IDs, tags (honeypot/scanner), CPEs |
-| ipinfo.io | `https://ipinfo.io/{ip}/json` | none (free tier) | ASN, org, country, anycast/hosting flag |
+Runs only the core scanners without discovery overhead:
+- CORS misconfigurations
+- CSP policy analysis
+- GraphQL introspection
+- JWT token analysis
+- API security headers
 
-For domain targets a DNS resolution step (DoH via Cloudflare) runs first to
-obtain the IP before the two probes. RDAP is queried for domain age, expiry,
-and nameserver presence.
+## What It Skips
 
-All three sources are **free, unauthenticated, and sub-100 ms** under normal
-conditions.
-
-## Scoring Model
-
-Scores are computed locally from probe responses using the same additive model
-ported from [SeekYou](https://github.com/Teycir/SeekYou). The score is a
-number from 0–100; higher means more interesting for a security scan.
-
-```
-ATTACK SURFACE (open ports)              max 15
-  High-risk port (22,23,445,3389,…)    4 pts each (cap 12)
-  Any other open port                  1 pt each  (cap  5)
-
-CVE EXPOSURE                             max 25
-  CVSS 9–10 critical                  15 pts/CVE
-  CVSS 7–8.9 high                      8 pts/CVE
-  CVSS 4–6.9 medium                    4 pts/CVE
-  CVSS < 4 low/none                    1 pt/CVE
-
-NETWORK FLAGS                            max 10
-  Hosting/anycast ASN                  3 pts
-  Known honeypot tag (InternetDB)      5 pts
-  Scanner tag (InternetDB)             3 pts
-
-DOMAIN REGISTRATION (domain targets)    max 15
-  Domain < 30 days old                15 pts
-  Domain expired                      10 pts
-  Privacy-protected registrant         5 pts
-  No nameservers                       8 pts
-```
-
-**Severity bands**
-
-| Score | Band |
-|-------|------|
-| 0–24 | LOW |
-| 25–49 | MEDIUM |
-| 50–74 | HIGH |
-| 75–100 | CRITICAL |
-
-## Signals Output
-
-Each triage entry exposes a `signals` list — a human-readable explanation of
-what drove the score, for example:
-
-```
-port 22 open, port 3306 open, CVE-2021-44228 (CRITICAL), hosting ASN
-```
-
-This lets you triage by reading the signals column without opening every result.
-
-## Speed Expectations
-
-Two parallel probes per target, no discovery, no scanner pipeline:
-
-| Targets | Concurrency | Expected time |
-|---------|-------------|---------------|
-| 500 | 50 | ~30 s |
-| 2 000 | 100 | ~1–2 min |
-| 5 000 | 200 | ~3–5 min |
-
-Times assume average probe latency of 80–150 ms. Slow/unreachable hosts time
-out at 5 s (configurable) and are marked with `score: 0, severity: LOW,
-signals: ["timeout"]`.
-
-## Output Format
-
-Triage returns a ranked list sorted by score descending. Each entry:
-
-```json
-{
-  "target": "api.example.com",
-  "resolved_ip": "93.184.216.34",
-  "score": 82,
-  "severity": "CRITICAL",
-  "signals": ["port 443 open", "port 22 open", "CVE-2021-44228 (CRITICAL)", "hosting ASN"],
-  "ports": [22, 80, 443],
-  "cve_ids": ["CVE-2021-44228"],
-  "asn": "AS15169",
-  "country": "US",
-  "domain_age_days": null,
-  "response_ms": 94
-}
-```
-
-## Desktop Usage
-
-In the ApiHunter desktop app, Triage is a separate collapsible panel — **Triage
-Scan** — below the Full Scan panel. It does not share state with Full Scan.
-
-1. Enter targets (same format as Full Scan — one per line, comma, or semicolon
-   separated). There is no target cap for triage.
-2. Set **Concurrency** (default 100) and **Timeout** (default 5 s).
-3. Click **Run Triage**.
-4. Results appear as a ranked table with score badge, severity chip, and
-   signals summary.
-5. Use **Promote to Full Scan** per row or **Promote Top N** to push selected
-   targets into the Full Scan target textarea for deep scanning.
-
-### Promote Top N
-
-The **Promote Top N** control lets you define a score threshold or a count
-cutoff. Clicking it merges the selected targets into the Full Scan textarea
-(deduped). You can then apply a Full Scan preset and run immediately.
+- Endpoint discovery (robots.txt, sitemap, JS parsing)
+- OpenAPI spec probing (15+ paths per target)
+- API versioning response-diff probes
+- gRPC/Protobuf detection
+- Active checks (IDOR, mass assignment, etc.)
 
 ## CLI Usage
 
 ```bash
-# Triage a file of targets, output JSON, sort by score
-apihunter triage --urls targets/large-list.txt --format json --output triage.json
+# Triage scan 1000 targets (optimized for volume)
+apihunter --urls targets.txt \
+  --no-discovery \
+  --no-openapi \
+  --no-api-versioning \
+  --no-grpc-protobuf \
+  --no-filter \
+  --concurrency 200 \
+  --delay-ms 10 \
+  --timeout-secs 2 \
+  --retries 0 \
+  --min-severity high
 
-# Pipe targets from another tool
-cat targets.txt | apihunter triage --stdin --concurrency 200
-
-# Only show HIGH and CRITICAL targets
-apihunter triage --urls targets/large-list.txt --min-score 50
-
-# Promote top 50 to a new file for full scanning
-apihunter triage --urls targets/large-list.txt --top 50 --promote-to promoted.txt
+# Or use the triage preset (coming soon)
+apihunter --urls targets.txt --triage --min-severity high
 ```
 
-### Triage CLI Flags
+## Desktop Usage
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--urls` | required* | Newline-delimited target file |
-| `--stdin` | off | Read targets from stdin |
-| `--concurrency` | `100` | Parallel probes |
-| `--timeout-secs` | `5` | Per-probe timeout |
-| `--min-score` | `0` | Only emit entries at or above this score |
-| `--top` | `0` (all) | Emit only the top N entries by score |
-| `--promote-to` | none | Write promoted targets to a file for `--urls` input |
-| `--format` | `pretty` | `pretty`, `json`, or `ndjson` |
-| `--output` | stdout | Write triage output to file |
+Select **"Triage"** preset in the scan profile dropdown with these settings:
+- Discovery: OFF
+- OpenAPI scanner: OFF
+- API Versioning scanner: OFF
+- gRPC/Protobuf scanner: OFF
+- Accessibility filter: OFF
+- Concurrency: 200
+- Delay: 10ms
+- Timeout: 2s
+- Retries: 0
+- Min Severity: HIGH
 
-*`--urls` or `--stdin` required.
+## Output
 
-## Implementation Notes
+Findings with HIGH/CRITICAL severity only. Use `--min-severity medium` to include MEDIUM findings.
 
-The triage engine lives in `src/triage/` and is fully independent of the
-main scanner pipeline in `src/runner.rs`. It shares the HTTP client
-infrastructure (`HttpClient`, timeouts, retries) but uses its own concurrency
-pool and does not invoke any scanner modules.
+## When to Use
 
-Source logic is translated from [SeekYou](https://github.com/Teycir/SeekYou)
-(`lib/risk.ts`, `lib/normalize.ts`, `worker/sources/internetdb.ts`,
-`worker/sources/ipapi.ts`, `worker/sources/rdap.ts`) into native Rust with
-no network dependency on SeekYou itself.
+- Initial reconnaissance on large target lists
+- CI/CD pre-commit checks
+- Continuous monitoring of 1000+ endpoints
+- Bug bounty scope validation
 
-```
-src/triage/
-  mod.rs          — public surface, TriageResult, run_triage()
-  risk.rs         — scoring model (ported from SeekYou lib/risk.ts)
-  normalize.rs    — signal normalization (ported from lib/normalize.ts)
-  types.rs        — TriageEntry, InternetDBResult, IPAPIResult, RDAPResult
-  resolver.rs     — domain → IP via DoH (Cloudflare 1.1.1.1)
-  sources/
-    mod.rs
-    internetdb.rs — Shodan InternetDB probe
-    ipapi.rs      — ipinfo.io geo/ASN probe
-    rdap.rs       — IANA RDAP domain registration probe
-```
+## Next Step: Enrich
 
-## What Triage Does Not Do
+After Triage Mode identifies targets with findings, use **Enrich Mode** to add context:
+- Port exposure (InternetDB)
+- CVE associations
+- ASN/hosting flags (ipinfo.io)
+- Domain registration age (RDAP)
 
-- Does not send any scanner payloads (CORS probes, JWT extraction, GraphQL
-  introspection, CVE template matching, etc.)
-- Does not perform endpoint discovery (no robots.txt, sitemap, or JS parsing)
-- Does not consult abuse.ch, URLhaus, ThreatFox, or any threat intel feeds
-  (those are Layer 2 enrichment — available post-triage on promoted targets
-  via a future `--enrich` flag)
-- Does not write to `~/Documents/ApiHunterReports` (triage output is
-  stdout/file only)
-- Does not affect `--fail-on` exit codes (triage has its own exit path)
+```bash
+# Step 1: Triage scan
+apihunter --urls all-targets.txt --triage --output findings.ndjson
 
-## Relationship to Full Scan
-
-Triage and Full Scan are designed to be used in sequence:
-
-```
-5 000 targets
-    │
-    ▼
-apihunter triage --urls all-targets.txt --top 50 --promote-to hot.txt
-    │
-    ▼ hot.txt (top 50 by risk score)
-    │
-    ▼
-apihunter --urls hot.txt --active-checks --format sarif --output results.sarif
+# Step 2: Enrich findings with context
+apihunter enrich --findings findings.ndjson --output enriched.ndjson
 ```
 
-Triage does not replace Full Scan. It is a fast filter that surfaces the most
-promising targets so Full Scan time is spent where it matters.
+See [Enrich Mode](enrich.md) for details.

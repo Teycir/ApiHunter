@@ -272,6 +272,17 @@ pub struct Cli {
     /// Exit with code 1 when findings at or above this severity are found.
     #[arg(long, default_value = "medium", value_name = "LEVEL")]
     pub fail_on: CliSeverity,
+
+    /// Apply a named scan preset. Presets tune concurrency, timeout,
+    /// discovery, and active-check defaults as a batch.
+    /// Individual flags still override preset values.
+    ///
+    ///   quick   – passive only, --no-discovery, concurrency 50, timeout 5 s
+    ///   mass    – passive only, --no-discovery, no filter, concurrency 100, timeout 4 s, delay 0
+    ///   balanced – default settings (no change)
+    ///   deep    – active checks on, concurrency 10, timeout 20 s
+    #[arg(long, value_name = "PRESET")]
+    pub preset: Option<CliPreset>,
 }
 
 // ── Clap value enums ──────────────────────────────────────────────────────────
@@ -281,6 +292,20 @@ pub enum CliFormat {
     Pretty,
     Ndjson,
     Sarif,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum CliPreset {
+    /// Passive-only, --no-discovery, concurrency 50, timeout 5 s.
+    Quick,
+    /// Passive-only, no discovery, no filter, concurrency 100, timeout 4 s, delay 0.
+    /// Optimised for sweeping large target lists and producing a vulnerable-targets list
+    /// for a subsequent `enrich` + deep-scan pass.
+    Mass,
+    /// Default settings — no overrides.
+    Balanced,
+    /// Active checks enabled, concurrency 10, timeout 20 s.
+    Deep,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -783,4 +808,64 @@ pub fn load_triage_targets(cli: &TriageCli) -> Result<Vec<String>> {
         .collect();
 
     Ok(targets)
+}
+
+// ── Enrich subcommand ─────────────────────────────────────────────────────────
+
+/// Post-scan enrichment: add threat-intel context (ports, CVEs, ASN, domain
+/// age) to an existing NDJSON findings file without re-running the scanner.
+///
+/// Example:
+///   apihunter enrich --findings findings.ndjson --output enriched.ndjson
+#[derive(Debug, Parser)]
+#[command(
+    name = "enrich",
+    about = "Enrich scan findings with threat-intel probes (InternetDB + ipinfo.io + RDAP)"
+)]
+pub struct EnrichCli {
+    // ── Input ────────────────────────────────────────────────────────────────
+    /// Path to a findings NDJSON file produced by a previous scan.
+    #[arg(long, value_name = "FILE")]
+    pub findings: std::path::PathBuf,
+
+    // ── Engine tuning ────────────────────────────────────────────────────────
+    /// Parallel probe tasks (one probe per unique host).
+    #[arg(short = 'c', long, default_value_t = 50, value_name = "N")]
+    pub concurrency: usize,
+
+    /// Per-probe timeout (seconds).
+    #[arg(long, default_value_t = 5, value_name = "SECS")]
+    pub timeout_secs: u64,
+
+    // ── Output ───────────────────────────────────────────────────────────────
+    /// Output format.
+    #[arg(short = 'f', long, default_value = "ndjson", value_name = "FORMAT")]
+    pub format: EnrichFormat,
+
+    /// Write enriched output to this file (default: stdout).
+    #[arg(short = 'o', long, value_name = "FILE")]
+    pub output: Option<std::path::PathBuf>,
+
+    /// Write promoted host URLs to this file for a subsequent deep scan.
+    /// One origin URL (scheme+host+port) per unique host scoring ≥ --promote-min-score.
+    /// Designed to feed directly into: apihunter --urls <FILE> --preset deep --active-checks
+    #[arg(long, value_name = "FILE")]
+    pub promote_to: Option<std::path::PathBuf>,
+
+    /// Minimum threat-intel score (0–100) for promotion via --promote-to.
+    /// Hosts without a threat-intel result (probe failed) are always excluded.
+    #[arg(long, default_value_t = 0, value_name = "SCORE")]
+    pub promote_min_score: u8,
+
+    /// Suppress progress messages (stderr).
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EnrichFormat {
+    /// One JSON object per line (default).
+    Ndjson,
+    /// Pretty-printed JSON array.
+    Json,
 }

@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 
 
+## [Unreleased]
+
+### Added
+- **Enrich → Deep-Scan Promote Flow**:
+  - CLI: `apihunter enrich` gains `--promote-to <FILE>` — writes one canonical origin URL per qualifying unique host (score ≥ `--promote-min-score`) ready for `apihunter --urls <FILE> --preset deep --active-checks`.
+  - CLI: `apihunter enrich` gains `--promote-min-score <SCORE>` (default 0) to filter which hosts are promoted.
+  - Desktop backend: `EnrichHostResult` now carries `representativeUrl` (scheme+host+port) built from the first finding URL per host — enables clean URL-based promotion without scheme guessing.
+  - Desktop: new **Enrich Mode** collapsible panel (between Triage and Full Scan) with findings NDJSON input, **Load from Last Scan** button, per-host result cards (score, severity, ports, CVEs, signals), per-host **→ Deep Scan** promote button, bulk **Promote hosts scoring ≥ N → Deep Scan** control, and **Save Enriched NDJSON** button. Promotion merges hosts into the Full Scan textarea and applies the Deep Active preset.
+- **Enrich test suite** (`tests/enrich.rs`): 25 deterministic unit and integration tests covering NDJSON parsing, empty/single/multi-finding inputs, host deduplication (same host, different ports, default-port normalisation), field pass-through, `EnrichConfig` defaults, JSON serialisation round-trip, and `EnrichResult` shape invariants.
+- **`docs/enrich.md`** updated with dedicated Enrich CLI Usage section, complete `apihunter enrich` flag table, and full three-step mass-sweep → enrich → deep-scan pipeline example.
+
 ## [0.3.2] - 2026-04-23
 
 ### Added

@@ -174,6 +174,31 @@ type TriageResponse = {
   errors: string[];
 };
 
+type EnrichHostResult = {
+  host: string;
+  /** Origin URL (scheme+host+port) used for promote-to-deep-scan. */
+  representativeUrl: string;
+  score: number;
+  severity: string;
+  signals: string[];
+  ports: number[];
+  cveIds: string[];
+  asn: string | null;
+  country: string | null;
+  domainAgeDays: number | null;
+  hasLikelyVulnerability: boolean;
+};
+
+type EnrichResponse = {
+  enrichedNdjson: string;
+  hosts: EnrichHostResult[];
+  totalFindings: number;
+  uniqueHosts: number;
+  enrichedCount: number;
+  elapsedMs: number;
+  errors: string[];
+};
+
 
 type ScanEventPayload = {
   scanId: number;
@@ -353,6 +378,15 @@ export default function App() {
   const [triageTopN, setTriageTopN] = useState(0);
   const [triagePromoteN, setTriagePromoteN] = useState(10);
   const [triageSavedPath, setTriageSavedPath] = useState<string | null>(null);
+
+  // Enrich state
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
+  const [enrichConcurrency, setEnrichConcurrency] = useState(50);
+  const [enrichTimeout, setEnrichTimeout] = useState(5);
+  const [enrichSavedPath, setEnrichSavedPath] = useState<string | null>(null);
+  const [enrichNdjson, setEnrichNdjson] = useState("");
+  const [enrichPromoteMinScore, setEnrichPromoteMinScore] = useState(25);
 
 
   function handleTargetInputChange(raw: string) {
@@ -635,7 +669,7 @@ export default function App() {
     setToggles((prev) => ({ ...prev, [field]: value }));
   }
 
-  function applyPreset(mode: "quick" | "balanced" | "deep") {
+  function applyPreset(mode: "quick" | "mass" | "balanced" | "deep") {
     const allScanners = { ...DEFAULT_TOGGLES };
     if (mode === "quick") {
       setActiveChecks(false);
@@ -648,6 +682,35 @@ export default function App() {
       setConcurrency(4);
       setTimeoutSecs(12);
       setRetries(1);
+      setDelayMs(0);
+      setWafEvasion(false);
+      setPerHostClients(false);
+      setAdaptiveConcurrency(false);
+      setToggles({
+        ...allScanners,
+        massAssignment: false,
+        oauthOidc: false,
+        rateLimit: false,
+        cveTemplates: false,
+        websocket: false,
+      });
+      return;
+    }
+
+    if (mode === "mass") {
+      // Optimised for large target sweeps: high concurrency, fast timeout,
+      // no discovery, no filter, passive scanners only.
+      // Designed to produce a findings NDJSON for a follow-up `enrich` pass.
+      setActiveChecks(false);
+      setDryRun(false);
+      setResponseDiffDeep(false);
+      setNoDiscovery(true);
+      setNoFilter(true);
+      setFilterTimeout(3);
+      setMaxEndpoints(0);
+      setConcurrency(100);
+      setTimeoutSecs(4);
+      setRetries(0);
       setDelayMs(0);
       setWafEvasion(false);
       setPerHostClients(false);
@@ -974,6 +1037,93 @@ export default function App() {
     try {
       const path = await saveExportFile(fileName, "application/json", content, `apihunter-triage-${ts}`);
       setTriageSavedPath(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // ── Enrich mode handlers ────────────────────────────────────────────────
+
+  /** Load the NDJSON from the last Full Scan result into the Enrich input. */
+  function loadNdjsonFromLastScan() {
+    if (!exports) return;
+    // The full-scan NDJSON starts with a meta line; filter to finding lines only.
+    const lines = exports.ndjson.split("\n").filter((line) => {
+      try {
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        return typeof obj.url === "string" && typeof obj.check === "string" && typeof obj.severity === "string";
+      } catch {
+        return false;
+      }
+    });
+    setEnrichNdjson(lines.join("\n"));
+  }
+
+  async function runEnrich(e: FormEvent) {
+    e.preventDefault();
+    if (!enrichNdjson.trim()) {
+      setError("Paste findings NDJSON or load from last scan first.");
+      return;
+    }
+    setError(null);
+    setEnrichResult(null);
+    setEnrichSavedPath(null);
+    setEnrichLoading(true);
+    try {
+      const result = await invokeCommand<EnrichResponse>("run_enrich", {
+        request: {
+          ndjson: enrichNdjson.trim(),
+          concurrency: enrichConcurrency,
+          timeoutSecs: enrichTimeout,
+        },
+      });
+      setEnrichResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEnrichLoading(false);
+    }
+  }
+
+  /** Promote a single enriched host's representative URL into the Full Scan textarea
+   *  and switch the form to the Deep Active preset. */
+  function promoteEnrichHost(representativeUrl: string) {
+    const existing = parseTargetsText(targetInput);
+    const merged = dedupeTargets([...existing, representativeUrl]);
+    setTargetInput(merged.join("\n"));
+    applyPreset("deep");
+  }
+
+  /** Promote all hosts scoring at or above minScore into Full Scan + apply Deep preset. */
+  function promoteEnrichAboveScore(minScore: number) {
+    if (!enrichResult) return;
+    const qualifying = enrichResult.hosts
+      .filter((h) => h.score >= minScore)
+      .map((h) => h.representativeUrl);
+    if (qualifying.length === 0) {
+      setError(`No enriched hosts score ≥ ${minScore}. Lower the threshold.`);
+      return;
+    }
+    const existing = parseTargetsText(targetInput);
+    const merged = dedupeTargets([...existing, ...qualifying]);
+    setTargetInput(merged.join("\n"));
+    applyPreset("deep");
+  }
+
+  /** Save the enriched NDJSON to disk. */
+  async function saveEnrichedNdjson() {
+    if (!enrichResult) return;
+    setEnrichSavedPath(null);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const fileName = `apihunter-enriched-${ts}.ndjson`;
+    try {
+      const path = await saveExportFile(
+        fileName,
+        "application/x-ndjson",
+        enrichResult.enrichedNdjson,
+        `apihunter-enrich-${ts}`,
+      );
+      setEnrichSavedPath(path);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -1366,6 +1516,229 @@ export default function App() {
                 </summary>
                 <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
                   {triageResult.errors.map((err, idx) => (
+                    <p key={idx} style={{ fontSize: "12px", color: "#dc3545", margin: "2px 0" }}>{err}</p>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+      </CollapsiblePanel>
+
+      <CollapsiblePanel title="Enrich Mode" defaultOpen={false}>
+        <p style={{ marginBottom: "16px", color: "#666" }}>
+          Add threat-intel context (InternetDB + ipinfo.io + RDAP) to findings from a previous scan.
+          One probe per unique host. Promotes high-scoring hosts directly to Full Scan with the
+          Deep Active preset applied.
+        </p>
+
+        <form onSubmit={runEnrich} className="scan-form">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+            <label htmlFor="enrichNdjsonInput" style={{ margin: 0 }}>Findings NDJSON</label>
+            {exports && (
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0, padding: "4px 10px", fontSize: "12px" }}
+                onClick={loadNdjsonFromLastScan}
+              >
+                Load from Last Scan
+              </button>
+            )}
+          </div>
+          <textarea
+            id="enrichNdjsonInput"
+            rows={6}
+            required
+            value={enrichNdjson}
+            onChange={(e) => setEnrichNdjson(e.target.value)}
+            placeholder={'{"url":"https://api.example.com/v1/users","check":"cors/origin-reflected","title":"...","severity":"HIGH"}\n...'}
+          />
+          <p className="muted">
+            Paste findings NDJSON from a previous scan, or click <strong>Load from Last Scan</strong> after a Full Scan completes.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div>
+              <label htmlFor="enrichConcurrency">Concurrency</label>
+              <input
+                id="enrichConcurrency"
+                type="number"
+                min="1"
+                max="200"
+                value={enrichConcurrency}
+                onChange={(e) => setEnrichConcurrency(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label htmlFor="enrichTimeout">Timeout (seconds)</label>
+              <input
+                id="enrichTimeout"
+                type="number"
+                min="1"
+                max="60"
+                value={enrichTimeout}
+                onChange={(e) => setEnrichTimeout(Number(e.target.value))}
+              />
+            </div>
+          </div>
+
+          <button type="submit" className="btn" disabled={enrichLoading}>
+            {enrichLoading ? "Enriching…" : "Run Enrich"}
+          </button>
+        </form>
+
+        {enrichResult && (
+          <div style={{ marginTop: "24px" }}>
+            {/* ── Summary bar ───────────────────────────────────────────── */}
+            <div className="status-ok" style={{ marginBottom: "16px" }}>
+              <p>
+                <strong>{enrichResult.enrichedCount}</strong> of {enrichResult.totalFindings} findings enriched
+                across <strong>{enrichResult.uniqueHosts}</strong> unique hosts &nbsp;·&nbsp;
+                {(enrichResult.elapsedMs / 1000).toFixed(1)}s
+                {enrichResult.errors.length > 0 && (
+                  <span style={{ color: "#dc3545", marginLeft: "8px" }}>
+                    {enrichResult.errors.length} probe error(s)
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* ── Bulk promote + save controls ───────────────────────────── */}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
+              <label style={{ fontWeight: "bold", fontSize: "13px" }}>Promote hosts scoring ≥</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={enrichPromoteMinScore}
+                onChange={(e) => setEnrichPromoteMinScore(Number(e.target.value))}
+                style={{ width: "64px" }}
+              />
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0 }}
+                onClick={() => promoteEnrichAboveScore(enrichPromoteMinScore)}
+                title="Merge qualifying hosts into Full Scan and apply Deep Active preset"
+              >
+                → Deep Scan
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ margin: 0 }}
+                onClick={() => void saveEnrichedNdjson()}
+              >
+                Save Enriched NDJSON
+              </button>
+              {enrichSavedPath && (
+                <span style={{ fontSize: "12px", color: "#28a745" }}>Saved: {enrichSavedPath}</span>
+              )}
+            </div>
+
+            {/* ── Per-host result cards ──────────────────────────────────── */}
+            <div style={{ maxHeight: "680px", overflow: "auto" }}>
+              {enrichResult.hosts.map((host, idx) => {
+                const borderColor =
+                  host.severity === "CRITICAL" ? "#dc3545" :
+                  host.severity === "HIGH"     ? "#fd7e14" :
+                  host.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
+                const badgeBg =
+                  host.severity === "CRITICAL" ? "#dc3545" :
+                  host.severity === "HIGH"     ? "#fd7e14" :
+                  host.severity === "MEDIUM"   ? "#ffc107" : "#6c757d";
+                const badgeColor = host.severity === "MEDIUM" ? "#212529" : "white";
+
+                return (
+                  <article
+                    key={idx}
+                    className="result-card"
+                    style={{ marginBottom: "10px", borderLeft: `4px solid ${borderColor}` }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: "bold", fontSize: "15px", margin: "0 0 2px" }}>
+                          #{idx + 1} {host.host}
+                        </p>
+                        <p style={{ fontSize: "13px", color: "#666", margin: 0 }}>
+                          Score: <strong>{host.score}</strong>/100
+                          {host.asn && `  ·  ${host.asn}`}
+                          {host.country && ` (${host.country})`}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                        <span style={{
+                          background: badgeBg, color: badgeColor,
+                          padding: "3px 8px", borderRadius: "4px",
+                          fontSize: "11px", fontWeight: "bold", letterSpacing: "0.05em",
+                        }}>
+                          {host.severity}
+                        </span>
+                        {host.hasLikelyVulnerability && (
+                          <span style={{
+                            background: "#dc3545", color: "white",
+                            padding: "3px 8px", borderRadius: "4px",
+                            fontSize: "11px", fontWeight: "bold",
+                          }}>
+                            VULN
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          style={{ margin: 0, padding: "3px 10px", fontSize: "12px" }}
+                          onClick={() => promoteEnrichHost(host.representativeUrl)}
+                          title={`Promote ${host.representativeUrl} to Full Scan with Deep Active preset`}
+                        >
+                          → Deep Scan
+                        </button>
+                      </div>
+                    </div>
+
+                    {(host.ports.length > 0 || host.cveIds.length > 0 || host.domainAgeDays !== null) && (
+                      <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                        {host.ports.length > 0 && (
+                          <span><strong>Ports:</strong> {host.ports.join(", ")}</span>
+                        )}
+                        {host.cveIds.length > 0 && (
+                          <span style={{ color: "#dc3545" }}><strong>CVEs:</strong> {host.cveIds.join(", ")}</span>
+                        )}
+                        {host.domainAgeDays !== null && (
+                          <span><strong>Domain age:</strong> {host.domainAgeDays}d</span>
+                        )}
+                      </div>
+                    )}
+
+                    {host.signals.length > 0 && (
+                      <details style={{ marginTop: "6px" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "13px", color: "#555" }}>
+                          Signals ({host.signals.length})
+                        </summary>
+                        <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
+                          {host.signals.map((sig, sidx) => (
+                            <li key={sidx} style={{ fontSize: "12px", color: "#444" }}>{sig}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+
+                    <p style={{ fontSize: "11px", color: "#aaa", margin: "6px 0 0" }}>
+                      {host.representativeUrl}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+
+            {/* ── Probe errors ───────────────────────────────────────────── */}
+            {enrichResult.errors.length > 0 && (
+              <details style={{ marginTop: "12px" }}>
+                <summary style={{ cursor: "pointer", fontWeight: "bold", color: "#dc3545", fontSize: "13px" }}>
+                  Probe errors ({enrichResult.errors.length})
+                </summary>
+                <div style={{ marginTop: "6px", maxHeight: "180px", overflow: "auto" }}>
+                  {enrichResult.errors.map((err, idx) => (
                     <p key={idx} style={{ fontSize: "12px", color: "#dc3545", margin: "2px 0" }}>{err}</p>
                   ))}
                 </div>

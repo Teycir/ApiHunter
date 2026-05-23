@@ -10,6 +10,7 @@ use std::{
 
 use api_scanner::{
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
+    enrich::{enrich_findings, parse_findings_ndjson, EnrichConfig},
     http_client::HttpClient,
     reports::{
         self, CapturedErrorRecord, Finding, ReportConfig, ReportFormat, ReportSummary, Reporter,
@@ -311,6 +312,56 @@ struct LoadedScanResponse {
     summary: api_scanner::reports::ReportSummary,
     findings: Vec<Finding>,
     errors: Vec<CapturedErrorRecord>,
+}
+
+// ── Enrich types ───────────────────────────────────────────────────────────────
+
+/// Request to enrich findings from a previous scan with threat-intel context.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnrichRequest {
+    /// Raw NDJSON from a previous full scan (exports.ndjson).
+    ndjson: String,
+    /// Parallel probe tasks. Default: 50.
+    #[serde(default = "default_enrich_concurrency")]
+    concurrency: usize,
+    /// Per-probe timeout in seconds. Default: 5.
+    #[serde(default = "default_enrich_timeout")]
+    timeout_secs: u64,
+}
+
+fn default_enrich_concurrency() -> usize { 50 }
+fn default_enrich_timeout() -> u64 { 5 }
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EnrichHostResult {
+    host: String,
+    /// First finding URL origin (scheme+host+port) — used for promote-to-Full-Scan.
+    representative_url: String,
+    score: u8,
+    severity: String,
+    signals: Vec<String>,
+    ports: Vec<u16>,
+    cve_ids: Vec<String>,
+    asn: Option<String>,
+    country: Option<String>,
+    domain_age_days: Option<i64>,
+    has_likely_vulnerability: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnrichResponse {
+    /// Enriched NDJSON (each line = EnrichedFinding JSON).
+    enriched_ndjson: String,
+    /// Per-host threat-intel summary for the desktop table view.
+    hosts: Vec<EnrichHostResult>,
+    total_findings: usize,
+    unique_hosts: usize,
+    enriched_count: usize,
+    elapsed_ms: u64,
+    errors: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -1591,6 +1642,130 @@ fn default_export_folder_name() -> String {
     format!("apihunter-export-{}", Utc::now().format("%Y%m%d-%H%M%S"))
 }
 
+// ── Enrich helpers ────────────────────────────────────────────────────────────
+
+/// Return `scheme://host[:port]` for a URL — the canonical seed for deep scanning.
+fn extract_url_origin(url_str: &str) -> String {
+    if let Ok(u) = url::Url::parse(url_str) {
+        let scheme = u.scheme();
+        if let Some(host) = u.host_str() {
+            return match u.port() {
+                Some(p) if !matches!((scheme, p), ("https", 443) | ("http", 80)) => {
+                    format!("{scheme}://{host}:{p}")
+                }
+                _ => format!("{scheme}://{host}"),
+            };
+        }
+    }
+    format!("https://{url_str}")
+}
+
+// ── run_enrich Tauri command ──────────────────────────────────────────────────
+
+#[tauri::command]
+async fn run_enrich(request: EnrichRequest) -> Result<EnrichResponse, String> {
+    let findings = parse_findings_ndjson(&request.ndjson)
+        .map_err(|e| format!("Failed to parse findings NDJSON: {e}"))?;
+
+    let total_findings = findings.len();
+    if total_findings == 0 {
+        return Ok(EnrichResponse {
+            enriched_ndjson: String::new(),
+            hosts: Vec::new(),
+            total_findings: 0,
+            unique_hosts: 0,
+            enriched_count: 0,
+            elapsed_ms: 0,
+            errors: Vec::new(),
+        });
+    }
+
+    let config = EnrichConfig {
+        concurrency: request.concurrency,
+        timeout: std::time::Duration::from_secs(request.timeout_secs),
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        tokio::runtime::Handle::current()
+            .block_on(enrich_findings(findings, config))
+    })
+    .await
+    .map_err(|e| format!("Enrich task panicked: {e}"))?
+    .map_err(|e| format!("Enrichment failed: {e}"))?;
+
+    let enriched_count = result.enriched.iter().filter(|e| e.threat_intel.is_some()).count();
+
+    // Build per-host summary for the UI table.
+    // Track the representative URL (first finding origin per host) for promote flow.
+    let mut host_map: std::collections::HashMap<String, EnrichHostResult> =
+        std::collections::HashMap::new();
+
+    for e in &result.enriched {
+        if let Some(ti) = &e.threat_intel {
+            let host = url::Url::parse(&e.finding.url)
+                .ok()
+                .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+                .unwrap_or_else(|| e.finding.url.clone());
+
+            let origin = extract_url_origin(&e.finding.url);
+
+            if let Some(existing) = host_map.get_mut(&host) {
+                if ti.score > existing.score {
+                    let saved_url = existing.representative_url.clone();
+                    *existing = EnrichHostResult {
+                        host: host.clone(),
+                        representative_url: saved_url,
+                        score: ti.score,
+                        severity: ti.severity.to_string(),
+                        signals: ti.signals.clone(),
+                        ports: ti.ports.clone(),
+                        cve_ids: ti.cve_ids.clone(),
+                        asn: ti.asn.clone(),
+                        country: ti.country.clone(),
+                        domain_age_days: ti.domain_age_days,
+                        has_likely_vulnerability: ti.has_likely_vulnerability,
+                    };
+                }
+            } else {
+                host_map.insert(host.clone(), EnrichHostResult {
+                    host,
+                    representative_url: origin,
+                    score: ti.score,
+                    severity: ti.severity.to_string(),
+                    signals: ti.signals.clone(),
+                    ports: ti.ports.clone(),
+                    cve_ids: ti.cve_ids.clone(),
+                    asn: ti.asn.clone(),
+                    country: ti.country.clone(),
+                    domain_age_days: ti.domain_age_days,
+                    has_likely_vulnerability: ti.has_likely_vulnerability,
+                });
+            }
+        }
+    }
+
+    let mut hosts: Vec<EnrichHostResult> = host_map.into_values().collect();
+    hosts.sort_by(|a, b| b.score.cmp(&a.score));
+
+    // Serialise enriched findings to NDJSON.
+    let enriched_ndjson = result
+        .enriched
+        .iter()
+        .filter_map(|e| serde_json::to_string(e).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(EnrichResponse {
+        enriched_ndjson,
+        hosts,
+        total_findings,
+        unique_hosts: result.unique_hosts,
+        enriched_count,
+        elapsed_ms: result.elapsed_ms,
+        errors: result.triage_errors,
+    })
+}
+
 fn build_sarif(findings: &[Finding]) -> Result<String, String> {
     let mut rules_map: BTreeMap<String, SarifRule> = BTreeMap::new();
     let mut results = Vec::new();
@@ -1671,6 +1846,7 @@ pub fn run() {
             health_check,
             run_quick_scan,
             run_full_scan,
+            run_enrich,
             save_export,
             load_past_scan,
             run_triage

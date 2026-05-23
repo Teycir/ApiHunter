@@ -4,6 +4,7 @@
 // and external consumers can reference them.
 
 pub mod auth;
+pub mod enrich;
 pub mod auto_report;
 pub mod browser_persona;
 pub mod cli;

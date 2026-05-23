@@ -40,7 +40,7 @@ Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Securi
 
 Use cases: offense for red-team/API pentest discovery and exploit validation, and defense for CI/CD regression gating, continuous API hardening, and early misconfiguration detection.
 
-> **Scanning at scale?** See [Triage Mode](docs/triage.md) — rank thousands of targets by risk score in minutes using two lightweight probes per host (InternetDB + ipinfo.io), then deep-scan only what matters.
+> **Scanning at scale?** See [Triage Mode](docs/triage.md) — scan 5000 targets in 20 minutes with core security checks, then use [Enrich Mode](docs/enrich.md) to add threat intelligence context (ports, CVEs, ASN, domain age) to findings.
 
 ## Naming
 
@@ -672,6 +672,7 @@ Complete documentation is available in `docs/`. Start with:
 - [Security Policy](SECURITY.md)
 - [HOWTO](HOWTO.md)
 - [Triage Mode](docs/triage.md)
+- [Enrich Mode](docs/enrich.md)
 
 ## Roadmap
 

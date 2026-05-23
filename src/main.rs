@@ -25,8 +25,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use api_scanner::{
     auth, auto_report,
-    cli::{default_user_agents, load_triage_targets, load_urls, Cli, TriageCli, TriageFormat},
+    cli::{default_user_agents, load_triage_targets, load_urls, Cli, CliPreset, EnrichCli, EnrichFormat, TriageCli, TriageFormat},
     config::{Config, PolitenessConfig, ScannerToggles, WafEvasionConfig},
+    enrich::{enrich_findings, load_findings_ndjson, EnrichConfig},
     http_client::HttpClient,
     proxy::{parse_proxy_file, ProxyStrategy},
     reports::{self, ReportConfig, ReportFormat, ReportMeta, Reporter, Severity},
@@ -43,6 +44,25 @@ async fn main() {
     // We strip the "triage" token and re-parse against TriageCli so that
     // the existing full-scan Cli struct is completely unchanged.
     let raw_args: Vec<String> = std::env::args().collect();
+
+    // Intercept `apihunter enrich …`
+    if raw_args.get(1).map(|s| s.as_str()) == Some("enrich") {
+        let enrich_argv: Vec<String> = raw_args[0..1]
+            .iter()
+            .chain(raw_args[2..].iter())
+            .cloned()
+            .collect();
+        let enrich_cli = EnrichCli::parse_from(enrich_argv);
+        init_tracing(enrich_cli.quiet);
+        match run_enrich_cli(enrich_cli).await {
+            Ok(code) => process::exit(code),
+            Err(err) => {
+                error!("{err:#}");
+                process::exit(2);
+            }
+        }
+    }
+
     if raw_args.get(1).map(|s| s.as_str()) == Some("triage") {
         // Build a new argv without the "triage" token for TriageCli::parse_from.
         let triage_argv: Vec<String> = raw_args[0..1]
@@ -164,8 +184,23 @@ async fn run(cli: Cli) -> Result<i32> {
         },
     });
 
+    // ── Apply preset overrides (lower priority than explicit CLI flags) ───────
+    // Only override a field when it is still at its Clap default value,
+    // so that explicit flags always win.
+    let config = if let Some(preset) = cli.preset {
+        let mut c = (*config).clone();
+        apply_preset(&mut c, preset, &cli);
+        Arc::new(c)
+    } else {
+        config
+    };
+
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
-    let (filtered_urls, inaccessible_urls) = if !cli.no_filter {
+    // Presets may override no_filter behaviour before the filter step.
+    let effective_no_filter = cli.no_filter
+        || matches!(cli.preset, Some(CliPreset::Mass | CliPreset::Quick));
+
+    let (filtered_urls, inaccessible_urls) = if !effective_no_filter {
         info!(total = raw_urls.len(), "Filtering URL accessibility");
         let (accessible, inaccessible) =
             filter_accessible_urls(&raw_urls, cli.filter_timeout, config.as_ref()).await;
@@ -502,6 +537,193 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max.saturating_sub(1)])
     }
+}
+
+// ── Preset application ────────────────────────────────────────────────────────
+
+/// Apply a scan preset to a mutable Config, overriding only fields that are
+/// still at their Clap default values so that explicit flags always win.
+fn apply_preset(cfg: &mut Config, preset: CliPreset, cli: &Cli) {
+    // Clap default values (must match the default_value_t in cli.rs)
+    const DEFAULT_CONCURRENCY: usize = 20;
+    const DEFAULT_TIMEOUT_SECS: u64 = 8;
+    const DEFAULT_DELAY_MS: u64 = 150;
+
+    match preset {
+        CliPreset::Quick => {
+            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 50; }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 5; }
+            if cli.delay_ms == DEFAULT_DELAY_MS { cfg.politeness.delay_ms = 50; }
+            if !cli.no_discovery { cfg.no_discovery = true; }
+            // Passive only unless user explicitly passed --active-checks
+            if !cli.active_checks { cfg.active_checks = false; }
+        }
+        CliPreset::Mass => {
+            // Maximise throughput: high concurrency, short timeout, zero delay,
+            // no discovery, no filter (applied separately in run()), passive only.
+            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 100; }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 4; }
+            if cli.delay_ms == DEFAULT_DELAY_MS { cfg.politeness.delay_ms = 0; }
+            if !cli.no_discovery { cfg.no_discovery = true; }
+            if !cli.active_checks {
+                cfg.active_checks = false;
+                // Keep only fast passive scanners; disable active-check-only ones.
+                cfg.toggles.mass_assignment = false;
+                cfg.toggles.oauth_oidc = false;
+                cfg.toggles.rate_limit = false;
+                cfg.toggles.cve_templates = false;
+                cfg.toggles.websocket = false;
+            }
+        }
+        CliPreset::Balanced => {
+            // No changes — this is the default.
+        }
+        CliPreset::Deep => {
+            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 10; }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 20; }
+            // Enable active checks unless user explicitly disabled them (no `--no-*` equivalent
+            // for the top-level flag, so we only set when user didn't explicitly pass the flag).
+            if !cli.active_checks { cfg.active_checks = true; }
+        }
+    }
+
+    if matches!(preset, CliPreset::Quick | CliPreset::Mass) {
+        tracing::info!(
+            preset = ?preset,
+            concurrency = cfg.concurrency,
+            timeout_secs = cfg.politeness.timeout_secs,
+            delay_ms = cfg.politeness.delay_ms,
+            no_discovery = cfg.no_discovery,
+            "Preset applied"
+        );
+    }
+}
+
+// ── Enrich subcommand ─────────────────────────────────────────────────────────
+
+/// Extract `scheme://host[:non-default-port]` from a URL string.
+/// Used to build canonical deep-scan seed URLs from finding URLs.
+fn enrich_url_origin(url_str: &str) -> String {
+    if let Ok(u) = url::Url::parse(url_str) {
+        let scheme = u.scheme();
+        if let Some(host) = u.host_str() {
+            return match u.port() {
+                Some(p) if !matches!((scheme, p), ("https", 443) | ("http", 80)) => {
+                    format!("{scheme}://{host}:{p}")
+                }
+                _ => format!("{scheme}://{host}"),
+            };
+        }
+    }
+    format!("https://{url_str}")
+}
+
+async fn run_enrich_cli(cli: EnrichCli) -> Result<i32> {
+    let findings = load_findings_ndjson(&cli.findings)?;
+    if findings.is_empty() {
+        warn!("No findings found in {} — nothing to enrich.", cli.findings.display());
+        return Ok(0);
+    }
+
+    if !cli.quiet {
+        eprintln!(
+            "ApiHunter v{} | Enrich | Findings: {} | Concurrency: {}",
+            env!("CARGO_PKG_VERSION"),
+            findings.len(),
+            cli.concurrency,
+        );
+    }
+
+    let config = EnrichConfig {
+        concurrency: cli.concurrency,
+        timeout: std::time::Duration::from_secs(cli.timeout_secs),
+    };
+
+    let result = enrich_findings(findings, config)
+        .await
+        .context("Enrichment engine failed")?;
+
+    if !cli.quiet {
+        eprintln!(
+            "Enrich complete: {}/{} findings enriched across {} hosts in {:.1}s ({} probe errors)",
+            result.enriched.iter().filter(|e| e.threat_intel.is_some()).count(),
+            result.total_findings,
+            result.unique_hosts,
+            result.elapsed_ms as f64 / 1000.0,
+            result.triage_errors.len(),
+        );
+    }
+
+    // ── Format and write output ───────────────────────────────────────────────
+    let output_text = match cli.format {
+        EnrichFormat::Ndjson => result
+            .enriched
+            .iter()
+            .filter_map(|e| serde_json::to_string(e).ok())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        EnrichFormat::Json => serde_json::to_string_pretty(&result.enriched)
+            .context("Failed to serialise enriched findings to JSON")?,
+    };
+
+    if let Some(ref path) = cli.output {
+        std::fs::write(path, &output_text)
+            .with_context(|| format!("Failed to write enriched output to {}", path.display()))?;
+        if !cli.quiet {
+            eprintln!("Enriched output written to {}", path.display());
+        }
+    } else {
+        println!("{output_text}");
+    }
+
+    // ── Promote high-scoring hosts to a file for a subsequent deep scan ───────
+    if let Some(ref promote_path) = cli.promote_to {
+        let min_score = cli.promote_min_score;
+
+        let mut host_seen = std::collections::HashSet::new();
+        let mut promoted: Vec<String> = Vec::new();
+
+        for ef in &result.enriched {
+            if let Some(ref ti) = ef.threat_intel {
+                if ti.score >= min_score {
+                    let origin = enrich_url_origin(&ef.finding.url);
+                    let host_key = url::Url::parse(&ef.finding.url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+                        .unwrap_or_else(|| ef.finding.url.clone());
+                    if host_seen.insert(host_key) {
+                        promoted.push(origin);
+                    }
+                }
+            }
+        }
+
+        let content = promoted.join("\n");
+        std::fs::write(promote_path, &content).with_context(|| {
+            format!(
+                "Failed to write promoted targets to {}",
+                promote_path.display()
+            )
+        })?;
+
+        if !cli.quiet {
+            eprintln!(
+                "Promoted {}/{} host(s) scoring ≥{} → {}",
+                promoted.len(),
+                result.unique_hosts,
+                min_score,
+                promote_path.display()
+            );
+            if !promoted.is_empty() {
+                eprintln!(
+                    "Next step: apihunter --urls {} --preset deep --active-checks",
+                    promote_path.display()
+                );
+            }
+        }
+    }
+
+    Ok(0)
 }
 
 // ── Tracing initialisation ────────────────────────────────────────────────────
