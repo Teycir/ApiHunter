@@ -60,6 +60,15 @@ pub struct RawFinding {
     pub scanner: Option<String>,
 }
 
+/// Wrapper to detect meta lines vs finding lines.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum NdjsonLine {
+    Meta { r#type: String, #[serde(flatten)] _rest: serde_json::Value },
+    Finding(RawFinding),
+}
+
 // ── Output ────────────────────────────────────────────────────────────────────
 
 /// Original finding + threat-intel overlay.
@@ -114,7 +123,8 @@ pub struct EnrichResult {
 
 /// Load findings from a newline-delimited JSON file.
 ///
-/// Blank lines and lines starting with `#` are silently skipped.
+/// Blank lines, lines starting with `#`, and meta lines (`{"type":"meta",...}`)
+/// are silently skipped.
 pub fn load_findings_ndjson(path: &Path) -> Result<Vec<RawFinding>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Cannot open findings file: {}", path.display()))?;
@@ -127,15 +137,21 @@ pub fn load_findings_ndjson(path: &Path) -> Result<Vec<RawFinding>> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let f: RawFinding = serde_json::from_str(&line)
-            .with_context(|| format!("Invalid JSON on line {}: {line}", i + 1))?;
-        findings.push(f);
+        match serde_json::from_str::<NdjsonLine>(&line) {
+            Ok(NdjsonLine::Meta { .. }) => continue, // Skip meta lines
+            Ok(NdjsonLine::Finding(f)) => findings.push(f),
+            Err(e) => {
+                anyhow::bail!("Invalid JSON on line {}: {line}\nError: {e}", i + 1);
+            }
+        }
     }
 
     Ok(findings)
 }
 
 /// Parse findings from an in-memory NDJSON string (used by the desktop app).
+///
+/// Blank lines, lines starting with `#`, and meta lines are silently skipped.
 pub fn parse_findings_ndjson(ndjson: &str) -> Result<Vec<RawFinding>> {
     let mut findings = Vec::new();
     for (i, line) in ndjson.lines().enumerate() {
@@ -143,9 +159,13 @@ pub fn parse_findings_ndjson(ndjson: &str) -> Result<Vec<RawFinding>> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let f: RawFinding = serde_json::from_str(line)
-            .with_context(|| format!("Invalid JSON on line {}: {line}", i + 1))?;
-        findings.push(f);
+        match serde_json::from_str::<NdjsonLine>(line) {
+            Ok(NdjsonLine::Meta { .. }) => continue, // Skip meta lines
+            Ok(NdjsonLine::Finding(f)) => findings.push(f),
+            Err(e) => {
+                anyhow::bail!("Invalid JSON on line {}: {line}\nError: {e}", i + 1);
+            }
+        }
     }
     Ok(findings)
 }
@@ -260,4 +280,45 @@ fn host_probe_target(raw: &str) -> Option<String> {
         .next()?
         .trim();
     if bare.is_empty() { None } else { Some(bare.to_ascii_lowercase()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_findings_skips_meta_lines() {
+        let ndjson = r#"{"type":"meta","meta":{},"stream":true}
+{"url":"https://api.example.com/v1","check":"cors/wildcard","title":"CORS wildcard","severity":"HIGH","detail":"test","evidence":"test","scanner":"cors"}
+{"url":"https://api.example.com/v2","check":"csp/missing","title":"CSP missing","severity":"MEDIUM","detail":"test","evidence":"test","scanner":"csp"}
+"#;
+
+        let findings = parse_findings_ndjson(ndjson).expect("Should parse");
+        assert_eq!(findings.len(), 2, "Should have 2 findings, meta line skipped");
+        assert_eq!(findings[0].url, "https://api.example.com/v1");
+        assert_eq!(findings[1].url, "https://api.example.com/v2");
+    }
+
+    #[test]
+    fn test_parse_findings_handles_blank_lines_and_comments() {
+        let ndjson = r#"
+# This is a comment
+{"url":"https://api.example.com/v1","check":"cors/wildcard","title":"CORS wildcard","severity":"HIGH","detail":"test","evidence":"test","scanner":"cors"}
+
+{"url":"https://api.example.com/v2","check":"csp/missing","title":"CSP missing","severity":"MEDIUM","detail":"test","evidence":"test","scanner":"csp"}
+"#;
+
+        let findings = parse_findings_ndjson(ndjson).expect("Should parse");
+        assert_eq!(findings.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_findings_rejects_invalid_json() {
+        let ndjson = r#"{"url":"https://api.example.com/v1","check":"cors/wildcard"
+not valid json
+"#;
+
+        let result = parse_findings_ndjson(ndjson);
+        assert!(result.is_err(), "Should reject invalid JSON");
+    }
 }

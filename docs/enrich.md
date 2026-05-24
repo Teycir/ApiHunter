@@ -139,6 +139,9 @@ cutoff. Clicking it merges the selected targets into the Full Scan textarea
 # Enrich a findings file produced by a previous scan
 apihunter enrich --findings findings.ndjson --output enriched.ndjson
 
+# Meta lines ({"type":"meta",...}) are automatically skipped
+# No pre-filtering needed — enrich handles full NDJSON exports directly
+
 # Use a higher concurrency for large findings files
 apihunter enrich --findings findings.ndjson --concurrency 100 --output enriched.ndjson
 
