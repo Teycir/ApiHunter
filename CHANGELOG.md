@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-29
+
+### Added
+- **Scan Persistence (Last-Scan Store)**: Desktop app now persists scan results across sessions
+  - Automatic save to Tauri app-data directory (`~/.local/share/com.apihunter.desktop/last-scan.json` on Linux)
+  - Persists summary, NDJSON, SARIF, Insomnia collection, runner data, target summaries, and discovery ranking
+  - Results panel auto-hydrates on launch with restored session badge showing timestamp
+  - New Tauri commands: `persist_last_scan` and `load_persisted_scan`
+  - Badge clears immediately when new scan starts
+- **Scan Results Analytics Dashboard**: Comprehensive analytics layer for deeper insights
+  - Severity heatmaps with visual breakdown by check type
+  - "Worst target" identification based on weighted severity scoring
+  - Scan efficiency and error rate calculations
+  - Scanner coverage analysis and top vulnerable path detection
+  - Severity breakdown tables with chip-based visualization
+  - Meta-data cards for high-level security metrics
+- **Glass Morphism Design System**: Premium "Glass UI" design language
+  - Dark-themed, high-fidelity aesthetic with semi-transparent backgrounds
+  - Custom typography: Syne and JetBrains Mono via Google Fonts
+  - Deep blue and electric cyan color palette
+  - Sophisticated border/glow effects and radial gradient backgrounds
+  - Updated design tokens for shadows, radii, and severity-based color scales
+
+### Changed
+- Removed "Balanced" preset label from desktop UI
+
+### Fixed
+- Removed stale component stubs (`LiveProgress.tsx`, `LoadedScan.tsx`) that caused TypeScript build failures with broken imports
+
+## [0.6.0] - 2026-04-28
+
 ### Added
 - **Scan persistence (last-scan store)**: Closing and reopening the desktop app no longer wipes results. After every successful scan the summary and all export artefacts (NDJSON, SARIF, Insomnia collection, runner data, target summaries, discovery ranking) are written to the Tauri app-data directory (`~/.local/share/com.apihunter.desktop/last-scan.json` on Linux). On the next launch the Results panel is automatically hydrated with the previous scan — the panel title shows `Results · ⟳ restored from last session (<timestamp>)` so it is always clear the data is historical. Starting a new scan clears the badge instantly. Two new Tauri backend commands: `persist_last_scan` and `load_persisted_scan`.
 
@@ -237,7 +268,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI via `clap` with `--min-severity`, `--concurrency`, `--output-path`
 - WAF evasion headers and random UA pool
 
-[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.4.0

@@ -1,6 +1,6 @@
 [package]
 name = "apihunter-desktop"
-version = "0.6.0"
+version = "0.7.0"
 description = "ApiHunter desktop shell"
 authors = ["ApiHunter contributors"]
 edition = "2021"
