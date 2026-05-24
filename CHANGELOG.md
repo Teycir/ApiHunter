@@ -5,7 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
 
+## [Unreleased]
 
+### Added
+- **Scan persistence (last-scan store)**: Closing and reopening the desktop app no longer wipes results. After every successful scan the summary and all export artefacts (NDJSON, SARIF, Insomnia collection, runner data, target summaries, discovery ranking) are written to the Tauri app-data directory (`~/.local/share/com.apihunter.desktop/last-scan.json` on Linux). On the next launch the Results panel is automatically hydrated with the previous scan — the panel title shows `Results · ⟳ restored from last session (<timestamp>)` so it is always clear the data is historical. Starting a new scan clears the badge instantly. Two new Tauri backend commands: `persist_last_scan` and `load_persisted_scan`.
+
+### Fixed
+- Removed two stale component stub files (`src/components/LiveProgress.tsx`, `src/components/LoadedScan.tsx`) that were committed with broken imports (`../utils`, `../hooks/useScanResults`) and caused TypeScript build failures. Their content is still rendered inline in `App.tsx` and will be extracted properly as part of the App.tsx split (Task 9).
 
 
 ## [0.6.0] - 2026-04-28

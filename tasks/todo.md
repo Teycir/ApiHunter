@@ -1,3 +1,45 @@
+# Task: Persist Last Scan to Tauri Store (Phase 61 / Roadmap Task 15)
+
+## Plan
+- [x] Add `PersistedScan`, `PersistedExports`, `PersistedTargetMeta` structs to `apps/desktop/src-tauri/src/main.rs` with full `Serialize`/`Deserialize`.
+- [x] Derive `Deserialize` on `TopCheck`, `ScanSummary`, `ScanExports`, `TargetJsonExport`, `TargetDiscoverySummary`, `TargetDiscoveryRank` (required for `persist_last_scan` Tauri command argument deserialization).
+- [x] Add `persist_last_scan` Tauri command — writes `last-scan.json` to `app.path().app_data_dir()`.
+- [x] Add `load_persisted_scan` Tauri command — reads `last-scan.json`, returns `Option<PersistedScan>`.
+- [x] Register both commands in `tauri::generate_handler![]`.
+- [x] Add `PersistedScan` / `PersistedExports` / `PersistedTargetMeta` TypeScript types to `App.tsx`.
+- [x] Add `restoredFromSession: boolean` and `sessionRestoredAt: string | null` state.
+- [x] On mount `useEffect`: call `load_persisted_scan`, hydrate `summary`, `exports`, `exportPrefix`, set `restoredFromSession = true`.
+- [x] In `runFullScan` try block: fire `persist_last_scan` (fire-and-forget) immediately after `setExportPrefix`.
+- [x] In `runFullScan` setup block: clear `restoredFromSession` and `sessionRestoredAt` when new scan starts.
+- [x] Results `CollapsiblePanel` title shows `Results · ⟳ restored from last session (<timestamp>)` when `restoredFromSession` is true.
+- [x] Remove broken stale stubs `src/components/LiveProgress.tsx` and `src/components/LoadedScan.tsx` (broken imports, TypeScript build failures).
+- [x] Update `CHANGELOG.md` Unreleased section.
+- [x] Mark task done in `Roadmap.md`.
+- [x] `cargo check` — ✅
+- [x] `npm run build` (frontend) — ✅
+- [x] `npm run tauri build` (full production build) — ✅
+
+## Review
+- Backend (`apps/desktop/src-tauri/src/main.rs`):
+  - `persist_last_scan`: resolves `app_data_dir()`, creates it if missing, serializes `PersistedScan` to JSON, writes `last-scan.json`. `PersistedExports` omits `per_target_json.prettyJson` bodies (too large) — stores only lightweight `PersistedTargetMeta` (target + fileName). All other export strings (ndjson, sarif, insomnia, runner-data, summary JSON, ranking JSON) are fully persisted.
+  - `load_persisted_scan`: reads and deserializes `last-scan.json`, returns `None` if file absent, propagates a readable error message if corrupt.
+  - Store location (Linux): `~/.local/share/com.apihunter.desktop/last-scan.json`.
+  - No new Cargo dependencies — `tauri::Manager::path()` from the existing `core:default` capability is sufficient.
+- Frontend (`apps/desktop/src/App.tsx`):
+  - Session restore runs once on mount; failure is silently caught so a missing or corrupt store never blocks the UI.
+  - Restored `perTargetJson` stubs have `prettyJson: ""` — per-target JSON export buttons are visible but the content is empty (by design; user must re-run or re-save from NDJSON). All other exports (NDJSON, SARIF, Insomnia, runner data, summaries, ranking) are fully restored and saveable.
+  - `restoredFromSession` flag is cleared the moment a new scan starts — the badge disappears immediately, before results arrive.
+  - Results panel title uses native `Date.toLocaleString()` for the timestamp, so it respects the user's locale/timezone.
+- Stale stub cleanup:
+  - `LiveProgress.tsx` and `LoadedScan.tsx` in `src/components/` were partial extractions from a previous session that imported `../utils` and `../hooks/useScanResults` — both non-existent modules. They were never imported by `App.tsx` but broke `tsc`. Removed; content remains in `App.tsx` and will be properly extracted in Task 9.
+- Validation:
+  - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` ✅
+  - `npm run build` (frontend TypeScript + Vite) ✅
+  - `npm run tauri build` (full release binary) ✅
+  - Built artifact: `/home/teycir/Repos/ApiHunter/apps/desktop/src-tauri/target/release/apihunter-desktop`
+
+---
+
 # Task: Finish Enrichment System (Phase 60)
 
 ## Plan

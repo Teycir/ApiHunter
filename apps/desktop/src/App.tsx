@@ -1,4 +1,12 @@
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -151,6 +159,31 @@ type LoadedScanResponse = {
   errors: unknown[];
 };
 
+type PersistedTargetMeta = {
+  target: string;
+  fileName: string;
+};
+
+type PersistedExports = {
+  ndjson: string;
+  sarif: string;
+  prettyJson: string;
+  insomniaCollectionJson: string;
+  insomniaRunnerDataJson: string;
+  targetSummaryJson: string;
+  discoveryRankingJson: string;
+  perTargetMeta: PersistedTargetMeta[];
+  targetSummaries: TargetDiscoverySummary[];
+  discoveryRanking: TargetDiscoveryRank[];
+};
+
+type PersistedScan = {
+  scanId: number;
+  persistedAt: string;
+  summary: ScanSummary;
+  exports: PersistedExports;
+};
+
 type EnrichHostResult = {
   host: string;
   /** Origin URL (scheme+host+port) used for promote-to-deep-scan. */
@@ -261,14 +294,26 @@ const TOGGLE_FIELDS: Array<{
   { key: "websocket", label: "WebSocket", hint: "Upgrade/origin and auth boundary checks." },
 ];
 
-const MAX_CSV_FILE_BITS = 5 * 1024;
-const MAX_CSV_FILE_BYTES = Math.floor(MAX_CSV_FILE_BITS / 8);
+const MAX_CSV_FILE_BYTES = 5 * 1024; // 5 KiB hard limit on imported CSV files
 const MAX_TARGET_INPUT_CHARS = 32_000;
 const TEXT_ENCODER = new TextEncoder();
 const TARGET_SUMMARY_FILENAME = "target-discovery-summary.json";
 const TARGET_RANKING_FILENAME = "target-discovery-ranking.json";
 const INSOMNIA_COLLECTION_SUFFIX = "postman_collection.json";
 const INSOMNIA_RUNNER_DATA_SUFFIX = "insomnia_runner_data.json";
+
+type ExportKey = "ndjson" | "sarif" | "insomnia" | "insomniaRunnerData";
+const EXPORT_MAP: Record<ExportKey, {
+  format: "ndjson" | "sarif" | "insomnia" | "insomniaRunnerData";
+  mimeType: string;
+  getContent: (e: ScanExports) => string;
+}> = {
+  ndjson:            { format: "ndjson",            mimeType: "application/x-ndjson", getContent: (e) => e.ndjson },
+  sarif:             { format: "sarif",              mimeType: "application/json",     getContent: (e) => e.sarif },
+  insomnia:          { format: "insomnia",           mimeType: "application/json",     getContent: (e) => e.insomniaCollectionJson },
+  insomniaRunnerData:{ format: "insomniaRunnerData", mimeType: "application/json",     getContent: (e) => e.insomniaRunnerDataJson },
+};
+
 const RUNTIME_LIMIT_RULES = {
   concurrency: { min: 1, max: 512 },
   timeoutSecs: { min: 1, max: 600 },
@@ -337,12 +382,15 @@ export default function App() {
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [exports, setExports] = useState<ScanExports | null>(null);
   const [savedPaths, setSavedPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const logViewRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
   const [totalUrls, setTotalUrls] = useState(0);
   const [completedUrls, setCompletedUrls] = useState(0);
   const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
@@ -351,6 +399,8 @@ export default function App() {
   const [savingAll, setSavingAll] = useState(false);
   const [loadedScan, setLoadedScan] = useState<LoadedScanResponse | null>(null);
   const [loadScanPath, setLoadScanPath] = useState("");
+  const [restoredFromSession, setRestoredFromSession] = useState(false);
+  const [sessionRestoredAt, setSessionRestoredAt] = useState<string | null>(null);
   
   // Enrich state
   const [enrichLoading, setEnrichLoading] = useState(false);
@@ -444,6 +494,51 @@ export default function App() {
 
     void fetchHealth();
   }, [tauriRuntimeAvailable]);
+
+  // On mount, restore the last scan from the Tauri app-data store.
+  useEffect(() => {
+    if (!tauriRuntimeAvailable) return;
+
+    invokeCommand<PersistedScan | null>("load_persisted_scan")
+      .then((persisted) => {
+        if (!persisted) return;
+        // Reconstruct a ScanExports-compatible shape from persisted data.
+        // per_target_json full bodies are not stored; we reconstruct stubs.
+        const restoredExports: ScanExports = {
+          prettyJson: persisted.exports.prettyJson,
+          ndjson: persisted.exports.ndjson,
+          sarif: persisted.exports.sarif,
+          insomniaCollectionJson: persisted.exports.insomniaCollectionJson,
+          insomniaRunnerDataJson: persisted.exports.insomniaRunnerDataJson,
+          targetSummaryJson: persisted.exports.targetSummaryJson,
+          discoveryRankingJson: persisted.exports.discoveryRankingJson,
+          perTargetJson: persisted.exports.perTargetMeta.map((m) => ({
+            target: m.target,
+            fileName: m.fileName,
+            prettyJson: "", // not persisted — user must re-save from the NDJSON
+          })),
+          targetSummaries: persisted.exports.targetSummaries,
+          discoveryRanking: persisted.exports.discoveryRanking,
+        };
+        setSummary(persisted.summary);
+        setExports(restoredExports);
+        setExportPrefix(
+          `scan-${persisted.scanId}-restored`,
+        );
+        setRestoredFromSession(true);
+        setSessionRestoredAt(persisted.persistedAt);
+      })
+      .catch(() => {
+        // Store missing or corrupt — silently ignore; it will be overwritten on next scan.
+      });
+  }, [tauriRuntimeAvailable]);
+
+  // Auto-scroll log view to bottom when new lines arrive, unless user scrolled up.
+  useEffect(() => {
+    const el = logViewRef.current;
+    if (!el || userScrolledRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logs]);
 
   const progressPct = useMemo(() => {
     if (totalUrls <= 0) return 0;
@@ -635,12 +730,15 @@ export default function App() {
     setLoading(true);
     setError(null);
     setLogs([]);
+    userScrolledRef.current = false; // reset so new scan auto-scrolls from top
     setSummary(null);
     setExports(null);
     setSavedPaths([]);
     setTotalUrls(0);
     setCompletedUrls(0);
     setExportPrefix(null);
+    setRestoredFromSession(false);
+    setSessionRestoredAt(null);
     setTargetProgress(
       targetUrls.map((url) => ({
         url,
@@ -689,7 +787,14 @@ export default function App() {
       setExportPrefix(
         buildExportPrefix(result.scanId, targetUrls.length, startedAt),
       );
-      // Auto-populate Enrich panel with finding lines from this scan
+      // Persist last scan to Tauri app-data store (fire-and-forget; failure is non-fatal).
+      void invokeCommand("persist_last_scan", {
+        scanId: result.scanId,
+        summary: result.summary,
+        exports: result.exports,
+      }).catch(() => { /* silently ignore persistence errors */ });
+      // Auto-populate Enrich panel with finding lines from this scan.
+      // If the user already has custom NDJSON loaded, ask before overwriting.
       const findingLines = result.exports.ndjson.split("\n").filter((line) => {
         try {
           const obj = JSON.parse(line) as Record<string, unknown>;
@@ -698,13 +803,32 @@ export default function App() {
           return false;
         }
       });
-      setEnrichNdjson(findingLines.join("\n"));
-      setEnrichResult(null);
-      setEnrichSavedPath(null);
+      const newNdjson = findingLines.join("\n");
+      if (
+        enrichNdjson.trim().length === 0 ||
+        window.confirm(
+          "A scan just finished. Replace the current findings in the Enrich panel with results from this scan?"
+        )
+      ) {
+        setEnrichNdjson(newNdjson);
+        setEnrichResult(null);
+        setEnrichSavedPath(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      setCancelling(false);
+    }
+  }
+
+  async function cancelScan() {
+    if (!loading || cancelling) return;
+    setCancelling(true);
+    try {
+      await invokeCommand("cancel_scan");
+    } catch {
+      // Backend may already be done; swallow the error and let finally clean up.
     }
   }
 
@@ -716,7 +840,7 @@ export default function App() {
     setCsvImportError(null);
     if (file.size > MAX_CSV_FILE_BYTES) {
       setCsvImportError(
-        `CSV file is too large. Maximum supported size is ${MAX_CSV_FILE_BITS.toLocaleString()} bits (${MAX_CSV_FILE_BYTES.toLocaleString()} bytes).`,
+        `CSV file is too large. Maximum supported size is ${MAX_CSV_FILE_BYTES.toLocaleString()} bytes (5 KiB).`,
       );
       e.target.value = "";
       return;
@@ -818,21 +942,24 @@ export default function App() {
       return;
     }
 
-    setActiveChecks(true);
-    setDryRun(false);
-    setResponseDiffDeep(true);
-    setNoDiscovery(false);
-    setNoFilter(false);
-    setFilterTimeout(4);
-    setMaxEndpoints(0);
-    setConcurrency(6);
-    setTimeoutSecs(20);
-    setRetries(2);
-    setDelayMs(100);
-    setWafEvasion(true);
-    setPerHostClients(true);
-    setAdaptiveConcurrency(true);
-    setToggles(allScanners);
+    // deep — explicit block so future insertions cannot silently break preset logic
+    if (mode === "deep") {
+      setActiveChecks(true);
+      setDryRun(false);
+      setResponseDiffDeep(true);
+      setNoDiscovery(false);
+      setNoFilter(false);
+      setFilterTimeout(4);
+      setMaxEndpoints(0);
+      setConcurrency(6);
+      setTimeoutSecs(20);
+      setRetries(2);
+      setDelayMs(100);
+      setWafEvasion(true);
+      setPerHostClients(true);
+      setAdaptiveConcurrency(true);
+      setToggles(allScanners);
+    }
   }
 
   function downloadText(filename: string, mimeType: string, content: string) {
@@ -903,7 +1030,7 @@ export default function App() {
   }
 
   async function saveSingleExport(
-    key: "json" | "ndjson" | "sarif" | "insomnia" | "insomniaRunnerData",
+    key: "json" | ExportKey,
   ): Promise<void> {
     setError(null);
     setSavedPaths([]);
@@ -924,26 +1051,10 @@ export default function App() {
         return;
       }
 
-      const format =
-        key === "ndjson"
-          ? "ndjson"
-          : key === "sarif"
-            ? "sarif"
-            : key === "insomnia"
-              ? "insomnia"
-              : "insomniaRunnerData";
-      const fileName = getExportFilename(exportPrefix, format);
-      const content =
-        key === "ndjson"
-          ? exports.ndjson
-          : key === "sarif"
-            ? exports.sarif
-            : key === "insomnia"
-              ? exports.insomniaCollectionJson
-              : exports.insomniaRunnerDataJson;
-      const mimeType =
-        key === "ndjson" ? "application/x-ndjson" : "application/json";
-      const path = await saveExportFile(fileName, mimeType, content, folderName);
+      const spec = EXPORT_MAP[key];
+      const fileName = getExportFilename(exportPrefix, spec.format);
+      const content = spec.getContent(exports);
+      const path = await saveExportFile(fileName, spec.mimeType, content, folderName);
       setSavedPaths([path]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1211,7 +1322,7 @@ export default function App() {
               <h3>Loaded Scan Summary</h3>
               <p><strong>Path:</strong> {loadedScan.path}</p>
               <p><strong>Scanner:</strong> {loadedScan.meta.scannerVer}</p>
-              <p><strong>Elapsed:</strong> {(loadedScan.meta.elapsedMs / 1000).toFixed(2)}s</p>
+              <p><strong>Elapsed:</strong> {formatElapsedMs(loadedScan.meta.elapsedMs)}</p>
               <p><strong>Scanned:</strong> {loadedScan.meta.scanned} URLs</p>
               
               <h4>Findings Overview</h4>
@@ -1229,36 +1340,35 @@ export default function App() {
 
               {(loadedScan.summary.critical > 0 || loadedScan.summary.high > 0) && (
                 <>
-                  <h4>Critical & High Severity Findings</h4>
-                  <div className="log-view" style={{ maxHeight: "400px", overflow: "auto" }}>
+                  <h4>Critical &amp; High Severity Findings</h4>
+                  <div className="per-target-grid" style={{ maxHeight: "480px", overflowY: "auto", marginTop: "8px" }}>
                     {loadedScan.findings
                       .filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH")
                       .map((finding, idx) => (
                         <article
                           key={idx}
-                          className="result-card"
-                          style={{
-                            marginBottom: "12px",
-                            borderLeft: finding.severity === "CRITICAL" ? "4px solid var(--color-critical)" : "4px solid var(--color-high)",
-                          }}
+                          className={`target-result-card ${finding.severity === "CRITICAL" ? "has-critical" : "has-high"}`}
                         >
-                          <p style={{ fontWeight: "bold", color: finding.severity === "CRITICAL" ? "var(--color-critical)" : "var(--color-high)" }}>
-                            [{finding.severity}] {finding.title}
+                          <span className={`sev-chip ${finding.severity === "CRITICAL" ? "critical" : "high"}`} style={{ marginBottom: "6px", display: "inline-block" }}>
+                            {finding.severity}
+                          </span>
+                          <p style={{ fontWeight: 700, margin: "0 0 4px", fontSize: "0.9rem" }}>{finding.title}</p>
+                          <p className="target-url-label" title={finding.url}>{finding.url}</p>
+                          <p style={{ margin: "2px 0", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                            <strong>Check:</strong> {finding.check} &nbsp;·&nbsp; <strong>Scanner:</strong> {finding.scanner}
                           </p>
-                          <p><strong>URL:</strong> {finding.url}</p>
-                          <p><strong>Check:</strong> {finding.check}</p>
-                          <p><strong>Scanner:</strong> {finding.scanner}</p>
-                          <p><strong>Detail:</strong> {finding.detail}</p>
+                          <p style={{ margin: "4px 0 0", fontSize: "0.83rem", color: "var(--text-mid)" }}>{finding.detail}</p>
                           {finding.evidence && (
                             <details style={{ marginTop: "8px" }}>
-                              <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Evidence</summary>
-                              <pre style={{ 
-                                background: "var(--color-surface-alt)", 
-                                padding: "8px", 
+                              <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.8rem" }}>Evidence</summary>
+                              <pre style={{
+                                background: "var(--bg-surface)",
+                                padding: "8px",
                                 borderRadius: "4px",
                                 overflow: "auto",
                                 maxHeight: "200px",
-                                fontSize: "12px"
+                                fontSize: "0.72rem",
+                                marginTop: "6px",
                               }}>{finding.evidence}</pre>
                             </details>
                           )}
@@ -1333,7 +1443,7 @@ export default function App() {
             <label className="csv-import">
               Load CSV
               <span className="csv-limit-label">
-                Max upload: {MAX_CSV_FILE_BITS.toLocaleString()} bits
+                Max upload: {MAX_CSV_FILE_BYTES.toLocaleString()} bytes (5 KiB)
               </span>
               <input
                 type="file"
@@ -1360,7 +1470,7 @@ export default function App() {
             <p>
               CSV format: values in any column are accepted. Header names like{" "}
               <code>url</code>, <code>target</code>, <code>endpoint</code> are
-              ignored automatically. Max CSV size: <code>5,120 bits (640 bytes)</code>.
+              ignored automatically. Max CSV size: <code>5 KiB (5,120 bytes)</code>.
             </p>
           </div>
           <div className="preset-row">
@@ -1752,13 +1862,25 @@ export default function App() {
             </div>
           </details>
 
-          <button type="submit" className="btn" disabled={loading}>
-            {loading
-              ? `Scanning${activePreset ? ` (${PRESET_LABELS[activePreset]})` : ""}\u2026`
-              : activePreset
-              ? `Run Full Scan \u2014 ${PRESET_LABELS[activePreset]}`
-              : "Run Full Scan"}
-          </button>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <button type="submit" className="btn" disabled={loading}>
+              {loading
+                ? `Scanning${activePreset ? ` (${PRESET_LABELS[activePreset]})` : ""}\u2026`
+                : activePreset
+                ? `Run Full Scan \u2014 ${PRESET_LABELS[activePreset]}`
+                : "Run Full Scan"}
+            </button>
+            {loading && (
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={cancelling}
+                onClick={() => void cancelScan()}
+              >
+                {cancelling ? "Cancelling…" : "Cancel"}
+              </button>
+            )}
+          </div>
         </form>
 
         {error && <p className="status-error">{error}</p>}
@@ -1801,7 +1923,16 @@ export default function App() {
             </div>
           </div>
         )}
-        <div className="log-view">
+        <div
+          className="log-view"
+          ref={logViewRef}
+          onScroll={() => {
+            const el = logViewRef.current;
+            if (!el) return;
+            // If user has scrolled more than 40px from the bottom, stop auto-scrolling.
+            userScrolledRef.current = el.scrollHeight - el.scrollTop - el.clientHeight > 40;
+          }}
+        >
           {logs.length === 0 ? (
             <p className="muted">No events yet.</p>
           ) : (
@@ -1811,38 +1942,18 @@ export default function App() {
       </CollapsiblePanel>
 
       {summary && (
-        <CollapsiblePanel title="Results" defaultOpen>
+        <CollapsiblePanel
+          title={
+            restoredFromSession
+              ? `Results · ⟳ restored from last session${sessionRestoredAt ? ` (${new Date(sessionRestoredAt).toLocaleString()})` : ""}`
+              : "Results"
+          }
+          defaultOpen
+        >
+          <ResultsErrorBoundary>
 
           {/* ── 1. Severity heatmap ───────────────────────────────────── */}
-          {summary.findingsTotal > 0 && (() => {
-            const total = summary.critical + summary.high + summary.medium + summary.low + summary.info;
-            const pct = (n: number) => total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0%";
-            return (
-              <div className="heatmap-wrap">
-                <div className="heatmap-bar">
-                  {summary.critical > 0 && <div className="heatmap-seg seg-critical" style={{ width: pct(summary.critical) }} title={`Critical: ${summary.critical}`} />}
-                  {summary.high     > 0 && <div className="heatmap-seg seg-high"     style={{ width: pct(summary.high) }}     title={`High: ${summary.high}`} />}
-                  {summary.medium   > 0 && <div className="heatmap-seg seg-medium"   style={{ width: pct(summary.medium) }}   title={`Medium: ${summary.medium}`} />}
-                  {summary.low      > 0 && <div className="heatmap-seg seg-low"      style={{ width: pct(summary.low) }}      title={`Low: ${summary.low}`} />}
-                  {summary.info     > 0 && <div className="heatmap-seg seg-info"     style={{ width: pct(summary.info) }}     title={`Info: ${summary.info}`} />}
-                </div>
-                <div className="heatmap-legend">
-                  {[
-                    { label: "Critical", val: summary.critical, cls: "seg-critical" },
-                    { label: "High",     val: summary.high,     cls: "seg-high" },
-                    { label: "Medium",   val: summary.medium,   cls: "seg-medium" },
-                    { label: "Low",      val: summary.low,      cls: "seg-low" },
-                    { label: "Info",     val: summary.info,     cls: "seg-info" },
-                  ].filter((s) => s.val > 0).map((s) => (
-                    <span key={s.label} className="heatmap-legend-item">
-                      <span className={`heatmap-dot ${s.cls}`} />
-                      {s.label} <strong>{s.val}</strong> ({pct(s.val)})
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          <SeverityHeatmap summary={summary} />
 
           {/* ── 2. Worst target + 3. Error rate flag + 4. Efficiency ─── */}
           <div className="result-meta-row">
@@ -1875,7 +1986,7 @@ export default function App() {
               <p>Target: {summary.target}</p>
               <p>Scanned: {summary.scanned}</p>
               <p>Skipped: {summary.skipped}</p>
-              <p>Elapsed: {summary.elapsedMs} ms</p>
+              <p>Elapsed: {formatElapsedMs(summary.elapsedMs)}</p>
               <p>Errors: {summary.errors}</p>
             </article>
 
@@ -2022,7 +2133,7 @@ export default function App() {
             {/* ── 9. Check-to-severity breakdown ─────────────────────── */}
             {checkSeverityBreakdown.length > 0 && (
               <article className="result-card">
-                <h3>Check severity breakdown <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--color-text-muted)" }}>top 5</span></h3>
+                <h3>Check severity breakdown <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--text-muted)" }}>top 5</span></h3>
                 <div className="sev-breakdown-table">
                   {checkSeverityBreakdown.map((row) => (
                     <div key={row.check} className="sev-breakdown-row">
@@ -2043,7 +2154,7 @@ export default function App() {
             {/* ── 10. Repeat offender checks ─────────────────────────── */}
             {repeatOffenders.length > 0 && (
               <article className="result-card">
-                <h3>Repeat offenders <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--color-text-muted)" }}>by distinct hosts</span></h3>
+                <h3>Repeat offenders <span style={{ fontWeight: 400, fontSize: "0.78rem", color: "var(--text-muted)" }}>by distinct hosts</span></h3>
                 <ul className="check-list">
                   {repeatOffenders.map(({ check, hostCount }) => (
                     <li key={check} className="check-item">
@@ -2065,7 +2176,7 @@ export default function App() {
                     {exports.targetSummaries.map((entry) => (
                       <li key={entry.target} className="check-item">
                         <span className="check-name" title={entry.target}>{entry.target}</span>
-                        <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", flexShrink: 0 }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", flexShrink: 0 }}>
                           C:{entry.critical} H:{entry.high} M:{entry.medium} L:{entry.low}
                         </span>
                       </li>
@@ -2153,6 +2264,7 @@ export default function App() {
               </ul>
             </div>
           )}
+          </ResultsErrorBoundary>
         </CollapsiblePanel>
       )}
 
@@ -2236,7 +2348,7 @@ export default function App() {
               <p>
                 <strong>{enrichResult.enrichedCount}</strong> of {enrichResult.totalFindings} findings enriched
                 across <strong>{enrichResult.uniqueHosts}</strong> unique hosts &nbsp;·&nbsp;
-                {(enrichResult.elapsedMs / 1000).toFixed(1)}s
+                {formatElapsedMs(enrichResult.elapsedMs)}
                 {enrichResult.errors.length > 0 && (
                   <span style={{ color: "var(--color-critical)", marginLeft: "8px" }}>
                     {enrichResult.errors.length} probe error(s)
@@ -2419,6 +2531,72 @@ function CollapsiblePanel({
   );
 }
 
+class ResultsErrorBoundary extends React.Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  override render() {
+    if (this.state.error) {
+      return (
+        <div className="status-error" style={{ margin: "16px 0" }}>
+          <strong>Results panel error:</strong> {this.state.error.message}
+          <br />
+          <button
+            className="btn secondary"
+            style={{ marginTop: "10px" }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function SeverityHeatmap({ summary }: { summary: ScanSummary }) {
+  const total = summary.critical + summary.high + summary.medium + summary.low + summary.info;
+  if (total === 0) return null;
+  const pct = (n: number) => `${((n / total) * 100).toFixed(1)}%`;
+  const segments = [
+    { label: "Critical", val: summary.critical, segCls: "seg-critical" },
+    { label: "High",     val: summary.high,     segCls: "seg-high" },
+    { label: "Medium",   val: summary.medium,   segCls: "seg-medium" },
+    { label: "Low",      val: summary.low,      segCls: "seg-low" },
+    { label: "Info",     val: summary.info,     segCls: "seg-info" },
+  ].filter((s) => s.val > 0);
+  return (
+    <div className="heatmap-wrap">
+      <div className="heatmap-bar">
+        {segments.map((s) => (
+          <div
+            key={s.label}
+            className={`heatmap-seg ${s.segCls}`}
+            style={{ width: pct(s.val) }}
+            title={`${s.label}: ${s.val}`}
+          />
+        ))}
+      </div>
+      <div className="heatmap-legend">
+        {segments.map((s) => (
+          <span key={s.label} className="heatmap-legend-item">
+            <span className={`heatmap-dot ${s.segCls}`} />
+            {s.label} <strong>{s.val}</strong> ({pct(s.val)})
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BrandSymbol() {
   return (
     <svg
@@ -2548,6 +2726,14 @@ function isValidHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function formatElapsedMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const totalSecs = Math.round(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
 function formatBytes(bytes: number): string {

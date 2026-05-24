@@ -207,14 +207,14 @@ impl FullScanRequest {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct TopCheck {
     check: String,
     count: usize,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ScanSummary {
     target: String,
@@ -231,7 +231,7 @@ struct ScanSummary {
     top_checks: Vec<TopCheck>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ScanExports {
     pretty_json: String,
@@ -246,7 +246,7 @@ struct ScanExports {
     discovery_ranking_json: String,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct TargetJsonExport {
     target: String,
@@ -254,7 +254,7 @@ struct TargetJsonExport {
     pretty_json: String,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct TargetDiscoverySummary {
     target: String,
@@ -267,7 +267,7 @@ struct TargetDiscoverySummary {
     errors: usize,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct TargetDiscoveryRank {
     rank: usize,
@@ -1802,6 +1802,115 @@ fn emit_scan_event(app: &tauri::AppHandle, payload: ScanEventPayload) {
     }
 }
 
+// ── Scan persistence (last-scan store) ───────────────────────────────────────
+
+const LAST_SCAN_FILENAME: &str = "last-scan.json";
+
+/// Payload written to / read from the app-data store file.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PersistedScan {
+    scan_id: u64,
+    persisted_at: String,
+    summary: ScanSummary,
+    exports: PersistedExports,
+}
+
+/// Subset of `ScanExports` we persist (skip the heavyweight per-target JSON bundles
+/// since they duplicate the NDJSON data; they can always be rebuilt from ndjson).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PersistedExports {
+    ndjson: String,
+    sarif: String,
+    pretty_json: String,
+    insomnia_collection_json: String,
+    insomnia_runner_data_json: String,
+    target_summary_json: String,
+    discovery_ranking_json: String,
+    /// Lightweight per-target metadata (no full JSON body — just target + fileName).
+    per_target_meta: Vec<PersistedTargetMeta>,
+    target_summaries: Vec<TargetDiscoverySummary>,
+    discovery_ranking: Vec<TargetDiscoveryRank>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PersistedTargetMeta {
+    target: String,
+    file_name: String,
+}
+
+#[tauri::command]
+fn persist_last_scan(
+    app: tauri::AppHandle,
+    scan_id: u64,
+    summary: ScanSummary,
+    exports: ScanExports,
+) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("cannot resolve app-data directory: {e}"))?;
+
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("failed to create app-data directory: {e}"))?;
+
+    let per_target_meta = exports
+        .per_target_json
+        .iter()
+        .map(|t| PersistedTargetMeta {
+            target: t.target.clone(),
+            file_name: t.file_name.clone(),
+        })
+        .collect();
+
+    let persisted = PersistedScan {
+        scan_id,
+        persisted_at: Utc::now().to_rfc3339(),
+        summary,
+        exports: PersistedExports {
+            ndjson: exports.ndjson,
+            sarif: exports.sarif,
+            pretty_json: exports.pretty_json,
+            insomnia_collection_json: exports.insomnia_collection_json,
+            insomnia_runner_data_json: exports.insomnia_runner_data_json,
+            target_summary_json: exports.target_summary_json,
+            discovery_ranking_json: exports.discovery_ranking_json,
+            per_target_meta,
+            target_summaries: exports.target_summaries,
+            discovery_ranking: exports.discovery_ranking,
+        },
+    };
+
+    let json = serde_json::to_string(&persisted).map_err(|e| e.to_string())?;
+    let path = app_data_dir.join(LAST_SCAN_FILENAME);
+    std::fs::write(&path, json)
+        .map_err(|e| format!("failed to write last-scan store: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn load_persisted_scan(app: tauri::AppHandle) -> Result<Option<PersistedScan>, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("cannot resolve app-data directory: {e}"))?;
+
+    let path = app_data_dir.join(LAST_SCAN_FILENAME);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read last-scan store: {e}"))?;
+    let persisted: PersistedScan = serde_json::from_str(&raw)
+        .map_err(|e| format!("last-scan store is corrupt (will be overwritten on next scan): {e}"))?;
+
+    Ok(Some(persisted))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1813,6 +1922,8 @@ pub fn run() {
             run_enrich,
             save_export,
             load_past_scan,
+            persist_last_scan,
+            load_persisted_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
