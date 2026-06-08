@@ -47,6 +47,31 @@ _Scan the QR code or copy the wallet address above._
 
 ---
 
+## 📑 Table of Contents
+
+- [Video Demo](#-video-demo)
+- [Why ApiHunter?](#why-apihunter)
+- [Scanner Modules](#scanner-modules)
+- [Features](#features)
+- [Comparison with Other Tools](#comparison-with-other-tools)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Template Tooling](#template-tooling)
+- [Scan Scripts](#scan-scripts)
+- [Testing Strategy](#testing-strategy)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Installation](#installation)
+- [CLI Reference](#cli-reference)
+- [Exit Codes](#exit-codes)
+- [Security & Legal Guardrails](#security--legal-guardrails)
+- [Related Projects](#related-projects)
+- [About](#about)
+- [FAQ](#faq)
+- [License](#license)
+
+---
+
 Async, modular API security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Security) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 

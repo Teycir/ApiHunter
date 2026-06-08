@@ -63,7 +63,7 @@ Complete guide to ApiHunter documentation and resources.
 ## Documentation by Category
 
 ### Getting Started
-1. [README.md](../README.md) - Start here
+1. [README.md](../README.md) - Start here (includes video demo)
 2. [HOWTO.md](../HOWTO.md) - Detailed setup and usage
 3. [Configuration.md](./configuration.md) - CLI options reference
 
