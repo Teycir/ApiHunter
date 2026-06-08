@@ -391,6 +391,8 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const logViewRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const fullScanPanelRef = useRef<HTMLElement | null>(null);
+  const [promotedToScan, setPromotedToScan] = useState<string | null>(null);
   const [totalUrls, setTotalUrls] = useState(0);
   const [completedUrls, setCompletedUrls] = useState(0);
   const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
@@ -1207,6 +1209,15 @@ export default function App() {
     }
   }
 
+  /** Scroll the Full Scan panel into view and open it. */
+  function scrollToFullScan() {
+    const el = fullScanPanelRef.current as HTMLDetailsElement | null;
+    if (el) {
+      el.open = true;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   /** Promote a single enriched host's representative URL into the Full Scan textarea
    *  and switch the form to the Deep Active preset. */
   function promoteEnrichHost(representativeUrl: string) {
@@ -1214,6 +1225,8 @@ export default function App() {
     const merged = dedupeTargets([...existing, representativeUrl]);
     setTargetInput(merged.join("\n"));
     applyPreset("deep");
+    setPromotedToScan(`Promoted ${representativeUrl} → Full Scan with Deep Active preset.`);
+    setTimeout(scrollToFullScan, 50);
   }
 
   /** Promote all hosts scoring at or above minScore into Full Scan + apply Deep preset. */
@@ -1230,6 +1243,8 @@ export default function App() {
     const merged = dedupeTargets([...existing, ...qualifying]);
     setTargetInput(merged.join("\n"));
     applyPreset("deep");
+    setPromotedToScan(`Promoted ${qualifying.length} host(s) scoring ≥ ${minScore} → Full Scan with Deep Active preset.`);
+    setTimeout(scrollToFullScan, 50);
   }
 
   /** Save the enriched NDJSON to disk. */
@@ -1422,7 +1437,7 @@ export default function App() {
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel title="Full Scan" defaultOpen>
+      <CollapsiblePanel title="Full Scan" defaultOpen panelRef={fullScanPanelRef}>
         <form onSubmit={runFullScan} className="scan-form">
           <label htmlFor="targetInput">Targets</label>
           <textarea
@@ -2386,6 +2401,11 @@ export default function App() {
               </button>
               {enrichSavedPath && (
                 <span className="enrich-saved-path">Saved: {enrichSavedPath}</span>
+              )}
+              {promotedToScan && (
+                <span className="status-ok" style={{ fontSize: "12px", padding: "3px 8px" }}>
+                  ✓ {promotedToScan}
+                </span>
               )}
             </div>
 

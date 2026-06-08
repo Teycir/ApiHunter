@@ -1660,19 +1660,36 @@ async fn run_enrich(request: EnrichRequest) -> Result<EnrichResponse, String> {
     let enriched_count = result.enriched.iter().filter(|e| e.threat_intel.is_some()).count();
 
     // Build per-host summary for the UI table.
-    // Track the representative URL (first finding origin per host) for promote flow.
+    // First pass: register every host so that hosts with no threat-intel data
+    // are still visible in the table (score=0, severity="INFO") and can be
+    // promoted to a deep scan.  Second pass overlays threat-intel when available.
     let mut host_map: std::collections::HashMap<String, EnrichHostResult> =
         std::collections::HashMap::new();
 
     for e in &result.enriched {
+        let host = url::Url::parse(&e.finding.url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+            .unwrap_or_else(|| e.finding.url.clone());
+        let origin = extract_url_origin(&e.finding.url);
+
+        // Ensure every host has at least a placeholder entry.
+        host_map.entry(host.clone()).or_insert_with(|| EnrichHostResult {
+            host: host.clone(),
+            representative_url: origin.clone(),
+            score: 0,
+            severity: "INFO".to_string(),
+            signals: Vec::new(),
+            ports: Vec::new(),
+            cve_ids: Vec::new(),
+            asn: None,
+            country: None,
+            domain_age_days: None,
+            has_likely_vulnerability: false,
+        });
+
+        // Overlay threat-intel if this finding has a higher score.
         if let Some(ti) = &e.threat_intel {
-            let host = url::Url::parse(&e.finding.url)
-                .ok()
-                .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
-                .unwrap_or_else(|| e.finding.url.clone());
-
-            let origin = extract_url_origin(&e.finding.url);
-
             if let Some(existing) = host_map.get_mut(&host) {
                 if ti.score > existing.score {
                     let saved_url = existing.representative_url.clone();
@@ -1690,20 +1707,6 @@ async fn run_enrich(request: EnrichRequest) -> Result<EnrichResponse, String> {
                         has_likely_vulnerability: ti.has_likely_vulnerability,
                     };
                 }
-            } else {
-                host_map.insert(host.clone(), EnrichHostResult {
-                    host,
-                    representative_url: origin,
-                    score: ti.score,
-                    severity: ti.severity.to_string(),
-                    signals: ti.signals.clone(),
-                    ports: ti.ports.clone(),
-                    cve_ids: ti.cve_ids.clone(),
-                    asn: ti.asn.clone(),
-                    country: ti.country.clone(),
-                    domain_age_days: ti.domain_age_days,
-                    has_likely_vulnerability: ti.has_likely_vulnerability,
-                });
             }
         }
     }
