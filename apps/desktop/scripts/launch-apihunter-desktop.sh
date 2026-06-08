@@ -3,7 +3,14 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_dir="$(cd "${script_dir}/.." && pwd)"
-binary="${desktop_dir}/src-tauri/target/release/apihunter-desktop"
+# Try release first, fall back to debug
+release_binary="${desktop_dir}/src-tauri/target/release/apihunter-desktop"
+debug_binary="${desktop_dir}/src-tauri/target/debug/apihunter-desktop"
+if [[ -x "${release_binary}" ]]; then
+  binary="${release_binary}"
+else
+  binary="${debug_binary}"
+fi
 
 if [[ ! -x "${binary}" ]]; then
   echo "ApiHunter Desktop binary not found at: ${binary}" >&2
