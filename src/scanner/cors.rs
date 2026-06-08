@@ -33,7 +33,6 @@ fn extract_domain_from_url(url: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-
 fn generate_probe_origins(url: &str) -> Vec<String> {
     let mut origins = vec![
         "null".to_string(),
@@ -247,13 +246,13 @@ impl Scanner for CorsScanner {
                 if !target_origin.is_empty() && origin.as_str() == target_origin.as_str() {
                     continue;
                 }
-                
+
                 // Only flag HIGH severity for arbitrary origins (evil.com, attacker.example.net)
-                let is_arbitrary_origin = origin == "https://evil.com" 
+                let is_arbitrary_origin = origin == "https://evil.com"
                     || origin == "https://attacker.example.net"
                     || origin.contains("evil")
                     || origin.contains("attacker");
-                
+
                 if *origin == "null" {
                     findings.push(
                         Finding::new(

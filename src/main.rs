@@ -180,8 +180,8 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     // Presets may override no_filter behaviour before the filter step.
-    let effective_no_filter = cli.no_filter
-        || matches!(cli.preset, Some(CliPreset::Mass | CliPreset::Quick));
+    let effective_no_filter =
+        cli.no_filter || matches!(cli.preset, Some(CliPreset::Mass | CliPreset::Quick));
 
     let (filtered_urls, inaccessible_urls) = if !effective_no_filter {
         info!(total = raw_urls.len(), "Filtering URL accessibility");
@@ -383,20 +383,38 @@ fn apply_preset(cfg: &mut Config, preset: CliPreset, cli: &Cli) {
 
     match preset {
         CliPreset::Quick => {
-            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 50; }
-            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 5; }
-            if cli.delay_ms == DEFAULT_DELAY_MS { cfg.politeness.delay_ms = 50; }
-            if !cli.no_discovery { cfg.no_discovery = true; }
+            if cli.concurrency == DEFAULT_CONCURRENCY {
+                cfg.concurrency = 50;
+            }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS {
+                cfg.politeness.timeout_secs = 5;
+            }
+            if cli.delay_ms == DEFAULT_DELAY_MS {
+                cfg.politeness.delay_ms = 50;
+            }
+            if !cli.no_discovery {
+                cfg.no_discovery = true;
+            }
             // Passive only unless user explicitly passed --active-checks
-            if !cli.active_checks { cfg.active_checks = false; }
+            if !cli.active_checks {
+                cfg.active_checks = false;
+            }
         }
         CliPreset::Mass => {
             // Maximise throughput: high concurrency, short timeout, zero delay,
             // no discovery, no filter (applied separately in run()), passive only.
-            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 100; }
-            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 4; }
-            if cli.delay_ms == DEFAULT_DELAY_MS { cfg.politeness.delay_ms = 0; }
-            if !cli.no_discovery { cfg.no_discovery = true; }
+            if cli.concurrency == DEFAULT_CONCURRENCY {
+                cfg.concurrency = 100;
+            }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS {
+                cfg.politeness.timeout_secs = 4;
+            }
+            if cli.delay_ms == DEFAULT_DELAY_MS {
+                cfg.politeness.delay_ms = 0;
+            }
+            if !cli.no_discovery {
+                cfg.no_discovery = true;
+            }
             if !cli.active_checks {
                 cfg.active_checks = false;
                 // Keep only fast passive scanners; disable active-check-only ones.
@@ -411,11 +429,17 @@ fn apply_preset(cfg: &mut Config, preset: CliPreset, cli: &Cli) {
             // No changes — this is the default.
         }
         CliPreset::Deep => {
-            if cli.concurrency == DEFAULT_CONCURRENCY { cfg.concurrency = 10; }
-            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS { cfg.politeness.timeout_secs = 20; }
+            if cli.concurrency == DEFAULT_CONCURRENCY {
+                cfg.concurrency = 10;
+            }
+            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS {
+                cfg.politeness.timeout_secs = 20;
+            }
             // Enable active checks unless user explicitly disabled them (no `--no-*` equivalent
             // for the top-level flag, so we only set when user didn't explicitly pass the flag).
-            if !cli.active_checks { cfg.active_checks = true; }
+            if !cli.active_checks {
+                cfg.active_checks = true;
+            }
         }
     }
 
@@ -453,7 +477,10 @@ fn enrich_url_origin(url_str: &str) -> String {
 async fn run_enrich_cli(cli: EnrichCli) -> Result<i32> {
     let findings = load_findings_ndjson(&cli.findings)?;
     if findings.is_empty() {
-        warn!("No findings found in {} — nothing to enrich.", cli.findings.display());
+        warn!(
+            "No findings found in {} — nothing to enrich.",
+            cli.findings.display()
+        );
         return Ok(0);
     }
 
@@ -478,7 +505,11 @@ async fn run_enrich_cli(cli: EnrichCli) -> Result<i32> {
     if !cli.quiet {
         eprintln!(
             "Enrich complete: {}/{} findings enriched across {} hosts in {:.1}s ({} probe errors)",
-            result.enriched.iter().filter(|e| e.threat_intel.is_some()).count(),
+            result
+                .enriched
+                .iter()
+                .filter(|e| e.threat_intel.is_some())
+                .count(),
             result.total_findings,
             result.unique_hosts,
             result.elapsed_ms as f64 / 1000.0,
@@ -953,7 +984,7 @@ async fn handle_load_scan(scan_dir: &std::path::Path, cli: &Cli) -> Result<i32> 
     let min_sev: Severity = cli.min_severity.map(Into::into).unwrap_or(Severity::Info);
     let fail_on: Severity = cli.fail_on.into();
     let print_summary = cli.summary || !cli.quiet;
-    
+
     let report_cfg = ReportConfig {
         format: cli.format.into(),
         output_path: cli.output.clone(),

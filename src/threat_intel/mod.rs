@@ -72,16 +72,15 @@ pub async fn run_probes(
     let config = Arc::new(config);
     let engine_start = Instant::now();
 
-    let results: Vec<Result<ThreatIntelEntry, (String, String)>> =
-        futures::stream::iter(targets)
-            .map(|target| {
-                let client = Arc::clone(&client);
-                let config = Arc::clone(&config);
-                async move { probe_target(target, &client, &config).await }
-            })
-            .buffer_unordered(config.concurrency)
-            .collect()
-            .await;
+    let results: Vec<Result<ThreatIntelEntry, (String, String)>> = futures::stream::iter(targets)
+        .map(|target| {
+            let client = Arc::clone(&client);
+            let config = Arc::clone(&config);
+            async move { probe_target(target, &client, &config).await }
+        })
+        .buffer_unordered(config.concurrency)
+        .collect()
+        .await;
 
     let elapsed_ms = engine_start.elapsed().as_millis() as u64;
 
@@ -160,8 +159,14 @@ async fn probe_target(
     annotate_outcome_signal("ipinfo", &ipinfo_outcome, &mut signals);
     annotate_outcome_signal("rdap", &rdap_outcome, &mut signals);
 
-    let ports = idb_outcome.as_ref().map(|d| d.ports.clone()).unwrap_or_default();
-    let cve_ids = idb_outcome.as_ref().map(|d| d.vulns.clone()).unwrap_or_default();
+    let ports = idb_outcome
+        .as_ref()
+        .map(|d| d.ports.clone())
+        .unwrap_or_default();
+    let cve_ids = idb_outcome
+        .as_ref()
+        .map(|d| d.vulns.clone())
+        .unwrap_or_default();
     let asn = ipinfo_outcome.as_ref().and_then(|d| d.asn());
     let country = ipinfo_outcome.as_ref().and_then(|d| d.country.clone());
     let domain_age_days = rdap_outcome.as_ref().and_then(|d| d.age_days());

@@ -19,10 +19,7 @@
 
 use std::{fs, path::Path, time::Duration};
 
-use api_scanner::threat_intel::{
-    run_probes,
-    types::ThreatIntelConfig,
-};
+use api_scanner::threat_intel::{run_probes, types::ThreatIntelConfig};
 
 // ── Default targets ───────────────────────────────────────────────────────────
 //
@@ -106,7 +103,9 @@ async fn triage_live_returns_entries_for_known_ips() {
     // Print a summary so --nocapture output is useful.
     println!(
         "elapsed={}ms total={} errors={}",
-        result.elapsed_ms, result.total, result.errors.len()
+        result.elapsed_ms,
+        result.total,
+        result.errors.len()
     );
     for entry in &result.entries {
         println!(
@@ -139,8 +138,10 @@ async fn triage_live_returns_entries_for_known_ips() {
         assert!(
             window[0].raw_score >= window[1].raw_score,
             "entries must be sorted by raw_score descending: {} ({}) before {} ({})",
-            window[0].target, window[0].raw_score,
-            window[1].target, window[1].raw_score,
+            window[0].target,
+            window[0].raw_score,
+            window[1].target,
+            window[1].raw_score,
         );
     }
 }
@@ -152,12 +153,9 @@ async fn triage_live_google_dns_has_port_53_open() {
     // Port 53 should always be present in its InternetDB record.
     // If InternetDB is down or the record is empty, the test is skipped
     // rather than failed — we don't want probe outages to fail the suite.
-    let result = run_probes(
-        vec!["8.8.8.8".to_string()],
-        triage_config(),
-    )
-    .await
-    .expect("engine must not fail");
+    let result = run_probes(vec!["8.8.8.8".to_string()], triage_config())
+        .await
+        .expect("engine must not fail");
 
     assert_eq!(result.entries.len(), 1);
     let entry = &result.entries[0];
@@ -189,12 +187,9 @@ async fn triage_live_google_dns_has_port_53_open() {
 #[ignore = "hits real internet — run manually"]
 async fn triage_live_cloudflare_has_asn_signal() {
     // 1.1.1.1 is Cloudflare — ipinfo.io always returns an AS13335 org entry.
-    let result = run_probes(
-        vec!["1.1.1.1".to_string()],
-        triage_config(),
-    )
-    .await
-    .expect("engine must not fail");
+    let result = run_probes(vec!["1.1.1.1".to_string()], triage_config())
+        .await
+        .expect("engine must not fail");
 
     assert_eq!(result.entries.len(), 1);
     let entry = &result.entries[0];
@@ -286,14 +281,19 @@ async fn triage_live_result_is_complete_not_partial() {
 
     for entry in &result.entries {
         // All probes timed out — score must be 0.
-        assert_eq!(entry.score, 0, "{} should score 0 on all-timeout", entry.target);
+        assert_eq!(
+            entry.score, 0,
+            "{} should score 0 on all-timeout",
+            entry.target
+        );
         assert_eq!(entry.raw_score, 0);
         assert!(!entry.has_likely_vulnerability);
         // At least one timeout signal should appear.
         assert!(
             entry.signals.iter().any(|s| s.contains("timeout")),
             "{} should have a timeout signal, got: {:?}",
-            entry.target, entry.signals
+            entry.target,
+            entry.signals
         );
     }
 }

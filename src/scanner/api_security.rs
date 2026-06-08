@@ -255,7 +255,7 @@ fn is_likely_error_page(resp: &HttpResponse) -> bool {
     if !is_html_content_type(ct) {
         return false;
     }
-    
+
     let body_lower = resp.body.to_ascii_lowercase();
     body_lower.contains("404")
         || body_lower.contains("not found")
@@ -280,12 +280,12 @@ fn is_marketing_content(resp: &HttpResponse) -> bool {
         "copyright",
         "all rights reserved",
     ];
-    
+
     let marker_count = marketing_markers
         .iter()
         .filter(|marker| body_lower.contains(*marker))
         .count();
-    
+
     marker_count >= 2
 }
 
@@ -1096,14 +1096,34 @@ async fn check_secrets_in_response(
     // Non-standard / vendor headers (X-Debug-Token, X-Internal-Key, etc.) can
     // inadvertently expose tokens. Skip well-known informational headers.
     const SKIP_HEADER_PREFIXES: &[&str] = &[
-        "content-", "cache-", "accept-", "access-control-", "strict-transport-",
-        "x-content-type", "x-frame-", "x-xss-", "referrer-", "permissions-",
-        "vary", "age", "date", "etag", "expires", "last-modified", "transfer-encoding",
-        "connection", "keep-alive", "server", "x-powered-by",
+        "content-",
+        "cache-",
+        "accept-",
+        "access-control-",
+        "strict-transport-",
+        "x-content-type",
+        "x-frame-",
+        "x-xss-",
+        "referrer-",
+        "permissions-",
+        "vary",
+        "age",
+        "date",
+        "etag",
+        "expires",
+        "last-modified",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "server",
+        "x-powered-by",
     ];
     for (hname, hvalue) in &resp.headers {
         let lower_name = hname.to_ascii_lowercase();
-        if SKIP_HEADER_PREFIXES.iter().any(|p| lower_name.starts_with(p)) {
+        if SKIP_HEADER_PREFIXES
+            .iter()
+            .any(|p| lower_name.starts_with(p))
+        {
             continue;
         }
         for chk in SECRET_CHECKS {
@@ -2535,17 +2555,17 @@ async fn check_authorization_matrix(
         return;
     };
     let authed_sig = idor_response_signature(&authed_primary);
-    
+
     // Skip if both responses are error pages
     if is_likely_error_page(&authed_primary) && is_likely_error_page(&unauth_primary) {
         return;
     }
-    
+
     // Skip if response is public marketing content
     if is_marketing_content(&authed_primary) {
         return;
     }
-    
+
     let unauth_same_basis = if (200..400).contains(&unauth_primary.status) {
         let unauth_sig = idor_response_signature(&unauth_primary);
         idor_match_basis(&authed_sig, &unauth_sig)

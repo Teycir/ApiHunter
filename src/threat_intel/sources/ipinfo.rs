@@ -19,10 +19,7 @@ pub async fn fetch(
 
     let result = tokio::time::timeout(
         timeout,
-        client
-            .get(&url)
-            .header("Accept", "application/json")
-            .send(),
+        client.get(&url).header("Accept", "application/json").send(),
     )
     .await;
 

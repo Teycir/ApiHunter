@@ -20,17 +20,17 @@ impl ThreatSeverity {
     pub fn from_score(score: u8) -> Self {
         match score {
             75..=100 => Self::Critical,
-            50..=74  => Self::High,
-            25..=49  => Self::Medium,
-            _        => Self::Low,
+            50..=74 => Self::High,
+            25..=49 => Self::Medium,
+            _ => Self::Low,
         }
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Low      => "LOW",
-            Self::Medium   => "MEDIUM",
-            Self::High     => "HIGH",
+            Self::Low => "LOW",
+            Self::Medium => "MEDIUM",
+            Self::High => "HIGH",
             Self::Critical => "CRITICAL",
         }
     }
@@ -88,7 +88,11 @@ impl IpInfoData {
     pub fn asn(&self) -> Option<String> {
         self.org.as_deref().and_then(|o| {
             let part = o.split_whitespace().next()?;
-            if part.starts_with("AS") { Some(part.to_string()) } else { None }
+            if part.starts_with("AS") {
+                Some(part.to_string())
+            } else {
+                None
+            }
         })
     }
 
@@ -145,7 +149,11 @@ pub enum SourceOutcome<T> {
 
 impl<T> SourceOutcome<T> {
     pub fn as_ref(&self) -> Option<&T> {
-        if let Self::Ok(v) = self { Some(v) } else { None }
+        if let Self::Ok(v) = self {
+            Some(v)
+        } else {
+            None
+        }
     }
 
     pub fn is_ok(&self) -> bool {

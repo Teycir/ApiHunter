@@ -91,7 +91,10 @@ async fn threat_intel_model_max_matches_weight_sum() {
     // net:    3 (hosting) + 5 (honeypot) + 3 (scanner) = 11
     // domain: 15 (new) + 10 (expired) + 5 (privacy) + 8 (no-ns) = 38
     // total = 139
-    assert_eq!(MODEL_MAX, 139, "MODEL_MAX must equal the sum of all weight constants");
+    assert_eq!(
+        MODEL_MAX, 139,
+        "MODEL_MAX must equal the sum of all weight constants"
+    );
 }
 
 #[tokio::test]
@@ -115,7 +118,10 @@ async fn threat_intel_high_risk_ports_score_4pts_each() {
 
     assert_eq!(risk.breakdown.ports, 12, "3 × 4 = 12 raw port pts");
     assert_eq!(risk.raw_score, 12);
-    assert!(risk.has_likely_vulnerability, "high-risk port → likely vuln");
+    assert!(
+        risk.has_likely_vulnerability,
+        "high-risk port → likely vuln"
+    );
     assert!(risk.signals.iter().any(|s| s.contains("port 22")));
     assert!(risk.signals.iter().any(|s| s.contains("port 3389")));
     assert!(risk.signals.iter().any(|s| s.contains("port 6379")));
@@ -163,7 +169,10 @@ async fn threat_intel_many_cves_accumulate_without_artificial_cap() {
     idb.vulns = (1..=15).map(|i| format!("CVE-2024-{i:04}")).collect();
 
     let risk = compute_risk_score(Some(&idb), None, None);
-    assert_eq!(risk.breakdown.cves, 30, "15 CVEs × 2 pts = 30, no artificial cap");
+    assert_eq!(
+        risk.breakdown.cves, 30,
+        "15 CVEs × 2 pts = 30, no artificial cap"
+    );
 }
 
 // ── network flag scoring ──────────────────────────────────────────────────────
@@ -216,22 +225,33 @@ async fn threat_intel_hosting_asn_scores_3pts() {
 #[tokio::test]
 async fn threat_intel_normalised_score_never_exceeds_100() {
     let mut idb = empty_idb("1.2.3.7");
-    idb.ports = vec![22, 23, 25, 53, 135, 139, 445, 1433, 3306, 3389,
-                     4444, 5432, 5900, 6379, 8080, 8443, 9200, 11211, 27017,
-                     80, 443];
+    idb.ports = vec![
+        22, 23, 25, 53, 135, 139, 445, 1433, 3306, 3389, 4444, 5432, 5900, 6379, 8080, 8443, 9200,
+        11211, 27017, 80, 443,
+    ];
     idb.tags = vec!["honeypot".to_string(), "scanner".to_string()];
     idb.vulns = (1..=30).map(|i| format!("CVE-2024-{i:04}")).collect();
 
     let ipinfo = IpInfoData {
         ip: "1.2.3.7".to_string(),
         anycast: Some(true),
-        hostname: None, city: None, region: None, country: None,
-        loc: None, org: None, timezone: None, bogon: None,
+        hostname: None,
+        city: None,
+        region: None,
+        country: None,
+        loc: None,
+        org: None,
+        timezone: None,
+        bogon: None,
     };
 
     let risk = compute_risk_score(Some(&idb), Some(&ipinfo), None);
 
-    assert!(risk.score <= 100, "normalised score must be ≤ 100, got {}", risk.score);
+    assert!(
+        risk.score <= 100,
+        "normalised score must be ≤ 100, got {}",
+        risk.score
+    );
     assert_eq!(risk.severity, ThreatSeverity::Critical);
 }
 
@@ -254,14 +274,14 @@ async fn threat_intel_raw_score_preserves_ordering_within_band() {
 #[test]
 fn threat_intel_severity_bands_cover_full_0_100_range() {
     for (score, expected) in [
-        (0u8,   ThreatSeverity::Low),
-        (24,    ThreatSeverity::Low),
-        (25,    ThreatSeverity::Medium),
-        (49,    ThreatSeverity::Medium),
-        (50,    ThreatSeverity::High),
-        (74,    ThreatSeverity::High),
-        (75,    ThreatSeverity::Critical),
-        (100,   ThreatSeverity::Critical),
+        (0u8, ThreatSeverity::Low),
+        (24, ThreatSeverity::Low),
+        (25, ThreatSeverity::Medium),
+        (49, ThreatSeverity::Medium),
+        (50, ThreatSeverity::High),
+        (74, ThreatSeverity::High),
+        (75, ThreatSeverity::Critical),
+        (100, ThreatSeverity::Critical),
     ] {
         let got = ThreatSeverity::from_score(score);
         assert_eq!(got, expected, "score {score} → {expected:?}, got {got:?}");
@@ -286,8 +306,9 @@ async fn threat_intel_entries_sorted_by_raw_score_descending() {
 
 #[tokio::test]
 async fn threat_intel_top_n_truncates_to_highest_raw_scores() {
-    let mut entries: Vec<ThreatIntelEntry> =
-        (0u16..20).map(|i| make_entry(&format!("t{i}"), i)).collect();
+    let mut entries: Vec<ThreatIntelEntry> = (0u16..20)
+        .map(|i| make_entry(&format!("t{i}"), i))
+        .collect();
     entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
     entries.truncate(5);
 
@@ -311,7 +332,8 @@ async fn threat_intel_min_score_filter_drops_low_entries() {
         assert!(
             entry.score >= 50,
             "entry {} has score {} below min_score 50",
-            entry.target, entry.score
+            entry.target,
+            entry.score
         );
     }
 }
@@ -320,8 +342,8 @@ async fn threat_intel_min_score_filter_drops_low_entries() {
 
 #[test]
 fn threat_intel_source_outcome_variants_are_explicit() {
-    let ok: SourceOutcome<u32>      = SourceOutcome::Ok(42);
-    let err: SourceOutcome<u32>     = SourceOutcome::Error("boom".to_string());
+    let ok: SourceOutcome<u32> = SourceOutcome::Ok(42);
+    let err: SourceOutcome<u32> = SourceOutcome::Error("boom".to_string());
     let timeout: SourceOutcome<u32> = SourceOutcome::Timeout;
     let skipped: SourceOutcome<u32> = SourceOutcome::Skipped;
 
@@ -330,8 +352,8 @@ fn threat_intel_source_outcome_variants_are_explicit() {
     assert!(!timeout.is_ok());
     assert!(!skipped.is_ok());
 
-    assert_eq!(ok.as_ref(),      Some(&42));
-    assert_eq!(err.as_ref(),     None);
+    assert_eq!(ok.as_ref(), Some(&42));
+    assert_eq!(err.as_ref(), None);
     assert_eq!(timeout.as_ref(), None);
     assert_eq!(skipped.as_ref(), None);
 }

@@ -671,9 +671,11 @@ async fn run_discovery_per_site(
     client: &HttpClient,
 ) -> (Vec<String>, Vec<CapturedError>, usize) {
     let max_sitemaps = config.discovery.max_sitemaps;
-    let max_scripts  = config.discovery.max_scripts;
+    let max_scripts = config.discovery.max_scripts;
     let discovery_timeout = Duration::from_secs(
-        config.discovery.effective_timeout_secs(config.politeness.timeout_secs),
+        config
+            .discovery
+            .effective_timeout_secs(config.politeness.timeout_secs),
     );
 
     let mut all_discovered: HashSet<String> = HashSet::new();

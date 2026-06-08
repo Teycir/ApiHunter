@@ -15,9 +15,7 @@
 //
 // Naming: enrich_<subject>_<expectation>
 
-use api_scanner::enrich::{
-    enrich_findings, parse_findings_ndjson, EnrichConfig, RawFinding,
-};
+use api_scanner::enrich::{enrich_findings, parse_findings_ndjson, EnrichConfig, RawFinding};
 use std::time::Duration;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -124,7 +122,10 @@ fn enrich_parse_ndjson_invalid_json_returns_error() {
     let result = parse_findings_ndjson(bad);
     assert!(result.is_err(), "invalid JSON must produce Err");
     let msg = format!("{}", result.unwrap_err());
-    assert!(msg.contains("Invalid JSON"), "error must mention the line: {msg}");
+    assert!(
+        msg.contains("Invalid JSON"),
+        "error must mention the line: {msg}"
+    );
 }
 
 #[test]
@@ -157,7 +158,7 @@ async fn enrich_findings_one_finding_produces_one_enriched_entry() {
     // Use a host that won't resolve in 300 ms so the probe is Skipped/error.
     // The engine must still return exactly 1 enriched finding.
     let findings = vec![raw_finding(
-        "https://198.51.100.1/api/test",   // TEST-NET — unreachable
+        "https://198.51.100.1/api/test", // TEST-NET — unreachable
         "cors/origin-reflected",
     )];
 
@@ -206,9 +207,19 @@ async fn enrich_findings_multiple_findings_same_host_deduplicated_to_one_probe()
         .await
         .expect("dedup enrich must not error");
 
-    assert_eq!(result.total_findings, 3, "all 3 input findings must be in output");
-    assert_eq!(result.unique_hosts, 1, "only 1 probe must fire for the same host");
-    assert_eq!(result.enriched.len(), 3, "output must have 3 enriched findings");
+    assert_eq!(
+        result.total_findings, 3,
+        "all 3 input findings must be in output"
+    );
+    assert_eq!(
+        result.unique_hosts, 1,
+        "only 1 probe must fire for the same host"
+    );
+    assert_eq!(
+        result.enriched.len(),
+        3,
+        "output must have 3 enriched findings"
+    );
 }
 
 #[tokio::test]
@@ -234,7 +245,7 @@ async fn enrich_findings_different_hosts_each_probe_separately() {
 async fn enrich_findings_non_default_port_treated_as_separate_host() {
     let findings = vec![
         raw_finding("https://198.51.100.7:8443/api", "jwt/alg-none"),
-        raw_finding("https://198.51.100.7/api",      "jwt/alg-none"),
+        raw_finding("https://198.51.100.7/api", "jwt/alg-none"),
     ];
 
     let result = enrich_findings(findings, fast_config())
@@ -243,7 +254,10 @@ async fn enrich_findings_non_default_port_treated_as_separate_host() {
 
     assert_eq!(result.total_findings, 2);
     // :8443 is a non-default port → treated as a different probe target
-    assert_eq!(result.unique_hosts, 2, "different ports → different probe keys");
+    assert_eq!(
+        result.unique_hosts, 2,
+        "different ports → different probe keys"
+    );
 }
 
 #[tokio::test]
@@ -251,7 +265,7 @@ async fn enrich_findings_https_443_and_bare_https_share_one_probe() {
     // :443 on https is the default — both URLs resolve to the same probe key.
     let findings = vec![
         raw_finding("https://198.51.100.8:443/api", "check/a"),
-        raw_finding("https://198.51.100.8/api",     "check/b"),
+        raw_finding("https://198.51.100.8/api", "check/b"),
     ];
 
     let result = enrich_findings(findings, fast_config())
@@ -259,14 +273,17 @@ async fn enrich_findings_https_443_and_bare_https_share_one_probe() {
         .expect("default-port dedup must not error");
 
     assert_eq!(result.total_findings, 2);
-    assert_eq!(result.unique_hosts, 1, "https :443 and https bare are the same probe key");
+    assert_eq!(
+        result.unique_hosts, 1,
+        "https :443 and https bare are the same probe key"
+    );
 }
 
 #[tokio::test]
 async fn enrich_findings_http_80_and_bare_http_share_one_probe() {
     let findings = vec![
         raw_finding("http://198.51.100.9:80/api", "check/a"),
-        raw_finding("http://198.51.100.9/api",    "check/b"),
+        raw_finding("http://198.51.100.9/api", "check/b"),
     ];
 
     let result = enrich_findings(findings, fast_config())
@@ -296,13 +313,13 @@ async fn enrich_findings_all_original_fields_pass_through_unchanged() {
         .expect("field pass-through must not error");
 
     let ef = &result.enriched[0];
-    assert_eq!(ef.finding.url,      original.url);
-    assert_eq!(ef.finding.check,    original.check);
-    assert_eq!(ef.finding.title,    original.title);
+    assert_eq!(ef.finding.url, original.url);
+    assert_eq!(ef.finding.check, original.check);
+    assert_eq!(ef.finding.title, original.title);
     assert_eq!(ef.finding.severity, original.severity);
-    assert_eq!(ef.finding.detail,   original.detail);
+    assert_eq!(ef.finding.detail, original.detail);
     assert_eq!(ef.finding.evidence, original.evidence);
-    assert_eq!(ef.finding.scanner,  original.scanner);
+    assert_eq!(ef.finding.scanner, original.scanner);
 }
 
 // ── enrich_findings: EnrichResult shape ──────────────────────────────────────
@@ -355,10 +372,15 @@ async fn enrich_enriched_finding_serialises_to_valid_json() {
         .expect("serialise test must not error");
 
     for ef in &result.enriched {
-        let json = serde_json::to_string(ef)
-            .expect("EnrichedFinding must serialise to JSON");
-        assert!(json.contains("cors/wildcard"), "check field must appear in JSON: {json}");
-        assert!(json.contains("threat_intel"), "threat_intel key must appear in JSON: {json}");
+        let json = serde_json::to_string(ef).expect("EnrichedFinding must serialise to JSON");
+        assert!(
+            json.contains("cors/wildcard"),
+            "check field must appear in JSON: {json}"
+        );
+        assert!(
+            json.contains("threat_intel"),
+            "threat_intel key must appear in JSON: {json}"
+        );
     }
 }
 

@@ -32,18 +32,17 @@ static JWT_RE: Lazy<Regex> =
 /// Claims whose mere presence in a JWT payload warrants a finding.
 /// NOTE: `scope` is intentionally excluded — it is a standard OAuth 2.0 claim.
 /// Overprivileged scope values are checked separately below.
-static SENSITIVE_CLAIMS: &[&str] = &[
-    "email",
-    "role",
-    "roles",
-    "is_admin",
-    "admin",
-    "permissions",
-];
+static SENSITIVE_CLAIMS: &[&str] = &["email", "role", "roles", "is_admin", "admin", "permissions"];
 
 /// Scope values that indicate overprivileged access.
 static OVERPRIVILEGED_SCOPE_TOKENS: &[&str] = &[
-    "admin", "superuser", "superadmin", "root", "write:*", "*", "all",
+    "admin",
+    "superuser",
+    "superadmin",
+    "root",
+    "write:*",
+    "*",
+    "all",
 ];
 
 const LONG_LIVED_SECS: i64 = 60 * 60 * 24 * 30; // 30 days

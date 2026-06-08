@@ -65,7 +65,11 @@ pub struct RawFinding {
 #[serde(untagged)]
 #[allow(dead_code)]
 enum NdjsonLine {
-    Meta { r#type: String, #[serde(flatten)] _rest: serde_json::Value },
+    Meta {
+        r#type: String,
+        #[serde(flatten)]
+        _rest: serde_json::Value,
+    },
     Finding(RawFinding),
 }
 
@@ -117,7 +121,6 @@ pub struct EnrichResult {
     /// `threat_intel: null`).
     pub triage_errors: Vec<String>,
 }
-
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -233,8 +236,7 @@ pub async fn enrich_findings(
         .entries
         .into_iter()
         .map(|entry| {
-            let key = host_probe_target(&entry.target)
-                .unwrap_or_else(|| entry.target.clone());
+            let key = host_probe_target(&entry.target).unwrap_or_else(|| entry.target.clone());
             (key, entry)
         })
         .collect();
@@ -245,7 +247,10 @@ pub async fn enrich_findings(
         .map(|f| {
             let key = host_probe_target(&f.url).unwrap_or_default();
             let threat_intel = intel_map.get(&key).cloned();
-            EnrichedFinding { finding: f, threat_intel }
+            EnrichedFinding {
+                finding: f,
+                threat_intel,
+            }
         })
         .collect();
 
@@ -279,7 +284,11 @@ fn host_probe_target(raw: &str) -> Option<String> {
         .split('/')
         .next()?
         .trim();
-    if bare.is_empty() { None } else { Some(bare.to_ascii_lowercase()) }
+    if bare.is_empty() {
+        None
+    } else {
+        Some(bare.to_ascii_lowercase())
+    }
 }
 
 #[cfg(test)]
@@ -294,7 +303,11 @@ mod tests {
 "#;
 
         let findings = parse_findings_ndjson(ndjson).expect("Should parse");
-        assert_eq!(findings.len(), 2, "Should have 2 findings, meta line skipped");
+        assert_eq!(
+            findings.len(),
+            2,
+            "Should have 2 findings, meta line skipped"
+        );
         assert_eq!(findings[0].url, "https://api.example.com/v1");
         assert_eq!(findings[1].url, "https://api.example.com/v2");
     }

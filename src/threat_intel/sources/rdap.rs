@@ -156,7 +156,10 @@ fn vcard_fn(vcard: Option<&serde_json::Value>) -> Option<String> {
     for prop in props {
         let prop_arr = prop.as_array()?;
         if prop_arr.first()?.as_str()? == "fn" {
-            return prop_arr.get(3).and_then(|v| v.as_str()).map(|s| s.to_string());
+            return prop_arr
+                .get(3)
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
         }
     }
     None

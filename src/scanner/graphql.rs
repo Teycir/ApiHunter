@@ -395,7 +395,6 @@ async fn probe_endpoint(
         }
     }
 
-
     // ── Step 5: GraphiQL / playground UI exposed ──────────────────────────────
     if let Ok(gr) = client.get(url).await {
         let body_lower = gr.body.to_ascii_lowercase();

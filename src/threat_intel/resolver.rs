@@ -22,11 +22,7 @@ struct DohRecord {
 
 /// Resolve a domain to an IPv4 (or IPv6) address using Cloudflare DoH.
 /// Returns None if resolution fails or times out.
-pub async fn resolve(
-    domain: &str,
-    client: &reqwest::Client,
-    timeout: Duration,
-) -> Option<String> {
+pub async fn resolve(domain: &str, client: &reqwest::Client, timeout: Duration) -> Option<String> {
     for qtype in ["A", "AAAA"] {
         if let Some(ip) = query_doh(domain, qtype, client, timeout).await {
             return Some(ip);
