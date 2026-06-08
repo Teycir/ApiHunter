@@ -140,6 +140,82 @@ flowchart LR
   - Custom header injection for blending with legitimate traffic
   - Adaptive timing based on server responses
   - No hardcoded scanner fingerprints in default mode
+
+### Stealth Techniques Deep Dive
+
+ApiHunter uses several stealth techniques to avoid detection by WAF (Web Application Firewall) and bot protection systems:
+
+#### 1. User-Agent Rotation
+**What it does:** Randomly cycles through 100+ real browser User-Agent strings from a file (`assets/user_agents.txt`)
+
+**Why it works:** Bots typically use the same User-Agent (like `curl/7.68.0`). By pretending to be Chrome, Firefox, Safari, etc., you blend in with legitimate traffic
+
+**Simple analogy:** Like wearing different disguises instead of always wearing the same uniform
+
+#### 2. Random Timing & Jitter
+**What it does:** Adds random delays between requests (controlled by `--delay-ms`) with jitter (small random variations)
+
+**Why it works:** Bots send requests at perfect intervals (exactly 100ms apart). Humans are unpredictable. Random timing makes traffic look organic
+
+**Simple analogy:** Walking with irregular steps instead of marching like a robot
+
+#### 3. Per-Host Delay Enforcement
+**What it does:** Tracks delay separately for each domain, not globally
+
+**Why it works:** Prevents burst patterns where you hit one host 50 times instantly. Each host sees polite, spaced-out requests
+
+**Simple analogy:** Taking turns in different conversations instead of shouting at one person repeatedly
+
+#### 4. Adaptive Concurrency (AIMD)
+**What it does:** Automatically slows down when getting 429 (rate limit) or 503 (server busy) errors, speeds up when successful
+
+**Why it works:** Backs off when caught, mimics how browsers retry. WAFs see "this client respects our limits"
+
+**Simple analogy:** Slowing down when traffic is congested, speeding up on open roads
+
+#### 5. Retry with Exponential Backoff
+**What it does:** When a request fails, waits 1s, then 2s, then 4s before retrying
+
+**Why it works:** Legitimate clients retry gracefully. Bots often hammer immediately or give up
+
+**Simple analogy:** Knocking on a door, waiting longer each time instead of banging continuously
+
+#### 6. No Scanner Fingerprints
+**What it does:** Doesn't send headers like `X-Scanner: ApiHunter` or predictable patterns
+
+**Why it works:** Many tools leave signatures (Nuclei templates, sqlmap patterns). ApiHunter avoids obvious markers
+
+**Simple analogy:** Not wearing a name tag that says "Security Tester"
+
+#### 7. Connection Reuse & Pooling
+**What it does:** Uses per-host HTTP client pools, keeps connections alive
+
+**Why it works:** Browsers reuse connections. Opening/closing for every request looks suspicious
+
+**Simple analogy:** Keeping the door open instead of slamming it shut and ringing the bell again
+
+#### 8. Custom Header Injection
+**What it does:** Can add headers like `Referer`, `X-Forwarded-For`, custom cookies
+
+**Why it works:** Makes requests look like they came from a legitimate application flow (clicked a link, have session cookies)
+
+**Simple analogy:** Showing a ticket stub when entering a venue instead of jumping the fence
+
+#### Detection Comparison
+
+| Technique | Without Evasion | With Evasion |
+|-----------|----------------|-------------|
+| **User-Agent** | `python-requests/2.28.0` (obvious bot) | `Mozilla/5.0 (Windows NT 10.0; Win64; x64)...` (looks like Chrome) |
+| **Timing** | Perfect 100ms intervals → WAF blocks | 120ms, 95ms, 180ms → looks human |
+| **Retries** | Instant retry → ban | Wait 1s→2s→4s → "patient client" |
+| **Concurrency** | 100 parallel hits → alarm | Adaptive 5→10→3 based on response → "polite browser" |
+
+#### When to use `--waf-evasion`
+
+- Testing production APIs with Cloudflare/Akamai/AWS WAF
+- Avoiding IP bans during large scans
+- Penetration tests where you need to stay under the radar
+
 - **CI/CD Native**:
   - Baseline diffing (only report new findings)
   - Streaming NDJSON output for real-time monitoring
