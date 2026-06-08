@@ -257,12 +257,12 @@ async fn threat_intel_normalised_score_never_exceeds_100() {
 
 #[tokio::test]
 async fn threat_intel_raw_score_preserves_ordering_within_band() {
-    let mut entries = vec![
+    let mut entries = [
         make_entry("high-exposure", 120),
         make_entry("lower-exposure", 80),
         make_entry("medium", 40),
     ];
-    entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.raw_score));
 
     assert_eq!(entries[0].target, "high-exposure");
     assert_eq!(entries[1].target, "lower-exposure");
@@ -292,12 +292,12 @@ fn threat_intel_severity_bands_cover_full_0_100_range() {
 
 #[tokio::test]
 async fn threat_intel_entries_sorted_by_raw_score_descending() {
-    let mut entries = vec![
+    let mut entries = [
         make_entry("a", 10),
         make_entry("b", 80),
         make_entry("c", 45),
     ];
-    entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.raw_score));
 
     assert_eq!(entries[0].raw_score, 80);
     assert_eq!(entries[1].raw_score, 45);
@@ -309,7 +309,7 @@ async fn threat_intel_top_n_truncates_to_highest_raw_scores() {
     let mut entries: Vec<ThreatIntelEntry> = (0u16..20)
         .map(|i| make_entry(&format!("t{i}"), i))
         .collect();
-    entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.raw_score));
     entries.truncate(5);
 
     assert_eq!(entries.len(), 5);
