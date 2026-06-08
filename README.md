@@ -35,6 +35,18 @@ _Scan the QR code or copy the wallet address above._
 
 ---
 
+## 📺 Video Demo
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=W9LIYQvaJZg">
+    <img src="apihunter_repo_thumbnail.png" alt="ApiHunter Demo Video" width="600" />
+  </a>
+  <br>
+  <em>Click to watch the full demo on YouTube</em>
+</div>
+
+---
+
 Async, modular API security scanner for API baseline testing and regression detection.  
 Combines discovery with targeted checks (CORS/CSP/GraphQL/OpenAPI/JWT/API Security) using adaptive concurrency and CI-ready outputs (NDJSON/SARIF).
 

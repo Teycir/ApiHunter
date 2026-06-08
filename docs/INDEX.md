@@ -17,7 +17,7 @@ Complete guide to ApiHunter documentation and resources.
 
 | Document | Category | Purpose |
 |----------|----------|---------|
-| [README.md](../README.md) | Getting Started | Project overview, features, quick start, and CLI reference |
+| [README.md](../README.md) | Getting Started | Project overview, features, quick start, video demo, and CLI reference |
 | [Desktop App Guide](./desktop.md) | Desktop Guide | Tauri + Vite + React setup, prerequisites, and run flow |
 | [Architecture](./architecture.md) | Technical Documentation | System design, data flow, and key invariants |
 | [Configuration](./configuration.md) | Configuration Guide | CLI parameters and configuration options |
