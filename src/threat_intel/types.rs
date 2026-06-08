@@ -129,7 +129,7 @@ impl RdapDomainData {
     }
 
     pub fn is_expired(&self) -> bool {
-        self.expires.as_deref().map_or(false, |e| {
+        self.expires.as_deref().is_some_and(|e| {
             chrono::DateTime::parse_from_rfc3339(e)
                 .map(|dt| dt.with_timezone(&chrono::Utc) < chrono::Utc::now())
                 .unwrap_or(false)

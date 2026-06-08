@@ -814,7 +814,7 @@ pub fn filter_new_findings(
 /// variants for the same check.
 pub fn dedup_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
     // Sort descending so the first occurrence of each key is the most severe.
-    findings.sort_by(|a, b| b.severity.rank().cmp(&a.severity.rank()));
+    findings.sort_by_key(|b| std::cmp::Reverse(b.severity.rank()));
 
     let mut seen = std::collections::HashSet::new();
     findings.retain(|f| {

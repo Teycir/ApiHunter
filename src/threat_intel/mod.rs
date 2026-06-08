@@ -100,7 +100,7 @@ pub async fn run_probes(
         }
     }
 
-    entries.sort_by(|a, b| b.raw_score.cmp(&a.raw_score));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.raw_score));
 
     let total = entries.len();
     if config.top_n > 0 && entries.len() > config.top_n {
