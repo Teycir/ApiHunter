@@ -47,9 +47,30 @@ _Scan the QR code or copy the wallet address above._
 
 ---
 
+## 🖥️ Desktop App Snapshots
+
+<p align="center">
+  <img src="docs/images/desktop/overview-and-full-scan.png" alt="ApiHunter Desktop — Overview panel with version chip, health check, and Full Scan target input" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop/full-scan-controls.png" alt="ApiHunter Desktop — Full Scan controls: Mass Sweep / Quick Passive / Deep Active presets, collapsible Safety, Runtime Limits, and Scanner Toggles sections" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop/results-analytics.png" alt="ApiHunter Desktop — Results analytics dashboard: severity heatmap, worst-target card, scan efficiency, summary, findings breakdown, and top checks" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop/results-exports.png" alt="ApiHunter Desktop — Results lower panel: target ranking, scanner coverage, check severity breakdown, per-target summary, and one-click export buttons" width="900" />
+</p>
+
+---
+
 ## 📑 Table of Contents
 
 - [Video Demo](#-video-demo)
+- [Desktop App Snapshots](#️-desktop-app-snapshots)
 - [Why ApiHunter?](#why-apihunter)
 - [Scanner Modules](#scanner-modules)
 - [Features](#features)
@@ -542,8 +563,8 @@ npm run tauri dev
 
 Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
-- CSV import via `Load CSV`
-- Guided scan presets: `Quick Passive`, `Balanced (Recommended)`, and `Deep Active`
+- CSV import via `Load CSV` (max 5,120 bytes / 5 KiB)
+- Guided scan presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
 - Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
 - Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
 - API versioning controls: optional deep response-diff probing toggle
@@ -551,24 +572,14 @@ Desktop scan input supports:
 - Blind SSRF callback correlation input (`OAST callback base`) for active checks
 - Performance controls: per-host clients, adaptive concurrency, WAF evasion with custom user-agent pool
 - Full scanner toggle coverage including `API Versioning` and `gRPC/Protobuf`
-- Collapsible desktop scan sections with consistent right-aligned carets; `Safety and Scan Behavior`, `Runtime Limits`, and `Scanner toggles` are collapsed by default
+- Collapsible scan sections with right-aligned carets; `Safety and Scan Behavior`, `Runtime Limits`, and `Scanner toggles` are collapsed by default
 - Parallel-run progress cards with per-target completion/findings snapshots
-- Results cards now hard-wrap long check IDs/URLs to prevent boundary overflow
-- Export UX tuned for large runs: size labels + `Save All Reports` + per-run filenames
+- Results analytics dashboard: severity heatmap, worst-target card, scan efficiency, scanner coverage, top vulnerable paths, check severity breakdown
+- Session persistence: last scan results auto-restore on next launch
+- Enrich Mode panel: load findings NDJSON, run threat-intel enrichment, promote high-scoring hosts directly to Full Scan with Deep Active preset
+- Export UX: size labels + `Save All Reports` + per-run timestamped filenames; exports include per-target JSON bundles, NDJSON, SARIF, Insomnia collection, and Insomnia Runner data
 
-### Desktop Snapshots
-
-<p align="center">
-  <img src="docs/images/desktop/overview-and-full-scan.png" alt="ApiHunter Desktop overview and full scan input panels" width="900" />
-</p>
-
-<p align="center">
-  <img src="docs/images/desktop/full-scan-controls.png" alt="ApiHunter Desktop full scan controls and presets" width="900" />
-</p>
-
-<p align="center">
-  <img src="docs/images/desktop/live-progress-panel.png" alt="ApiHunter Desktop live progress panel while waiting for scan start" width="900" />
-</p>
+See [HOWTO.md](HOWTO.md) for detailed usage, [docs/lab-setup.md](docs/lab-setup.md) for Vulhub-based CVE validation labs, and [docs/](docs/) for internals.
 
 If you want a release desktop binary:
 
@@ -789,8 +800,8 @@ Complete documentation is available in `docs/`. Start with:
 
 ## Roadmap
 
-**Completed:** WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, expanded Nuclei importer (regex/dsl + safe preflight chains), Docker image  
-**Next:** Triage mode (InternetDB + ipinfo.io risk scoring for large target lists), expand CVE templates, stealth hardening (remove scanner markers, randomize probes), broader matcher/operator parity for advanced Nuclei expressions
+**Completed (v0.7.0):** Glass UI redesign, scan persistence (last-scan store), results analytics dashboard (severity heatmap, worst-target card, scan efficiency, scanner coverage, check severity breakdown), Enrich → Deep-Scan promote flow, Triage/threat-intel mode, Discovery configuration, WebSocket/Mass-Assignment/OAuth/Rate-Limit/CVE scanners, expanded Nuclei importer, Docker image  
+**Next:** App.tsx component split, scan history ring-buffer, finding detail drawer, HTML/PDF report export, GitHub Actions native action, per-target timing in live progress
 
 ## Installation
 
@@ -849,16 +860,17 @@ npm run desktop:install-icon
 ```
 
 Desktop features (brief):
-- Multi-target scans (up to 100 targets) with manual input + CSV import
-- Guided setup presets for quick, balanced, and deep active scan profiles
+- Multi-target scans (up to 100 targets) with manual input + CSV import (5 KiB limit)
+- Guided setup presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
-- Collapsible desktop scan sections with consistent right-aligned carets and default-collapsed heavy subsections
-- API versioning deep response-diff toggle in desktop full-scan profile
-- OAST callback base control for blind SSRF active-check correlation
+- Collapsible scan sections with right-aligned carets; heavy subsections collapsed by default
+- API versioning deep response-diff toggle and OAST callback base control
 - Advanced runtime controls (proxy/auth headers/cookies, TLS toggle, WAF/adaptive/per-host options)
-- Results cards now wrap long strings to keep all content inside panel boundaries
-- One-click export for per-target JSON bundles, NDJSON, SARIF, Insomnia-importable collection JSON, and Insomnia Runner-data JSON
+- Results analytics dashboard: severity heatmap, worst-target, scan efficiency, scanner coverage, check severity breakdown, top vulnerable paths, per-target summary
+- Session persistence: last scan auto-restores on next launch with timestamp badge
+- Enrich Mode panel: threat-intel enrichment with per-host promote-to-deep-scan flow
+- One-click export for per-target JSON bundles, NDJSON, SARIF, Insomnia collection, and Insomnia Runner data
 
 ### Docker
 

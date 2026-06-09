@@ -2,45 +2,44 @@
 author: teycir ben soltane
 email: teycir@pxdmail.net
 website: teycirbensoltane.tn
-last_updated: 2026-04-03
+last_updated: 2026-06-09
 tags: [desktop, tauri, react, vite, ui]
 category: Desktop App Guide
 ---
 
 # Desktop App (Tauri + Vite + React)
 
-ApiHunter now includes a desktop app under `apps/desktop`.
+ApiHunter ships a full desktop app under `apps/desktop` (v0.7.0+).
 
 ## What Exists Now
 
 - Tauri 2 backend (`apps/desktop/src-tauri`) wired to the existing Rust scanner core.
-  - React + Vite frontend (`apps/desktop/src`) with:
-  - branded header icon symbol for quick product recognition,
-  - full scan profile form (active checks, dry-run, response-diff deep mode, discovery, filtering, concurrency/timeouts/retries, endpoint caps),
-  - manual multi-target entry (one-per-line or comma-separated),
-  - CSV target import,
-  - advanced transport/auth/performance controls:
-    - proxy, default headers, cookies,
-    - bearer/basic auth inputs,
-    - TLS invalid-cert toggle,
-    - per-host clients + adaptive concurrency + WAF evasion/user-agent pool,
-  - per-scanner toggles,
+- React + Vite frontend (`apps/desktop/src`) with a **Premium Glass UI** dark theme (deep blue + electric cyan, glass-morphism panels, JetBrains Mono + Syne typography), featuring:
+  - branded header icon and version chip in the Overview panel,
+  - **Full Scan** profile form with collapsible subsections (`Safety and Scan Behavior`, `Runtime Limits`, `Scanner toggles` — collapsed by default),
+  - manual multi-target entry (one-per-line or comma-separated) and CSV import (5 KiB limit),
+  - three guided scan presets: **Mass Sweep** (high-concurrency passive sweep for large target lists), **Quick Passive**, and **Deep Active**,
+  - pipeline callout showing the recommended Mass Sweep → Enrich → Deep Active workflow,
+  - advanced transport/auth/performance controls (proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle, per-host clients, adaptive concurrency, WAF evasion/user-agent pool),
+  - per-scanner toggles with full parity for all 13 modules,
   - live event/log stream with progress bar and per-target completion cards for parallel runs,
-  - findings summary cards and top-check list,
-  - export controls for per-target JSON bundles, NDJSON, SARIF, Insomnia-importable collection JSON, and Insomnia Runner-data JSON arrays with size labels and one-click `Save All Reports`.
-- First backend commands:
+  - **Results analytics dashboard**: severity heatmap, worst-target meta-card, scan efficiency metric, summary, findings breakdown, top checks, target ranking, most-highs, scanner coverage, top vulnerable paths, check severity breakdown (top 5), and per-target summary,
+  - **Session persistence**: last scan auto-restores on next launch with a `⟳ restored from last session (<timestamp>)` badge,
+  - **Enrich Mode** panel: load findings NDJSON (from last scan or file), run threat-intel enrichment, promote hosts scoring above a threshold directly to Full Scan with Deep Active preset applied,
+  - **Load Past Scan** panel: load any previous export directory via native file picker,
+  - export controls for per-target JSON bundles, NDJSON, SARIF, Insomnia collection, and Insomnia Runner data with size labels and `Save All Reports`.
+- Tauri backend commands:
   - `health_check`
   - `run_quick_scan`
   - `run_full_scan`
+  - `cancel_scan`
+  - `persist_last_scan` / `load_persisted_scan`
+  - `save_export` / `load_past_scan` / `read_text_file`
+  - `run_enrich`
 
-`run_quick_scan` intentionally starts in low-impact mode:
-- no endpoint discovery,
-- passive scanner set,
-- active checks disabled.
+`run_quick_scan` starts in low-impact mode (no discovery, passive scanners, active checks disabled).
 
-`run_full_scan` exposes full desktop-configurable scanning and emits live progress events (`scan-event`) to the UI.
-It accepts up to 100 targets per run (deduped, validated as `http/https` absolute URLs).
-When accessibility filtering is enabled, targets are pre-checked before the full run using the configured filter timeout.
+`run_full_scan` exposes full desktop-configurable scanning with live `scan-event` progress streaming. Accepts up to 100 targets per run (deduped, validated `http/https` URLs). Pre-filters inaccessible targets before the full run when filtering is enabled.
 
 ## Prerequisites
 

@@ -1,6 +1,6 @@
 # ApiHunter Roadmap
 
-> Last updated: May 24 2026 · Current release: **v0.6.0**
+> Last updated: June 9 2026 · Current release: **v0.7.0**
 
 This document tracks what has shipped, what is actively being built, and where the project is headed. Items are grouped by theme and ordered within each phase by priority.
 
@@ -18,6 +18,7 @@ This document tracks what has shipped, what is actively being built, and where t
 | v0.4.0 | Apr 2026 | Triage mode with risk scoring, `--fail-on` severity CI flag, bulk promote-to-deep-scan |
 | v0.5.0 | Apr 2026 | Discovery configuration (`DiscoveryConfig`), Enrich workflow, scan presets, `threat_intel` module |
 | v0.6.0 | Apr 2026 | Enrich → Deep-Scan promote flow, `--promote-to` CLI flag, Enrich desktop panel, 25-test enrich suite |
+| v0.7.0 | Apr 2026 | Glass UI redesign, scan persistence (last-scan store), results analytics dashboard, scan cancel button, log auto-scroll, formatted elapsed time |
 
 ---
 
