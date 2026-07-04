@@ -39,7 +39,7 @@ ApiHunter ships a full desktop app under `apps/desktop` (v0.7.0+).
 
 `run_quick_scan` starts in low-impact mode (no discovery, passive scanners, active checks disabled).
 
-`run_full_scan` exposes full desktop-configurable scanning with live `scan-event` progress streaming. Accepts up to 100 targets per run (deduped, validated `http/https` URLs). Pre-filters inaccessible targets before the full run when filtering is enabled.
+`run_full_scan` exposes full desktop-configurable scanning with live `scan-event` progress streaming. Accepts up to 500 targets per run (deduped, validated `http/https` URLs). Pre-filters inaccessible targets before the full run when filtering is enabled.
 
 ## Prerequisites
 

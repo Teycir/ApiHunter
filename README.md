@@ -565,7 +565,7 @@ Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
 - CSV import via `Load CSV` (max 5,120 bytes / 5 KiB)
 - Guided scan presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
-- Hard limit: up to 100 targets per run (deduped + validated as absolute `http/https` URLs)
+- Hard limit: up to 500 targets per run (deduped + validated as absolute `http/https` URLs)
 - Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
 - API versioning controls: optional deep response-diff probing toggle
 - Advanced controls: proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle
@@ -860,7 +860,7 @@ npm run desktop:install-icon
 ```
 
 Desktop features (brief):
-- Multi-target scans (up to 100 targets) with manual input + CSV import (5 KiB limit)
+- Multi-target scans (up to 500 targets) with manual input + CSV import (5 KiB limit)
 - Guided setup presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)

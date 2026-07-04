@@ -1221,9 +1221,7 @@ export default function App() {
   /** Promote a single enriched host's representative URL into the Full Scan textarea
    *  and switch the form to the Deep Active preset. */
   function promoteEnrichHost(representativeUrl: string) {
-    const existing = parseTargetsText(targetInput);
-    const merged = dedupeTargets([...existing, representativeUrl]);
-    setTargetInput(merged.join("\n"));
+    setTargetInput(representativeUrl);
     applyPreset("deep");
     setPromotedToScan(`Promoted ${representativeUrl} → Full Scan with Deep Active preset.`);
     setTimeout(scrollToFullScan, 50);
@@ -1239,9 +1237,7 @@ export default function App() {
       setError(`No enriched hosts score ≥ ${minScore}. Lower the threshold.`);
       return;
     }
-    const existing = parseTargetsText(targetInput);
-    const merged = dedupeTargets([...existing, ...qualifying]);
-    setTargetInput(merged.join("\n"));
+    setTargetInput(qualifying.join("\n"));
     applyPreset("deep");
     setPromotedToScan(`Promoted ${qualifying.length} host(s) scoring ≥ ${minScore} → Full Scan with Deep Active preset.`);
     setTimeout(scrollToFullScan, 50);

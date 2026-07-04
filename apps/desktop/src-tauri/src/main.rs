@@ -28,7 +28,7 @@ use tauri::{Emitter, Manager};
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
 static OAST_ENV_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
-const MAX_TARGETS: usize = 100;
+const MAX_TARGETS: usize = 500;
 const OAST_BASE_ENV: &str = "APIHUNTER_OAST_BASE";
 
 fn default_true() -> bool {
