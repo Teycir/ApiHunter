@@ -152,8 +152,8 @@ apihunter enrich --findings findings.ndjson --quiet --output enriched.ndjson
 apihunter enrich --findings findings.ndjson \
   --promote-to hot-targets.txt --promote-min-score 50
 
-# Full pipeline: mass sweep → enrich → deep scan
-apihunter --urls all.txt --preset mass --output findings.ndjson
+# Full pipeline: passive sweep → enrich → deep scan
+apihunter --urls all.txt --preset quick --output findings.ndjson
 apihunter enrich --findings findings.ndjson --promote-to hot.txt --promote-min-score 25
 apihunter --urls hot.txt --preset deep --active-checks --format sarif
 ```

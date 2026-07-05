@@ -345,7 +345,6 @@ function sanitizeRuntimeInput(raw: string, field: RuntimeLimitField): number {
 }
 
 const PRESET_LABELS: Record<string, string> = {
-  mass: "Mass Sweep",
   quick: "Quick Passive",
   deep: "Deep Active",
 };
@@ -935,7 +934,7 @@ export default function App() {
     setToggles((prev) => ({ ...prev, [field]: value }));
   }
 
-  function applyPreset(mode: "quick" | "mass" | "deep") {
+  function applyPreset(mode: "quick" | "deep") {
     const allScanners = { ...DEFAULT_TOGGLES };
     setActivePreset(mode);
     if (mode === "quick") {
@@ -949,35 +948,6 @@ export default function App() {
       setConcurrency(4);
       setTimeoutSecs(12);
       setRetries(1);
-      setDelayMs(0);
-      setWafEvasion(false);
-      setPerHostClients(false);
-      setAdaptiveConcurrency(false);
-      setToggles({
-        ...allScanners,
-        massAssignment: false,
-        oauthOidc: false,
-        rateLimit: false,
-        cveTemplates: false,
-        websocket: false,
-      });
-      return;
-    }
-
-    if (mode === "mass") {
-      // Optimised for large target sweeps: high concurrency, fast timeout,
-      // no discovery, no filter, passive scanners only.
-      // Designed to produce a findings NDJSON for a follow-up `enrich` pass.
-      setActiveChecks(false);
-      setDryRun(false);
-      setResponseDiffDeep(false);
-      setNoDiscovery(true);
-      setNoFilter(true);
-      setFilterTimeout(3);
-      setMaxEndpoints(0);
-      setConcurrency(100);
-      setTimeoutSecs(4);
-      setRetries(0);
       setDelayMs(0);
       setWafEvasion(false);
       setPerHostClients(false);
@@ -1538,14 +1508,6 @@ export default function App() {
             <div className="preset-buttons">
               <button
                 type="button"
-                className={`btn secondary preset-btn${activePreset === "mass" ? " preset-btn--active" : ""}`}
-                onClick={() => { applyPreset("mass"); }}
-                title="Passive sweep of large target lists — produces NDJSON for Enrich → Deep Scan pipeline"
-              >
-                Mass Sweep
-              </button>
-              <button
-                type="button"
                 className={`btn secondary preset-btn${activePreset === "quick" ? " preset-btn--active" : ""}`}
                 onClick={() => { applyPreset("quick"); }}
               >
@@ -1559,17 +1521,6 @@ export default function App() {
                 Deep Active
               </button>
             </div>
-          </div>
-          <div className="pipeline-callout">
-            <strong>Recommended pipeline:</strong>{" "}
-            <span className="pipeline-step">Mass Sweep</span>
-            {" → "}
-            <span className="pipeline-step">Enrich</span>
-            {" → "}
-            <span className="pipeline-step">Deep Active</span>
-            <span className="pipeline-hint">
-              {" "}— Run a Mass Sweep to collect findings NDJSON, enrich hosts with threat-intel, then promote high-scoring targets for a deep active scan.
-            </span>
           </div>
           {invalidTargets.length > 0 && (
             <p className="status-error compact">

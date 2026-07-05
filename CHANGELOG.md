@@ -17,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Improved Progress Bar**: Redesigned the progress bar to show distinct visual states and status messaging for checking reachability (amber pulse animation) and scanning (blue accent).
 
 ### Changed
+- **Deprecate and Remove Mass Sweep Preset**: Completely removed the unstable "Mass Sweep" preset from the CLI, Tauri configurations, desktop app preset selection, and all user documentation guides.
 - **Calibrated Scan Capacity Limits**: Configured target limit to support up to `3,000` max targets (calibrated from previous limits) and reduced maximum imported CSV file size to `300 KiB` to prevent browser hangs and crashes on large files.
 - **Performance Optimization for Large Runs**: Replaced detailed UI cards with lists of text logs in the live progress component to support large-scale runs without rendering lag.
 - **Bumped Version to 1.0.0**: Upgraded all manifests, configuration files, and package specifications to v1.0.0.

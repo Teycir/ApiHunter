@@ -181,7 +181,7 @@ async fn run(cli: Cli) -> Result<i32> {
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     // Presets may override no_filter behaviour before the filter step.
     let effective_no_filter =
-        cli.no_filter || matches!(cli.preset, Some(CliPreset::Mass | CliPreset::Quick));
+        cli.no_filter || matches!(cli.preset, Some(CliPreset::Quick));
 
     let (filtered_urls, inaccessible_urls) = if !effective_no_filter {
         info!(total = raw_urls.len(), "Filtering URL accessibility");
@@ -400,31 +400,7 @@ fn apply_preset(cfg: &mut Config, preset: CliPreset, cli: &Cli) {
                 cfg.active_checks = false;
             }
         }
-        CliPreset::Mass => {
-            // Maximise throughput: high concurrency, short timeout, zero delay,
-            // no discovery, no filter (applied separately in run()), passive only.
-            if cli.concurrency == DEFAULT_CONCURRENCY {
-                cfg.concurrency = 100;
-            }
-            if cli.timeout_secs == DEFAULT_TIMEOUT_SECS {
-                cfg.politeness.timeout_secs = 4;
-            }
-            if cli.delay_ms == DEFAULT_DELAY_MS {
-                cfg.politeness.delay_ms = 0;
-            }
-            if !cli.no_discovery {
-                cfg.no_discovery = true;
-            }
-            if !cli.active_checks {
-                cfg.active_checks = false;
-                // Keep only fast passive scanners; disable active-check-only ones.
-                cfg.toggles.mass_assignment = false;
-                cfg.toggles.oauth_oidc = false;
-                cfg.toggles.rate_limit = false;
-                cfg.toggles.cve_templates = false;
-                cfg.toggles.websocket = false;
-            }
-        }
+
         CliPreset::Balanced => {
             // No changes — this is the default.
         }
@@ -443,7 +419,7 @@ fn apply_preset(cfg: &mut Config, preset: CliPreset, cli: &Cli) {
         }
     }
 
-    if matches!(preset, CliPreset::Quick | CliPreset::Mass) {
+    if matches!(preset, CliPreset::Quick) {
         tracing::info!(
             preset = ?preset,
             concurrency = cfg.concurrency,

@@ -318,10 +318,6 @@ pub enum CliFormat {
 pub enum CliPreset {
     /// Passive-only, --no-discovery, concurrency 50, timeout 5 s.
     Quick,
-    /// Passive-only, no discovery, no filter, concurrency 100, timeout 4 s, delay 0.
-    /// Optimised for sweeping large target lists and producing a vulnerable-targets list
-    /// for a subsequent `enrich` + deep-scan pass.
-    Mass,
     /// Default settings — no overrides.
     Balanced,
     /// Active checks enabled, concurrency 10, timeout 20 s.

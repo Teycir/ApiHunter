@@ -54,7 +54,7 @@ _Scan the QR code or copy the wallet address above._
 </p>
 
 <p align="center">
-  <img src="docs/images/desktop/full-scan-controls.png" alt="ApiHunter Desktop — Full Scan controls: Mass Sweep / Quick Passive / Deep Active presets, collapsible Safety, Runtime Limits, and Scanner Toggles sections" width="900" />
+  <img src="docs/images/desktop/full-scan-controls.png" alt="ApiHunter Desktop — Full Scan controls: Quick Passive / Deep Active presets, collapsible Safety, Runtime Limits, and Scanner Toggles sections" width="900" />
 </p>
 
 <p align="center">
@@ -564,7 +564,7 @@ npm run tauri dev
 Desktop scan input supports:
 - Manual multi-target entry (one URL per line or comma-separated)
 - CSV import via `Load CSV` (max 307,200 bytes / 300 KiB)
-- Guided scan presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
+- Guided scan presets: `Quick Passive` and `Deep Active`
 - Hard limit: up to 3,000 targets per run (deduped + validated as absolute `http/https` URLs)
 - Scope controls: discovery on/off, accessibility filtering + timeout, max endpoints per site
 - API versioning controls: optional deep response-diff probing toggle
@@ -861,7 +861,7 @@ npm run desktop:install-icon
 
 Desktop features (brief):
 - Multi-target scans (up to 3,000 targets) with manual input + CSV import (300 KiB limit)
-- Guided setup presets: `Mass Sweep`, `Quick Passive`, and `Deep Active`
+- Guided setup presets: `Quick Passive` and `Deep Active`
 - Live progress UI with per-target status cards
 - Full scan profile controls (discovery/filtering, retries/timeouts, scanner toggles)
 - Collapsible scan sections with right-aligned carets; heavy subsections collapsed by default

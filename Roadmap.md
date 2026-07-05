@@ -102,7 +102,7 @@ Making ApiHunter fit naturally into existing security workflows and CI/CD pipeli
 - [ ] **Streaming NDJSON output** — write findings to the NDJSON file as they arrive rather than buffering to memory, enabling real-time `tail -f` monitoring of large scans.
 - [ ] **Result virtualization in desktop** — for scans returning 500+ findings the target progress grid and result cards are slow to render. Use a virtual list (e.g. `react-window`) so the UI stays smooth at any scale.
 - [ ] **Log view virtualization** — same fix for the log view; at 250 entries DOM updates become noticeable.
-- [ ] **Parallel Enrich + scan** — allow Enrich to run concurrently with a Mass Sweep scan instead of requiring sequential phases.
+- [ ] **Parallel Enrich + scan** — allow Enrich to run concurrently with a passive scan instead of requiring sequential phases.
 
 ---
 
