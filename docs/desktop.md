@@ -17,7 +17,7 @@ ApiHunter ships a full desktop app under `apps/desktop` (v0.7.0+).
 - React + Vite frontend (`apps/desktop/src`) with a **Premium Glass UI** dark theme (deep blue + electric cyan, glass-morphism panels, JetBrains Mono + Syne typography), featuring:
   - branded header icon and version chip in the Overview panel,
   - **Full Scan** profile form with collapsible subsections (`Safety and Scan Behavior`, `Runtime Limits`, `Scanner toggles` — collapsed by default),
-  - manual multi-target entry (one-per-line or comma-separated) and CSV import (5 KiB limit),
+  - manual multi-target entry (one-per-line or comma-separated) and CSV import (300 KiB limit),
   - three guided scan presets: **Mass Sweep** (high-concurrency passive sweep for large target lists), **Quick Passive**, and **Deep Active**,
   - pipeline callout showing the recommended Mass Sweep → Enrich → Deep Active workflow,
   - advanced transport/auth/performance controls (proxy, headers, cookies, bearer/basic auth, TLS invalid-cert toggle, per-host clients, adaptive concurrency, WAF evasion/user-agent pool),

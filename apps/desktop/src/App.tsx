@@ -294,8 +294,8 @@ const TOGGLE_FIELDS: Array<{
   { key: "websocket", label: "WebSocket", hint: "Upgrade/origin and auth boundary checks." },
 ];
 
-const MAX_CSV_FILE_BYTES = 5 * 1024; // 5 KiB hard limit on imported CSV files
-const MAX_TARGET_INPUT_CHARS = 32_000;
+const MAX_CSV_FILE_BYTES = 300 * 1024; // 300 KiB limit on imported CSV files
+const MAX_TARGET_INPUT_CHARS = 10_000_000; // 10M characters limit on target input
 const TEXT_ENCODER = new TextEncoder();
 const TARGET_SUMMARY_FILENAME = "target-discovery-summary.json";
 const TARGET_RANKING_FILENAME = "target-discovery-ranking.json";
@@ -383,11 +383,13 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [scanPhase, setScanPhase] = useState<"idle" | "filtering" | "scanning" | "completed" | "cancelled">("idle");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [exports, setExports] = useState<ScanExports | null>(null);
   const [savedPaths, setSavedPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [activeRankingTab, setActiveRankingTab] = useState<"discoveries" | "criticals" | "highs">("discoveries");
   const [logs, setLogs] = useState<string[]>([]);
   const logViewRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -396,6 +398,7 @@ export default function App() {
   const [totalUrls, setTotalUrls] = useState(0);
   const [completedUrls, setCompletedUrls] = useState(0);
   const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
+  const targetProgressRef = useRef<TargetProgress[]>([]); // ponytail: batch updates to avoid render freeze
   const [exportPrefix, setExportPrefix] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -438,7 +441,13 @@ export default function App() {
     listen<ScanEventPayload>("scan-event", (event) => {
       const payload = event.payload;
       setLogs((prev) => {
-        const next = [...prev, `[${payload.event}] ${payload.message}`];
+        let prefix = `[${payload.event}]`;
+        if (payload.event === "progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
+          prefix = `${payload.completedUrls}/${payload.totalUrls}`;
+        } else if (payload.event === "filtering_progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
+          prefix = `${payload.completedUrls}/${payload.totalUrls}`;
+        }
+        const next = [...prev, `${prefix} ${payload.message}`];
         return next.slice(-250);
       });
       if (typeof payload.totalUrls === "number") {
@@ -447,24 +456,31 @@ export default function App() {
       if (typeof payload.completedUrls === "number") {
         setCompletedUrls(payload.completedUrls);
       }
+      if (payload.event === "started") {
+        setScanPhase("scanning");
+      } else if (payload.event === "filtering_progress") {
+        setScanPhase("filtering");
+      } else if (payload.event === "completed") {
+        setScanPhase("completed");
+      }
       if (payload.url && payload.event === "progress") {
-        setTargetProgress((prev) => {
-          const idx = prev.findIndex((item) => item.url === payload.url);
-          const updated: TargetProgress = {
-            url: payload.url ?? "",
-            status: "completed",
-            findings: payload.findings ?? 0,
-            critical: payload.critical ?? 0,
-            high: payload.high ?? 0,
-            medium: payload.medium ?? 0,
-          };
-          if (idx === -1) {
-            return [...prev, updated];
-          }
-          const next = [...prev];
+        // Update ref immediately, but don't trigger React re-render yet
+        const idx = targetProgressRef.current.findIndex((item) => item.url === payload.url);
+        const updated: TargetProgress = {
+          url: payload.url ?? "",
+          status: "completed",
+          findings: payload.findings ?? 0,
+          critical: payload.critical ?? 0,
+          high: payload.high ?? 0,
+          medium: payload.medium ?? 0,
+        };
+        if (idx === -1) {
+          targetProgressRef.current = [...targetProgressRef.current, updated];
+        } else {
+          const next = [...targetProgressRef.current];
           next[idx] = updated;
-          return next;
-        });
+          targetProgressRef.current = next;
+        }
       }
     })
       .then((fn) => {
@@ -488,6 +504,13 @@ export default function App() {
       }
     };
   }, [tauriRuntimeAvailable]);
+
+  // Sync targetProgressRef → targetProgress state when completedUrls changes
+  useEffect(() => {
+    if (completedUrls > 0) {
+      setTargetProgress([...targetProgressRef.current]);
+    }
+  }, [completedUrls]);
 
   useEffect(() => {
     if (!tauriRuntimeAvailable) {
@@ -730,6 +753,7 @@ export default function App() {
 
     const startedAt = Date.now();
     setLoading(true);
+    setScanPhase(noFilter ? "scanning" : "filtering");
     setError(null);
     setLogs([]);
     userScrolledRef.current = false; // reset so new scan auto-scrolls from top
@@ -738,19 +762,20 @@ export default function App() {
     setSavedPaths([]);
     setTotalUrls(0);
     setCompletedUrls(0);
+    targetProgressRef.current = []; // reset batched progress
     setExportPrefix(null);
     setRestoredFromSession(false);
     setSessionRestoredAt(null);
-    setTargetProgress(
-      targetUrls.map((url) => ({
+    const initialProgress = targetUrls.map((url) => ({
         url,
-        status: "pending",
+        status: "pending" as const,
         findings: 0,
         critical: 0,
         high: 0,
         medium: 0,
-      })),
-    );
+      }));
+    targetProgressRef.current = initialProgress;
+    setTargetProgress(initialProgress);
 
     const request: FullScanRequest = {
       targetUrls,
@@ -827,6 +852,7 @@ export default function App() {
   async function cancelScan() {
     if (!loading || cancelling) return;
     setCancelling(true);
+    setScanPhase("cancelled");
     try {
       await invokeCommand("cancel_scan");
     } catch {
@@ -842,7 +868,7 @@ export default function App() {
     setCsvImportError(null);
     if (file.size > MAX_CSV_FILE_BYTES) {
       setCsvImportError(
-        `CSV file is too large. Maximum supported size is ${MAX_CSV_FILE_BYTES.toLocaleString()} bytes (5 KiB).`,
+        `CSV file is too large. Maximum supported size is ${MAX_CSV_FILE_BYTES.toLocaleString()} bytes (300 KiB).`,
       );
       e.target.value = "";
       return;
@@ -1454,7 +1480,7 @@ export default function App() {
             <label className="csv-import">
               Load CSV
               <span className="csv-limit-label">
-                Max upload: {MAX_CSV_FILE_BYTES.toLocaleString()} bytes (5 KiB)
+                Max upload: {MAX_CSV_FILE_BYTES.toLocaleString()} bytes (300 KiB)
               </span>
               <input
                 type="file"
@@ -1481,7 +1507,7 @@ export default function App() {
             <p>
               CSV format: values in any column are accepted. Header names like{" "}
               <code>url</code>, <code>target</code>, <code>endpoint</code> are
-              ignored automatically. Max CSV size: <code>5 KiB (5,120 bytes)</code>.
+              ignored automatically. Max CSV size: <code>300 KiB (307,200 bytes)</code>.
             </p>
           </div>
           <div className="preset-row">
@@ -1899,12 +1925,23 @@ export default function App() {
 
       <CollapsiblePanel title="Live Progress" defaultOpen>
         <p>
-          {totalUrls > 0
-            ? `${completedUrls}/${totalUrls} URLs completed (${progressPct}%)`
+          {scanPhase === "filtering"
+            ? `🔍 Checking target reachability: ${completedUrls}/${totalUrls} checked (${progressPct}%)`
+            : scanPhase === "scanning"
+            ? `⚡ Scanning targets: ${completedUrls}/${totalUrls} completed (${progressPct}%)`
+            : scanPhase === "completed"
+            ? `✅ Scan completed: ${totalUrls} targets processed`
+            : scanPhase === "cancelled"
+            ? `🛑 Scan cancelled`
+            : totalUrls > 0
+            ? `${completedUrls}/${totalUrls} targets processed (${progressPct}%)`
             : "Waiting for scan start..."}
         </p>
-        <div className="progress-track" aria-hidden="true">
-          <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+        <div className={`progress-track ${scanPhase === "filtering" ? "progress-track--filtering" : ""}`} aria-hidden="true">
+          <div
+            className={`progress-fill ${scanPhase === "filtering" ? "progress-fill--filtering animate-pulse" : ""}`}
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
         {targetProgress.length > 0 && (
           <div className="target-progress-wrap">
@@ -1915,21 +1952,17 @@ export default function App() {
                 {effectiveParallel}
               </p>
             </div>
-            <div className="target-progress-grid">
+            <div className="target-progress-list">
               {targetProgress.map((item) => (
-                <article
-                  key={item.url}
-                  className={`target-progress-card ${item.status}`}
-                >
-                  <p className="target-url" title={item.url}>
+                <p key={item.url} className="target-progress-line">
+                  <span className="target-url" title={item.url}>
                     {item.url}
-                  </p>
-                  <p className="muted">
-                    {item.status === "completed"
-                      ? `${item.findings} findings (C:${item.critical} H:${item.high} M:${item.medium})`
-                      : "queued/running"}
-                  </p>
-                </article>
+                  </span>
+                  {" → "}
+                  <span className="target-findings">
+                    {item.findings} findings (C:{item.critical} H:{item.high} M:{item.medium})
+                  </span>
+                </p>
               ))}
             </div>
           </div>
@@ -2029,55 +2062,109 @@ export default function App() {
 
             {exports && (
               <article className="result-card">
-                <h3>Target ranking</h3>
-                {exports.discoveryRanking.length === 0 ? (
-                  <p>No target discoveries reported.</p>
-                ) : (
-                  <ul className="check-list">
-                    {exports.discoveryRanking.map((entry) => (
-                      <li key={`${entry.rank}-${entry.target}`} className="check-item">
-                        <span className="check-name" title={entry.target}>#{entry.rank} {entry.target}</span>
-                        <span className="check-count">{entry.discoveries}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            )}
+                <div className="tab-header">
+                  <h3>Target Rankings</h3>
+                  <div className="tab-buttons">
+                    <button
+                      type="button"
+                      className={`tab-btn ${activeRankingTab === "discoveries" ? "active" : ""}`}
+                      onClick={() => setActiveRankingTab("discoveries")}
+                    >
+                      Discoveries
+                    </button>
+                    <button
+                      type="button"
+                      className={`tab-btn ${activeRankingTab === "criticals" ? "active" : ""}`}
+                      onClick={() => setActiveRankingTab("criticals")}
+                    >
+                      Criticals
+                    </button>
+                    <button
+                      type="button"
+                      className={`tab-btn ${activeRankingTab === "highs" ? "active" : ""}`}
+                      onClick={() => setActiveRankingTab("highs")}
+                    >
+                      Highs
+                    </button>
+                  </div>
+                </div>
 
-            {/* ── Ranking by most HIGH findings ──────────────────────── */}
-            {exports && exports.targetSummaries.some((t) => t.high > 0) && (
-              <article className="result-card">
-                <h3 style={{ color: "var(--color-high)" }}>Most Highs</h3>
-                <ul className="check-list">
-                  {[...exports.targetSummaries]
-                    .filter((t) => t.high > 0)
-                    .sort((a, b) => b.high - a.high)
-                    .map((t) => (
-                      <li key={t.target} className="check-item">
-                        <span className="check-name" title={t.target}>{t.target}</span>
-                        <span className="check-count" style={{ background: "#fff5ee", color: "var(--color-high)", border: "1px solid var(--color-high)" }}>{t.high}</span>
-                      </li>
-                    ))}
-                </ul>
-              </article>
-            )}
+                <div className="tab-content">
+                  {activeRankingTab === "discoveries" && (
+                    <>
+                      {exports.discoveryRanking.length === 0 ? (
+                        <p className="muted" style={{ padding: "12px 0", fontSize: "0.85rem" }}>No target discoveries reported.</p>
+                      ) : (
+                        <ul className="check-list">
+                          {exports.discoveryRanking.map((entry) => (
+                            <li key={`${entry.rank}-${entry.target}`} className="check-item">
+                              <span className="check-name" title={entry.target}>#{entry.rank} {entry.target}</span>
+                              <span className="check-count">{entry.discoveries}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
 
-            {/* ── Ranking by most CRITICAL findings ──────────────────── */}
-            {exports && exports.targetSummaries.some((t) => t.critical > 0) && (
-              <article className="result-card">
-                <h3 style={{ color: "var(--color-critical)" }}>Most Criticals</h3>
-                <ul className="check-list">
-                  {[...exports.targetSummaries]
-                    .filter((t) => t.critical > 0)
-                    .sort((a, b) => b.critical - a.critical)
-                    .map((t) => (
-                      <li key={t.target} className="check-item">
-                        <span className="check-name" title={t.target}>{t.target}</span>
-                        <span className="check-count" style={{ background: "#fff0f0", color: "var(--color-critical)", border: "1px solid var(--color-critical)" }}>{t.critical}</span>
-                      </li>
-                    ))}
-                </ul>
+                  {activeRankingTab === "criticals" && (
+                    <>
+                      {![...exports.targetSummaries].some((t) => t.critical > 0) ? (
+                        <p className="muted" style={{ padding: "12px 0", fontSize: "0.85rem" }}>No critical findings reported.</p>
+                      ) : (
+                        <ul className="check-list">
+                          {[...exports.targetSummaries]
+                            .filter((t) => t.critical > 0)
+                            .sort((a, b) => b.critical - a.critical)
+                            .map((t) => (
+                              <li key={t.target} className="check-item">
+                                <span className="check-name" title={t.target}>{t.target}</span>
+                                <span
+                                  className="check-count"
+                                  style={{
+                                    background: "rgba(239, 68, 68, 0.15)",
+                                    color: "var(--color-critical)",
+                                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                                  }}
+                                >
+                                  {t.critical}
+                                </span>
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+
+                  {activeRankingTab === "highs" && (
+                    <>
+                      {![...exports.targetSummaries].some((t) => t.high > 0) ? (
+                        <p className="muted" style={{ padding: "12px 0", fontSize: "0.85rem" }}>No high findings reported.</p>
+                      ) : (
+                        <ul className="check-list">
+                          {[...exports.targetSummaries]
+                            .filter((t) => t.high > 0)
+                            .sort((a, b) => b.high - a.high)
+                            .map((t) => (
+                              <li key={t.target} className="check-item">
+                                <span className="check-name" title={t.target}>{t.target}</span>
+                                <span
+                                  className="check-count"
+                                  style={{
+                                    background: "rgba(249, 115, 22, 0.15)",
+                                    color: "var(--color-high)",
+                                    border: "1px solid rgba(249, 115, 22, 0.3)",
+                                  }}
+                                >
+                                  {t.high}
+                                </span>
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+                </div>
               </article>
             )}
 
@@ -2724,6 +2811,9 @@ function normalizeTargetToken(raw: string): string {
   if (strippedQuotes.length === 0) {
     return "";
   }
+  if (!strippedQuotes.startsWith("http://") && !strippedQuotes.startsWith("https://")) {
+    return strippedQuotes;
+  }
   try {
     const parsed = new URL(strippedQuotes);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
@@ -2735,7 +2825,12 @@ function normalizeTargetToken(raw: string): string {
   return strippedQuotes;
 }
 
+// Optimized helper to check if a string is a valid HTTP/HTTPS URL.
+// Performs a fast prefix check before executing new URL() to avoid expensive exceptions.
 function isValidHttpUrl(value: string): boolean {
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return false;
+  }
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";

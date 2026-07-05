@@ -548,6 +548,17 @@ input[type="checkbox"]:focus { outline: none; box-shadow: 0 0 0 3px var(--accent
   box-shadow: 0 0 10px var(--accent-glow);
   transition: width 280ms ease;
 }
+.progress-fill--filtering {
+  background: linear-gradient(90deg, #d97706, #f59e0b) !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5) !important;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.animate-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
 
 /* ── Log view ──────────────────────────────────────────────────────────── */
 .log-view {
@@ -573,29 +584,27 @@ input[type="checkbox"]:focus { outline: none; box-shadow: 0 0 0 3px var(--accent
   padding: 12px 16px;
 }
 .target-progress-header { margin-bottom: 10px; }
-.target-progress-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 8px;
+.target-progress-list {
   max-height: 240px;
   overflow: auto;
-}
-.target-progress-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.25);
-  padding: 8px 11px;
-  transition: border-color 200ms;
-}
-.target-progress-card.completed { border-color: var(--color-ok-border); background: var(--color-ok-bg); }
-.target-url {
-  margin: 0 0 3px;
+  padding: 0;
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 0.82rem;
+}
+.target-progress-line {
+  margin: 0;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
   color: var(--text-mid);
+}
+.target-progress-line:last-child { border-bottom: none; }
+.target-progress-line .target-url {
+  color: var(--text);
+}
+.target-progress-line .target-findings {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 /* ── Utility ───────────────────────────────────────────────────────────── */
@@ -987,3 +996,48 @@ select {
   transition: border-color 150ms, box-shadow 150ms;
 }
 select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* ── Target Ranking Tabs ───────────────────────────────────────────────── */
+.tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.tab-header h3 {
+  margin: 0 !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tab-buttons {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.tab-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.tab-btn.active {
+  color: #fff !important;
+  background: var(--accent) !important;
+  box-shadow: 0 0 8px var(--accent-glow) !important;
+}
+

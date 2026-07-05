@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-05
+
+### Added
+- **Concurrent Pre-Flight Reachability Filtering**: Optimized target reachability checks in the desktop app to run in parallel using a bounded `tokio::task::JoinSet` (up to 100 concurrent requests at a time).
+- **Real-Time Filtering Progress**: Added `filtering_progress` scan event reporting from the Tauri backend, displaying live checked/total count and an amber pulse progress animation in the UI instead of the static "Waiting for scan start" state.
+- **Tauri Commands**: Added missing `read_text_file` command for loading NDJSON findings in Enrich Mode, and `cancel_scan` for stopping active scans.
+- **Consolidated Target Rankings Dashboard**: Combined separate Target Ranking, Most Highs, and Most Criticals cards into a single high-fidelity, tabbed widget (supporting Discoveries, Criticals, and Highs tabs).
+- **Improved Progress Bar**: Redesigned the progress bar to show distinct visual states and status messaging for checking reachability (amber pulse animation) and scanning (blue accent).
+
+### Changed
+- **Calibrated Scan Capacity Limits**: Configured target limit to support up to `3,000` max targets (calibrated from previous limits) and reduced maximum imported CSV file size to `300 KiB` to prevent browser hangs and crashes on large files.
+- **Performance Optimization for Large Runs**: Replaced detailed UI cards with lists of text logs in the live progress component to support large-scale runs without rendering lag.
+- **Bumped Version to 1.0.0**: Upgraded all manifests, configuration files, and package specifications to v1.0.0.
+
+### Fixed
+- **Instant Resource Cleanup & Cancellation**: Implemented a global thread-safe scan cancellation flag and registered window event hook to perform instant process termination (`std::process::exit(0)`) on window close, preventing memory leaks, socket hangs, and crash-on-reopen behavior.
+- **UI Performance Lag**: Optimized frontend URL parser functions to check protocol prefixes before calling the expensive `new URL()` constructor, eliminating input character lag when copy-pasting targets.
+
 ## [0.7.0] - 2026-04-29
 
 ### Added
@@ -268,7 +286,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CLI via `clap` with `--min-severity`, `--concurrency`, `--output-path`
 - WAF evasion headers and random UA pool
 
-[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Teycir/ApiHunter/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Teycir/ApiHunter/releases/tag/v1.0.0
 [0.7.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Teycir/ApiHunter/releases/tag/v0.5.0

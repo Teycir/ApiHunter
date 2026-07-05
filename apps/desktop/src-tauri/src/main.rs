@@ -28,7 +28,7 @@ use tauri::{Emitter, Manager};
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
 static OAST_ENV_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
-const MAX_TARGETS: usize = 500;
+const MAX_TARGETS: usize = 3_000;
 const OAST_BASE_ENV: &str = "APIHUNTER_OAST_BASE";
 
 fn default_true() -> bool {
@@ -501,6 +501,24 @@ struct PostmanHeader {
     kind: String,
 }
 
+#[derive(Debug, Serialize)]
+struct ReadTextFileResponse {
+    content: String,
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<ReadTextFileResponse, String> {
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file at {path}: {e}"))?;
+    Ok(ReadTextFileResponse { content })
+}
+
+#[tauri::command]
+fn cancel_scan() -> Result<(), String> {
+    api_scanner::runner::cancel_active_scan();
+    Ok(())
+}
+
 #[tauri::command]
 fn health_check() -> HealthResponse {
     HealthResponse {
@@ -765,7 +783,7 @@ async fn run_full_scan_impl(
         );
 
         let (accessible, inaccessible) =
-            filter_accessible_urls(&scan_targets, config.as_ref(), request.filter_timeout).await;
+            filter_accessible_urls(app.clone(), scan_id, &scan_targets, config.as_ref(), request.filter_timeout).await;
         if !inaccessible.is_empty() {
             emit_scan_event(
                 &app,
@@ -1050,6 +1068,8 @@ fn parse_cookies(raws: &[String]) -> Result<Vec<(String, String)>, String> {
 }
 
 async fn filter_accessible_urls(
+    app: tauri::AppHandle,
+    scan_id: u64,
     urls: &[String],
     config: &Config,
     timeout_secs: u64,
@@ -1059,19 +1079,70 @@ async fn filter_accessible_urls(
     filter_config.politeness.retries = 0;
 
     let client = match HttpClient::new(&filter_config) {
-        Ok(c) => c,
+        Ok(c) => Arc::new(c),
         Err(_) => return (urls.to_vec(), Vec::new()),
     };
 
+    let total = urls.len();
+    let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    let mut join_set = tokio::task::JoinSet::new();
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(100)); // Limit concurrency to 100 parallel checks
+
+    for url in urls {
+        let client = Arc::clone(&client);
+        let url = url.clone();
+        let sem = Arc::clone(&semaphore);
+        let completed = Arc::clone(&completed);
+        let app = app.clone();
+        join_set.spawn(async move {
+            let _permit = sem.acquire().await.ok();
+            let is_ok = client.get(&url).await.is_ok();
+            let current = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            
+            // Emit progress event for reachability check
+            emit_scan_event(
+                &app,
+                ScanEventPayload {
+                    scan_id,
+                    event: "filtering_progress".to_string(),
+                    message: format!("Checking reachability: {current}/{total} checked..."),
+                    total_urls: Some(total),
+                    completed_urls: Some(current),
+                    url: Some(url.clone()),
+                    findings: None,
+                    critical: None,
+                    high: None,
+                    medium: None,
+                    errors: None,
+                    elapsed_ms: None,
+                },
+            );
+
+            (url, is_ok)
+        });
+    }
+
     let mut accessible = Vec::new();
     let mut inaccessible = Vec::new();
-    for url in urls {
-        if client.get(url).await.is_ok() {
-            accessible.push(url.clone());
-        } else {
-            inaccessible.push(url.clone());
+
+    while let Some(res) = join_set.join_next().await {
+        if let Ok((url, is_ok)) = res {
+            if is_ok {
+                accessible.push(url);
+            } else {
+                inaccessible.push(url);
+            }
         }
     }
+
+    // Preserve original input ordering
+    let mut url_indices = std::collections::HashMap::new();
+    for (i, url) in urls.iter().enumerate() {
+        url_indices.insert(url.clone(), i);
+    }
+    accessible.sort_by_key(|u| url_indices.get(u).copied().unwrap_or(usize::MAX));
+    inaccessible.sort_by_key(|u| url_indices.get(u).copied().unwrap_or(usize::MAX));
 
     (accessible, inaccessible)
 }
@@ -1927,7 +1998,15 @@ pub fn run() {
             load_past_scan,
             persist_last_scan,
             load_persisted_scan,
+            read_text_file,
+            cancel_scan,
         ])
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                api_scanner::runner::cancel_active_scan();
+                std::process::exit(0);
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

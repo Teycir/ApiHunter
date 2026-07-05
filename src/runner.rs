@@ -11,11 +11,31 @@
 use std::{
     collections::{BTreeMap, HashSet},
     future::Future,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
 use rand::seq::SliceRandom;
+
+static CANCEL_SCAN: AtomicBool = AtomicBool::new(false);
+
+/// Signal that any active scan should cancel immediately.
+pub fn cancel_active_scan() {
+    CANCEL_SCAN.store(true, Ordering::SeqCst);
+}
+
+/// Reset the cancellation signal back to false (e.g. before starting a new scan).
+pub fn reset_scan_cancel() {
+    CANCEL_SCAN.store(false, Ordering::SeqCst);
+}
+
+/// Query whether the scan has been cancelled.
+pub fn is_scan_cancelled() -> bool {
+    CANCEL_SCAN.load(Ordering::SeqCst)
+}
 use tokio::{
     sync::{mpsc, Mutex, Semaphore},
     task::JoinSet,
@@ -145,6 +165,7 @@ pub async fn run_with_progress(
     progress_tx: Option<ProgressEventSender>,
 ) -> RunResult {
     let start = Instant::now();
+    reset_scan_cancel();
 
     // ── 1. Normalise + deduplicate ────────────────────────────────────────────
     let (unique_seeds, skipped_dedup) = dedup(urls);
@@ -245,6 +266,9 @@ pub async fn run_with_progress(
     );
 
     for url in work_list {
+        if is_scan_cancelled() {
+            break;
+        }
         let sem = Arc::clone(&semaphore);
         let client = Arc::clone(&http_client);
         let scanners = scanners.clone();
@@ -327,11 +351,18 @@ pub async fn run_with_progress(
     errors.append(&mut discovery_errors);
 
     loop {
+        if is_scan_cancelled() {
+            join_set.abort_all();
+        }
         tokio::select! {
             Some(result) = join_set.join_next() => {
                 match result {
                     Ok(()) => {}
-                    Err(e) => error!("Worker task panicked: {e}"),
+                    Err(e) => {
+                        if !e.is_cancelled() {
+                            error!("Worker task panicked: {e}");
+                        }
+                    }
                 }
             }
             Some(batch) = finding_rx.recv() => {
@@ -685,6 +716,9 @@ async fn run_discovery_per_site(
     let sites = group_seeds_by_site(seeds);
 
     for (base, (host, site_seeds)) in sites {
+        if is_scan_cancelled() {
+            break;
+        }
         let js_seed = match site_seeds.first() {
             Some(s) => s.as_str(),
             None => continue,
