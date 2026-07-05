@@ -180,8 +180,7 @@ async fn run(cli: Cli) -> Result<i32> {
 
     // ── 1b. Filter inaccessible URLs ─────────────────────────────────────────
     // Presets may override no_filter behaviour before the filter step.
-    let effective_no_filter =
-        cli.no_filter || matches!(cli.preset, Some(CliPreset::Quick));
+    let effective_no_filter = cli.no_filter || matches!(cli.preset, Some(CliPreset::Quick));
 
     let (filtered_urls, inaccessible_urls) = if !effective_no_filter {
         info!(total = raw_urls.len(), "Filtering URL accessibility");
