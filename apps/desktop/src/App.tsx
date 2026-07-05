@@ -399,6 +399,11 @@ export default function App() {
   const [completedUrls, setCompletedUrls] = useState(0);
   const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
   const targetProgressRef = useRef<TargetProgress[]>([]); // ponytail: batch updates to avoid render freeze
+  const logsRef = useRef<string[]>([]);
+  const completedUrlsRef = useRef(0);
+  const totalUrlsRef = useRef(0);
+  const scanPhaseRef = useRef<"idle" | "filtering" | "scanning" | "completed" | "cancelled">("idle");
+  const hasUpdatesRef = useRef(false);
   const [exportPrefix, setExportPrefix] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -440,31 +445,31 @@ export default function App() {
 
     listen<ScanEventPayload>("scan-event", (event) => {
       const payload = event.payload;
-      setLogs((prev) => {
-        let prefix = `[${payload.event}]`;
-        if (payload.event === "progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
-          prefix = `${payload.completedUrls}/${payload.totalUrls}`;
-        } else if (payload.event === "filtering_progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
-          prefix = `${payload.completedUrls}/${payload.totalUrls}`;
-        }
-        const next = [...prev, `${prefix} ${payload.message}`];
-        return next.slice(-250);
-      });
+
+      let prefix = `[${payload.event}]`;
+      if (payload.event === "progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
+        prefix = `${payload.completedUrls}/${payload.totalUrls}`;
+      } else if (payload.event === "filtering_progress" && payload.completedUrls !== undefined && payload.totalUrls !== undefined) {
+        prefix = `${payload.completedUrls}/${payload.totalUrls}`;
+      }
+      logsRef.current = [...logsRef.current, `${prefix} ${payload.message}`].slice(-250);
+
       if (typeof payload.totalUrls === "number") {
-        setTotalUrls(payload.totalUrls);
+        totalUrlsRef.current = payload.totalUrls;
       }
       if (typeof payload.completedUrls === "number") {
-        setCompletedUrls(payload.completedUrls);
+        completedUrlsRef.current = payload.completedUrls;
       }
+
       if (payload.event === "started") {
-        setScanPhase("scanning");
+        scanPhaseRef.current = "scanning";
       } else if (payload.event === "filtering_progress") {
-        setScanPhase("filtering");
+        scanPhaseRef.current = "filtering";
       } else if (payload.event === "completed") {
-        setScanPhase("completed");
+        scanPhaseRef.current = "completed";
       }
+
       if (payload.url && payload.event === "progress") {
-        // Update ref immediately, but don't trigger React re-render yet
         const idx = targetProgressRef.current.findIndex((item) => item.url === payload.url);
         const updated: TargetProgress = {
           url: payload.url ?? "",
@@ -482,6 +487,8 @@ export default function App() {
           targetProgressRef.current = next;
         }
       }
+
+      hasUpdatesRef.current = true;
     })
       .then((fn) => {
         if (disposed) {
@@ -505,12 +512,22 @@ export default function App() {
     };
   }, [tauriRuntimeAvailable]);
 
-  // Sync targetProgressRef → targetProgress state when completedUrls changes
+  // Periodically flush the event updates (from refs to state) at most once every 250ms
+  // to avoid UI freeze/unresponsive renderer during high-frequency scans.
   useEffect(() => {
-    if (completedUrls > 0) {
-      setTargetProgress([...targetProgressRef.current]);
-    }
-  }, [completedUrls]);
+    const timer = setInterval(() => {
+      if (hasUpdatesRef.current) {
+        setLogs([...logsRef.current]);
+        setCompletedUrls(completedUrlsRef.current);
+        setTotalUrls(totalUrlsRef.current);
+        setScanPhase(scanPhaseRef.current);
+        setTargetProgress([...targetProgressRef.current]);
+        hasUpdatesRef.current = false;
+      }
+    }, 250);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!tauriRuntimeAvailable) {
@@ -754,15 +771,20 @@ export default function App() {
     const startedAt = Date.now();
     setLoading(true);
     setScanPhase(noFilter ? "scanning" : "filtering");
+    scanPhaseRef.current = noFilter ? "scanning" : "filtering";
     setError(null);
     setLogs([]);
+    logsRef.current = [];
     userScrolledRef.current = false; // reset so new scan auto-scrolls from top
     setSummary(null);
     setExports(null);
     setSavedPaths([]);
     setTotalUrls(0);
+    totalUrlsRef.current = 0;
     setCompletedUrls(0);
+    completedUrlsRef.current = 0;
     targetProgressRef.current = []; // reset batched progress
+    hasUpdatesRef.current = false;
     setExportPrefix(null);
     setRestoredFromSession(false);
     setSessionRestoredAt(null);
@@ -853,6 +875,7 @@ export default function App() {
     if (!loading || cancelling) return;
     setCancelling(true);
     setScanPhase("cancelled");
+    scanPhaseRef.current = "cancelled";
     try {
       await invokeCommand("cancel_scan");
     } catch {
@@ -1953,17 +1976,20 @@ export default function App() {
               </p>
             </div>
             <div className="target-progress-list">
-              {targetProgress.map((item) => (
-                <p key={item.url} className="target-progress-line">
-                  <span className="target-url" title={item.url}>
-                    {item.url}
-                  </span>
-                  {" → "}
-                  <span className="target-findings">
-                    {item.findings} findings (C:{item.critical} H:{item.high} M:{item.medium})
-                  </span>
-                </p>
-              ))}
+              {targetProgress
+                .filter((item) => item.status === "completed" || item.findings > 0)
+                .slice(-100) // Show up to the last 100 completed/active targets to prevent DOM render lock
+                .map((item) => (
+                  <p key={item.url} className="target-progress-line">
+                    <span className="target-url" title={item.url}>
+                      {item.url}
+                    </span>
+                    {" → "}
+                    <span className="target-findings">
+                      {item.findings} findings (C:{item.critical} H:{item.high} M:{item.medium})
+                    </span>
+                  </p>
+                ))}
             </div>
           </div>
         )}
