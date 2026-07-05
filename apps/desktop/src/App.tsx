@@ -345,8 +345,8 @@ function sanitizeRuntimeInput(raw: string, field: RuntimeLimitField): number {
 }
 
 const PRESET_LABELS: Record<string, string> = {
-  quick: "Quick Passive",
-  deep: "Deep Active",
+  quick: "Quick Scan",
+  deep: "Deep Scan",
 };
 
 export default function App() {
@@ -360,9 +360,9 @@ export default function App() {
   const [noDiscovery, setNoDiscovery] = useState(true);
   const [noFilter, setNoFilter] = useState(false);
   const [filterTimeout, setFilterTimeout] = useState(3);
-  const [maxEndpoints, setMaxEndpoints] = useState(50);
+  const [maxEndpoints, setMaxEndpoints] = useState(40);
   const [concurrency, setConcurrency] = useState(4);
-  const [timeoutSecs, setTimeoutSecs] = useState(15);
+  const [timeoutSecs, setTimeoutSecs] = useState(12);
   const [retries, setRetries] = useState(1);
   const [delayMs, setDelayMs] = useState(0);
   const [wafEvasion, setWafEvasion] = useState(false);
@@ -377,8 +377,15 @@ export default function App() {
   const [authBasic, setAuthBasic] = useState("");
   const [unauthStripHeadersInput, setUnauthStripHeadersInput] = useState("");
   const [userAgentsInput, setUserAgentsInput] = useState("");
-  const [toggles, setToggles] = useState<ScanToggleState>(DEFAULT_TOGGLES);
-  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [toggles, setToggles] = useState<ScanToggleState>({
+    ...DEFAULT_TOGGLES,
+    massAssignment: true,
+    oauthOidc: true,
+    rateLimit: true,
+    cveTemplates: true,
+    websocket: false,
+  });
+  const [activePreset, setActivePreset] = useState<string | null>("quick");
 
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -392,7 +399,7 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const logViewRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
-  const fullScanPanelRef = useRef<HTMLElement | null>(null);
+  const scanPanelRef = useRef<HTMLElement | null>(null);
   const [promotedToScan, setPromotedToScan] = useState<string | null>(null);
   const [totalUrls, setTotalUrls] = useState(0);
   const [completedUrls, setCompletedUrls] = useState(0);
@@ -954,10 +961,10 @@ export default function App() {
       setAdaptiveConcurrency(false);
       setToggles({
         ...allScanners,
-        massAssignment: false,
-        oauthOidc: false,
-        rateLimit: false,
-        cveTemplates: false,
+        massAssignment: true,
+        oauthOidc: true,
+        rateLimit: true,
+        cveTemplates: true,
         websocket: false,
       });
       return;
@@ -1228,25 +1235,25 @@ export default function App() {
     }
   }
 
-  /** Scroll the Full Scan panel into view and open it. */
-  function scrollToFullScan() {
-    const el = fullScanPanelRef.current as HTMLDetailsElement | null;
+  /** Scroll the Scan panel into view and open it. */
+  function scrollToScan() {
+    const el = scanPanelRef.current as HTMLDetailsElement | null;
     if (el) {
       el.open = true;
       el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
-  /** Promote a single enriched host's representative URL into the Full Scan textarea
-   *  and switch the form to the Deep Active preset. */
+  /** Promote a single enriched host's representative URL into the target input
+   *  and switch the form to the Deep Scan preset. */
   function promoteEnrichHost(representativeUrl: string) {
     setTargetInput(representativeUrl);
     applyPreset("deep");
-    setPromotedToScan(`Promoted ${representativeUrl} → Full Scan with Deep Active preset.`);
-    setTimeout(scrollToFullScan, 50);
+    setPromotedToScan(`Promoted ${representativeUrl} and applied Deep Scan preset.`);
+    setTimeout(scrollToScan, 50);
   }
 
-  /** Promote all hosts scoring at or above minScore into Full Scan + apply Deep preset. */
+  /** Promote all hosts scoring at or above minScore + apply Deep preset. */
   function promoteEnrichAboveScore(minScore: number) {
     if (!enrichResult) return;
     const qualifying = enrichResult.hosts
@@ -1258,8 +1265,8 @@ export default function App() {
     }
     setTargetInput(qualifying.join("\n"));
     applyPreset("deep");
-    setPromotedToScan(`Promoted ${qualifying.length} host(s) scoring ≥ ${minScore} → Full Scan with Deep Active preset.`);
-    setTimeout(scrollToFullScan, 50);
+    setPromotedToScan(`Promoted ${qualifying.length} host(s) scoring ≥ ${minScore} and applied Deep Scan preset.`);
+    setTimeout(scrollToScan, 50);
   }
 
   /** Save the enriched NDJSON to disk. */
@@ -1452,7 +1459,7 @@ export default function App() {
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel title="Full Scan" defaultOpen panelRef={fullScanPanelRef}>
+      <CollapsiblePanel title="Scan" defaultOpen panelRef={scanPanelRef}>
         <form onSubmit={runFullScan} className="scan-form">
           <label htmlFor="targetInput">Targets</label>
           <textarea
@@ -1511,14 +1518,14 @@ export default function App() {
                 className={`btn secondary preset-btn${activePreset === "quick" ? " preset-btn--active" : ""}`}
                 onClick={() => { applyPreset("quick"); }}
               >
-                Quick Passive
+                Quick Scan
               </button>
               <button
                 type="button"
                 className={`btn secondary preset-btn${activePreset === "deep" ? " preset-btn--active" : ""}`}
                 onClick={() => { applyPreset("deep"); }}
               >
-                Deep Active
+                Deep Scan
               </button>
             </div>
           </div>
@@ -1878,8 +1885,8 @@ export default function App() {
               {loading
                 ? `Scanning${activePreset ? ` (${PRESET_LABELS[activePreset]})` : ""}\u2026`
                 : activePreset
-                ? `Run Full Scan \u2014 ${PRESET_LABELS[activePreset]}`
-                : "Run Full Scan"}
+                ? `Start ${PRESET_LABELS[activePreset]}`
+                : "Start Scan"}
             </button>
             {loading && (
               <button
@@ -2346,13 +2353,13 @@ export default function App() {
       <CollapsiblePanel title="Enrich Mode" defaultOpen={!!enrichNdjson}>
         <p className="muted" style={{ marginBottom: "12px" }}>
           Adds threat-intel context (InternetDB · ipinfo.io · RDAP) to the findings from your last scan — one probe per unique host.
-          After a Full Scan completes the findings are loaded automatically. You can then run Enrich and promote high-scoring hosts directly to a Deep Active scan.
+          After a scan completes the findings are loaded automatically. You can then run Enrich and promote high-scoring hosts directly to a Deep Scan.
         </p>
 
         {!enrichNdjson && (
           <div className="enrich-empty-notice">
             <p>
-              No findings loaded yet. Run a <strong>Full Scan</strong> above — the results will appear here automatically.
+              No findings loaded yet. Run a <strong>Scan</strong> above — the results will appear here automatically.
               You can also load an NDJSON file saved from a previous scan:
             </p>
             <button
@@ -2447,7 +2454,7 @@ export default function App() {
                 className="btn secondary"
                 style={{ margin: 0 }}
                 onClick={() => promoteEnrichAboveScore(enrichPromoteMinScore)}
-                title="Merge qualifying hosts into Full Scan and apply Deep Active preset"
+                title="Merge qualifying hosts and apply Deep Scan preset"
               >
                 → Deep Scan
               </button>
@@ -2520,7 +2527,7 @@ export default function App() {
                           className="btn secondary"
                           style={{ margin: 0, padding: "3px 10px", fontSize: "12px" }}
                           onClick={() => promoteEnrichHost(host.representativeUrl)}
-                          title={`Promote ${host.representativeUrl} to Full Scan with Deep Active preset`}
+                          title={`Promote ${host.representativeUrl} and apply Deep Scan preset`}
                         >
                           → Deep Scan
                         </button>
